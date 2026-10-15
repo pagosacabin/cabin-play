@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
-"""Offline preview of the JC4827W543 two-page layout.
+"""Offline preview of the JC4827W543 bench-panel layout (LCARS-style BMS page).
 
-Mirrors the geometry and draw order of the display lambda in jc4827w543.yaml so a layout
-can be inspected in two seconds instead of a flash-and-squint loop. Numbers and pixel
-positions here must be kept in step with the lambda by hand.
+Mirrors the geometry, colours and draw order of the display lambda in jc4827w543.yaml.
+Design here first, then port: this renders in ~1 s and can be looked at, where the panel
+is a 10 s flash per iteration and needs eyes in the room.
 
     python3 tools/preview.py [out.png]
 
+It reports the SOC readout's half-width against the dial's inner radius, because that is
+the one place this layout can silently collide with the ring.
+
 Caveats (why this is a guide, not proof):
   * PIL renders the TTF with its own antialiasing; ESPHome rasterises the same TTF into a
-    4bpp bitmap font. Glyph widths match closely but not pixel-for-pixel.
-  * ESPHome's TextAlign::TOP_* anchors on the glyph bounding box; PIL's 't' anchors sit on
+    4bpp bitmap font and blends glyph edges against the colour passed as `background`.
+    Glyph widths match closely but not pixel-for-pixel.
+  * ESPHome anchors TextAlign::TOP_* on the glyph bounding box; PIL's 't' anchors sit on
     the line box. Expect a pixel or two of vertical disagreement.
-  * The panel runs `rotation: 180`, so on the glass this picture is upside down.
+  * It draws the lambda's logical canvas — the physical mounting is set separately by
+    `rotation: 180`, which the preview does not model.
 """
+import math
 import pathlib
 import sys
 
@@ -21,10 +27,27 @@ from PIL import Image, ImageDraw, ImageFont
 
 W, H = 480, 272
 FONT_TTF = pathlib.Path(__file__).resolve().parents[1] / '.esphome' / 'font' / 'Roboto@400@False@v1.ttf'
-BG, FG = (0, 0, 0), (255, 255, 255)
+BG = (0, 0, 0)
+
+# --- LCARS palette (TNG console colours) ----------------------------------------------
+ORANGE = (255, 156, 0)
+GOLD = (255, 204, 102)
+LAVENDER = (204, 153, 204)
+BLUE = (153, 153, 204)
+SALMON = (204, 102, 102)
+TAN = (204, 153, 102)
+GREEN = (153, 204, 153)
+DIM = (32, 32, 64)          # unlit arc segments
+INK = (0, 0, 0)             # text sitting on a lit pill
+WHITE = (255, 255, 255)
+
+# --- dial geometry (must match the lambda) -------------------------------------------
+CX, CY = 240, 126
+R_IN, R_OUT = 50, 64
+SWEEP_START, SWEEP_DEG = 120, 300     # 0 deg = 3 o'clock, positive = clockwise on screen
 
 # --- values to draw (edit these to check other states) -------------------------------
-BMS = dict(soc=79.0, volts=54.49, amps=29.2, temp=57.6, local=92.0, clock='09:42', date='Wed 15 Oct')
+BMS = dict(soc=86.0, volts=54.54, amps=29.4, temp=58.5, local=91.0, clock='11:19', date='Wed 15 Oct')
 LOW = dict(local=8.0, volts=3.58)
 
 
@@ -32,46 +55,96 @@ def font(px):
     return ImageFont.truetype(str(FONT_TTF), px)
 
 
+def text_w(s, px):
+    b = font(px).getbbox(s)
+    return b[2] - b[0]
+
+
+def pill(d, x, y, w, h, c):
+    """LCARS pill: straight body plus a filled circle at each end."""
+    r = h // 2
+    d.rectangle([x + r, y, x + w - r, y + h], fill=c)
+    d.ellipse([x, y, x + 2 * r, y + h], fill=c)
+    d.ellipse([x + w - 2 * r, y, x + w, y + h], fill=c)
+
+
+def dial(d, soc):
+    """Ring drawn as radial spokes, 1 deg apart — the same call the lambda makes."""
+    lit = SALMON if soc < 25 else GOLD
+    frac = max(0.0, min(100.0, soc)) / 100.0
+    for a in range(SWEEP_START, SWEEP_START + SWEEP_DEG + 1):
+        f = (a - SWEEP_START) / SWEEP_DEG
+        c = lit if f <= frac else DIM
+        ra = math.radians(a)
+        d.line([(CX + R_IN * math.cos(ra), CY + R_IN * math.sin(ra)),
+                (CX + R_OUT * math.cos(ra), CY + R_OUT * math.sin(ra))], fill=c)
+
+
 def render_bms(v):
     img = Image.new('RGB', (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.text((464, 2), v['clock'], font=font(48), fill=FG, anchor='rt')
-    d.text((464, 56), v['date'], font=font(16), fill=FG, anchor='rt')
-    d.text((16, 2), '%.0f%%' % v['soc'], font=font(48), fill=FG, anchor='lt')
-    d.text((16, 56), 'PACK SOC', font=font(16), fill=FG, anchor='lt')
-    d.line([(16, 78), (464, 78)], fill=FG)
-    col2 = 250
-    r1lab, r1val, r2lab, r2val = 112, 130, 192, 210
-    d.text((16, r1lab), 'PACK', font=font(16), fill=FG, anchor='lt')
-    d.text((16, r1val), '%.2f V' % v['volts'], font=font(28), fill=FG, anchor='lt')
-    d.text((col2, r1lab), 'CHARGE' if v['amps'] >= 0 else 'DISCHG', font=font(16), fill=FG, anchor='lt')
-    d.text((col2, r1val), '%+.1f A' % v['amps'], font=font(28), fill=FG, anchor='lt')
-    d.text((16, r2lab), 'TEMP', font=font(16), fill=FG, anchor='lt')
-    d.text((16, r2val), '%.1f F' % v['temp'], font=font(28), fill=FG, anchor='lt')
-    d.text((col2, r2lab), 'PANEL', font=font(16), fill=FG, anchor='lt')
-    d.text((col2, r2val), '%.0f %%' % v['local'], font=font(28), fill=FG, anchor='lt')
+
+    # --- top band: panel cell + clock, small type on LCARS pills ---
+    pill(d, 8, 6, 168, 32, ORANGE)
+    d.text((8 + 84, 11), 'PANEL %.0f%%' % v['local'], font=font(24), fill=INK, anchor='mt')
+    pill(d, 304, 6, 168, 32, BLUE)
+    d.text((304 + 84, 11), v['clock'], font=font(24), fill=INK, anchor='mt')
+    # LCARS frames join their blocks rather than floating them: a bar across the gap
+    # between the two pills, and a rule closing the header off from the dial.
+    d.rectangle([184, 19, 296, 24], fill=TAN)
+    d.rectangle([8, 44, 472, 45], fill=TAN)
+
+    # --- dial, with its label and the date bookending it ---
+    # The number is drawn WITHOUT the % sign and with nothing else inside the ring: at
+    # 48 pt a 3-digit reading plus "%" is wider than the ring's inner diameter, and a label
+    # under the number crosses the ring's lower arms. The unit rides on the left label
+    # instead, and the two dead bands beside the dial carry the label and the date.
+    dial(d, v['soc'])
+    num = '%.0f' % v['soc']
+    d.text((CX, CY - 24), num, font=font(48), fill=WHITE, anchor='mt')
+    d.text((16, CY), 'PACK SOC %', font=font(16), fill=GOLD, anchor='lm')
+    d.text((464, CY), v['date'], font=font(16), fill=LAVENDER, anchor='rm')
+    for probe in ('9', '86', '100'):
+        print('  soc %-4s -> %3d px wide, clearance to the inner ring: %+d px'
+              % (probe, text_w(probe, 48), R_IN - text_w(probe, 48) / 2))
+
+    # --- three data pills under the dial ---
+    cols = [(8, 148, BLUE, 'PACK V', '%.2f V' % v['volts']),
+            (166, 148, GOLD, 'CHARGE' if v['amps'] >= 0 else 'DISCHG', '%+.1f A' % v['amps']),
+            (324, 148, LAVENDER, 'TEMP', '%.1f F' % v['temp'])]
+    for x, w, colour, label, value in cols:
+        pill(d, x, 196, w, 22, colour)
+        d.text((x + w // 2, 199), label, font=font(16), fill=INK, anchor='mt')
+        d.text((x + w // 2, 222), value, font=font(28), fill=WHITE, anchor='mt')
+
+    # --- LCARS footer: a row of coloured blocks ---
+    bx = 8
+    for colour, bw in ((ORANGE, 120), (GOLD, 80), (SALMON, 60), (BLUE, 100), (LAVENDER, 80)):
+        d.rectangle([bx, 258, bx + bw, 263], fill=colour)
+        bx += bw + 6
     return img
 
 
 def render_status(v):
+    """The panel's original screen — unchanged, and what the <10% fallback shows."""
     img = Image.new('RGB', (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.text((240, 24), 'JC4827W543 up', font=font(24), fill=FG, anchor='mt')
-    d.text((240, 84), 'BAT %3.0f%%   %.2f V' % (v['local'], v['volts']), font=font(24), fill=FG, anchor='mt')
+    d.text((240, 24), 'JC4827W543 up', font=font(24), fill=WHITE, anchor='mt')
+    d.text((240, 84), 'BAT %3.0f%%   %.2f V' % (v['local'], v['volts']), font=font(24), fill=WHITE, anchor='mt')
     bx, by, bw, bh, nub, pad = 170, 150, 120, 52, 8, 4
-    d.rectangle([bx, by, bx + bw, by + bh], outline=FG)
-    d.rectangle([bx + bw + 1, by + bh // 3, bx + bw + 1 + nub, by + bh // 3 + bh // 3], fill=FG)
+    d.rectangle([bx, by, bx + bw, by + bh], outline=WHITE)
+    d.rectangle([bx + bw + 1, by + bh // 3, bx + bw + 1 + nub, by + bh // 3 + bh // 3], fill=WHITE)
     fillw = int((bw - 2 * pad) * v['local'] / 100.0)
     if fillw > 0:
-        d.rectangle([bx + pad, by + pad, bx + pad + fillw, by + bh - pad], fill=FG)
+        d.rectangle([bx + pad, by + pad, bx + pad + fillw, by + bh - pad], fill=WHITE)
     return img
 
 
 def main():
     out = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'preview.png')
     pages = [
-        ('BMS page  (panel >= 10%)', render_bms(BMS)),
-        ('status page  (panel < 10%)', render_status(LOW)),
+        ('BMS page  (panel >= 10%) — LCARS', render_bms(BMS)),
+        ('status page  (panel < 10%) — unchanged fallback', render_status(LOW)),
     ]
     head = 22
     sheet = Image.new('RGB', (W, (H + head) * len(pages)), (24, 24, 24))

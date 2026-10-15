@@ -5,10 +5,11 @@
 # Config follows the official ESPHome device page for this board:
 #   https://devices.esphome.io/devices/guition-jc4827543c
 #
-# Display: two pages. The normal page is the bench pack's JK BMS (state of charge, pack
-# volts, charge/discharge current, temperature) plus the local clock and the panel's own
-# cell. When that cell falls below ${low_batt_pct}% the display swaps to the plain status
-# page (model, its own battery voltage/percentage, battery icon).
+# Display: two pages. The normal page is an LCARS-styled readout of the bench pack's JK BMS
+# -- the panel's own cell and the clock in a header strip of pills, state of charge as a
+# dial, then pack volts, charge/discharge current and temperature as labelled data pills.
+# When the panel's own cell falls below ${low_batt_pct}% the display swaps to the plain
+# status page (model, its own battery voltage/percentage, battery icon).
 substitutions:
   name: jc4827w543
   friendly_name: Bench Panel 4.3
@@ -252,61 +253,103 @@ display:
         return;
       }
 
-      // ---- BMS page --------------------------------------------------------------------
-      char buf[64];
+      // ---- BMS page: LCARS console -----------------------------------------------------
+      // TNG console palette. Layout is a header strip of pills (panel cell + clock), the
+      // pack state of charge as a 300-degree dial, and three labelled data pills under it.
+      const Color ORANGE(255, 156, 0), GOLD(255, 204, 102), LAVENDER(204, 153, 204),
+          BLUE(153, 153, 204), SALMON(204, 102, 102), TAN(204, 153, 102),
+          DIM(32, 32, 64), INK(0, 0, 0);
 
-      // Clock top-right with the date under it. Blank until HA's time actually arrives
-      // rather than showing a plausible fake one.
-      if (id(ha_time).now().is_valid()) {
-        auto t = id(ha_time).now();
-        it.print(464, 2, id(roboto_48), TextAlign::TOP_RIGHT, t.strftime("%H:%M").c_str());
-        it.print(464, 56, id(roboto_16), TextAlign::TOP_RIGHT, t.strftime("%a %d %b").c_str());
-      } else {
-        it.print(464, 2, id(roboto_48), TextAlign::TOP_RIGHT, "--:--");
+      // An LCARS pill: straight body capped by a filled circle at each end. Text drawn on
+      // one must be printed with the pill colour as its `background`, because the font
+      // blends glyph edges against that colour -- black would ring every letter.
+      auto pill = [&](int x, int y, int w, int h, Color c) {
+        const int r = h / 2;
+        it.filled_rectangle(x + r, y, w - 2 * r, h, c);
+        it.filled_circle(x + r, y + r, r, c);
+        it.filled_circle(x + w - r, y + r, r, c);
+      };
+
+      char buf[64];
+      const bool have_time = id(ha_time).now().is_valid();
+
+      // Header: the panel's own cell and the clock. Both blank rather than fake when their
+      // source has not reported yet.
+      if (isnan(local)) snprintf(buf, sizeof(buf), "PANEL --");
+      else snprintf(buf, sizeof(buf), "PANEL %.0f%%", local);
+      pill(8, 6, 168, 32, ORANGE);
+      it.print(8 + 84, 11, id(roboto_20), INK, TextAlign::TOP_CENTER, buf, ORANGE);
+
+      if (have_time) snprintf(buf, sizeof(buf), "%s", id(ha_time).now().strftime("%H:%M").c_str());
+      else snprintf(buf, sizeof(buf), "--:--");
+      pill(304, 6, 168, 32, BLUE);
+      it.print(304 + 84, 11, id(roboto_20), INK, TextAlign::TOP_CENTER, buf, BLUE);
+
+      // LCARS frames join their blocks instead of floating them: a bar across the gap
+      // between the two pills, and a rule closing the header off from the dial.
+      it.filled_rectangle(184, 19, 112, 6, TAN);
+      it.filled_rectangle(8, 44, 464, 2, TAN);
+
+      // The dial: spokes 1 degree apart make the ring; the lit ones stop at state of charge.
+      // Salmon under 25% is the only place this page raises its voice.
+      const float soc = id(bms_soc).state;
+      const int cx = 240, cy = 126, r_in = 50, r_out = 64;
+      const Color lit = (!isnan(soc) && soc < 25.0f) ? SALMON : GOLD;
+      const float frac = isnan(soc) ? 0.0f : (soc < 0.0f ? 0.0f : (soc > 100.0f ? 100.0f : soc)) / 100.0f;
+      // The unlit part of the ring is drawn solid (a disc with the middle punched out) so it
+      // cannot show hairline gaps between spokes; only the lit arc is spoked, where the
+      // spokes overlap each other.
+      it.filled_circle(cx, cy, r_out, DIM);
+      it.filled_circle(cx, cy, r_in - 1, COLOR_OFF);
+      for (int a = 120; a <= 420; a++) {          // 120..420 = 300 deg, gap centred at the bottom
+        const float f = (a - 120) / 300.0f;
+        if (f <= frac) it.line_at_angle(cx, cy, a, r_in, r_out, lit);
+      }
+      // Nothing but the number goes inside the ring: at 48 pt a 3-digit reading plus "%" is
+      // wider than the inner diameter, and a label under it crosses the lower arms. The unit
+      // rides on the left-hand label, and the two dead bands beside the dial carry the label
+      // and the date.
+      if (isnan(soc)) snprintf(buf, sizeof(buf), "--");
+      else snprintf(buf, sizeof(buf), "%.0f", soc);
+      it.print(cx, cy - 24, id(roboto_48), COLOR_ON, TextAlign::TOP_CENTER, buf);
+      it.print(16, cy, id(roboto_16), GOLD, TextAlign::CENTER_LEFT, "PACK SOC %");
+      if (have_time) {
+        it.print(464, cy, id(roboto_16), LAVENDER, TextAlign::CENTER_RIGHT,
+                 id(ha_time).now().strftime("%a %d %b").c_str());
       }
 
-      // Pack state of charge, hero size (the "%full" of the JK BMS)
-      if (isnan(id(bms_soc).state)) snprintf(buf, sizeof(buf), "--");
-      else snprintf(buf, sizeof(buf), "%.0f%%", id(bms_soc).state);
-      it.print(16, 2, id(roboto_48), TextAlign::TOP_LEFT, buf);
-      it.print(16, 56, id(roboto_16), TextAlign::TOP_LEFT, "PACK SOC");
-
-      it.line(16, 78, 464, 78);
-
-      // Two columns of label/value pairs, spread down the band below the divider (78..272)
-      // so the page reads as balanced rather than top-heavy: 34 px margin, 46 px rows,
-      // 34 px between them.
-      const int col2 = 250, r1lab = 112, r1val = 130, r2lab = 192, r2val = 210;
-
-      it.print(16, r1lab, id(roboto_16), TextAlign::TOP_LEFT, "PACK");
+      // Three data pills under the dial. The current's label follows the sign: the BMS
+      // reports charge positive, discharge negative, so 49 A out is not labelled CHARGE.
+      auto datum = [&](int x, int w, Color bar, const char *label, const char *value) {
+        pill(x, 196, w, 22, bar);
+        it.print(x + w / 2, 199, id(roboto_16), INK, TextAlign::TOP_CENTER, label, bar);
+        it.print(x + w / 2, 222, id(roboto_28), COLOR_ON, TextAlign::TOP_CENTER, value);
+      };
       if (isnan(id(bms_v).state)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.2f V", id(bms_v).state);
-      it.print(16, r1val, id(roboto_28), TextAlign::TOP_LEFT, buf);
+      datum(8, 148, BLUE, "PACK V", buf);
 
-      // One signed number, two labels: the BMS reports charge positive, discharge negative,
-      // so the label follows the sign rather than pretending 49 A of discharge is a charge.
       const float cur = id(bms_i).state;
-      it.print(col2, r1lab, id(roboto_16), TextAlign::TOP_LEFT,
-               (isnan(cur) || cur >= 0.0f) ? "CHARGE" : "DISCHG");
       if (isnan(cur)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%+.1f A", cur);
-      it.print(col2, r1val, id(roboto_28), TextAlign::TOP_LEFT, buf);
+      datum(166, 148, GOLD, (isnan(cur) || cur >= 0.0f) ? "CHARGE" : "DISCHG", buf);
 
-      it.print(16, r2lab, id(roboto_16), TextAlign::TOP_LEFT, "TEMP");
       if (isnan(id(bms_t).state)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.1f F", id(bms_t).state);
-      it.print(16, r2val, id(roboto_28), TextAlign::TOP_LEFT, buf);
+      datum(324, 148, LAVENDER, "TEMP", buf);
 
-      // The panel's own cell, so nobody has to guess why the BMS page flipped to the
-      // status page.
-      it.print(col2, r2lab, id(roboto_16), TextAlign::TOP_LEFT, "PANEL");
-      if (isnan(local)) snprintf(buf, sizeof(buf), "--");
-      else snprintf(buf, sizeof(buf), "%.0f %%", local);
-      it.print(col2, r2val, id(roboto_28), TextAlign::TOP_LEFT, buf);
+      // LCARS footer: a row of coloured blocks.
+      const int fw[5] = {120, 80, 60, 100, 80};
+      const Color fc[5] = {ORANGE, GOLD, SALMON, BLUE, LAVENDER};
+      int bx = 8;
+      for (int i = 0; i < 5; i++) {
+        it.filled_rectangle(bx, 258, fw[i], 6, fc[i]);
+        bx += fw[i] + 6;
+      }
 
 font:
-  # 48pt: the clock and the state-of-charge hero. 28pt: the four field values. 24pt: the
-  # fallback status page. 16pt: field labels and the date.
+  # 48pt: the state-of-charge number inside the dial. 28pt: the three data values. 24pt: the
+  # header pills and the fallback status page. 16pt: field labels and the date.
   - file: "gfonts://Roboto"
     id: roboto_48
     size: 48

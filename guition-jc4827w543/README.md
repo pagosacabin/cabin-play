@@ -34,9 +34,24 @@ Two pages, both drawn by the display lambda in `jc4827w543.yaml`:
 
 | page | shown when | contents |
 |---|---|---|
-| **BMS** | panel's own cell ≥ 10 % | pack state of charge ("%full"), pack voltage, charge/discharge current, temperature, local time + date, panel's own cell % |
+| **BMS** | panel's own cell ≥ 10 % | LCARS console: header pills with the panel's own cell % and the clock, pack state of charge as a dial, then pack voltage, charge/discharge current and temperature as labelled data pills |
 | **status** | panel's own cell < 10 % | the panel's original screen: model name, its own battery %, its own battery volts, battery icon |
 
+The BMS page is drawn in the TNG console idiom: black field, LCARS pills (a straight
+body capped by a filled circle at each end), a tan bar joining the two header pills, and
+a row of coloured blocks along the bottom. Palette: `#FF9C00` orange, `#FFCC66` gold,
+`#9999CC` blue, `#CC99CC` lavender, `#CC6666` salmon, `#CC9966` tan.
+
+- The dial is a 300° ring with the gap at the bottom, drawn as radial spokes 1° apart whose
+  lit ones stop at the state of charge; the unlit remainder is a solid dim-navy ring (a disc
+  with its middle punched out) so it cannot show hairline gaps. The arc turns salmon below
+  25 % — the only place the page raises its voice. The ring carries **no** unit sign and
+  nothing else inside it: at 48 pt a 3-digit reading plus `%` is wider than the inner
+  diameter, and a label under the number crosses the ring's lower arms. The unit rides on
+  the left-hand `PACK SOC %` label, and the two dead bands beside the dial carry that label
+  and the date.
+- Text printed on a pill must be given the pill's own colour as its `background`: ESPHome's
+  font blends glyph edges against that colour, so the default black would ring every letter.
 - The threshold is the `low_batt_pct` substitution. Below it the BMS page is replaced —
   cabin data is worthless on a panel that is about to die, and the status page says
   "charge me" in the panel's own terms.
@@ -55,10 +70,12 @@ Two pages, both drawn by the display lambda in `jc4827w543.yaml`:
 - The random-photo idle screensaver and the `Next image` button were **removed**
   (2026-10-15, at the user's request): the panel no longer fetches images at all. The
   remaining HA entities are Display Backlight, Sleep time, Idle brightness, Wake screen.
-- `tools/preview.py` mirrors the lambda's geometry for a two-second look at the layout.
-  It is a guide, not proof: PIL's antialiasing and anchor points differ slightly from
-  ESPHome's rasteriser, and it draws the lambda's logical canvas — the physical mounting
-  is set separately by `rotation: 180`, which the preview does not model.
+- `tools/preview.py` mirrors the lambda's geometry and palette for a two-second look at the
+  layout, and reports the SOC readout's half-width against the dial's inner radius — the one
+  place this design can silently collide with the ring. It is a guide, not proof: PIL's
+  antialiasing and anchor points differ slightly from ESPHome's rasteriser, and it draws the
+  lambda's logical canvas — the physical mounting is set separately by `rotation: 180`, which
+  the preview does not model.
 
 ## Battery sensing (task 0134)
 

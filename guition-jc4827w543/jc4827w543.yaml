@@ -4,14 +4,19 @@
 # not from the vendor PDF (which wrongly claims "ST3401A").
 # Config follows the official ESPHome device page for this board:
 #   https://devices.esphome.io/devices/guition-jc4827543c
+#
+# Display: two pages. The normal page is the bench pack's JK BMS (state of charge, pack
+# volts, charge/discharge current, temperature) plus the local clock and the panel's own
+# cell. When that cell falls below ${low_batt_pct}% the display swaps to the plain status
+# page (model, its own battery voltage/percentage, battery icon).
 substitutions:
   name: jc4827w543
   friendly_name: Bench Panel 4.3
-  # LAN service that serves one random photo, already scaled to 480x272 (~11 KB JPEG).
-  # Source lives at ~/panel-photo/panel_photo_server.py on 192.168.1.228.
-  # Served by the VPS (nginx + same-host publisher, see panel-photo units there).
-  # Basic-auth protected: these are personal photos on a public host.
-  photo_url: https://nordtronics.io/panel/random.jpg
+  # Panel-local low-battery threshold, in percent. Below this the display replaces the BMS
+  # page with the plain status page (model + the panel's own pack), so a panel running flat
+  # says "charge me" instead of showing cabin data it cannot keep live. Left unquoted on
+  # purpose: it is substituted into the display lambda as a C++ literal.
+  low_batt_pct: 10
 
 esphome:
   name: ${name}
@@ -220,99 +225,114 @@ display:
       - [0x11, 0x00]
       - [0x29, 0x00]
     lambda: |-
-      // repaint from a clean slate: auto_clear_enabled is false, and this lambda now runs
-      // on every battery sensor update, so text would otherwise smear
+      // Repaint from a clean slate: auto_clear_enabled is false and this lambda runs on every
+      // sensor/time change, so text would otherwise smear into itself.
       it.fill(COLOR_OFF);
 
-      if (id(show_photo) && id(photo).is_loaded()) {
-        // idle screensaver: photo arrives a moment after the dim, then repaints
-        it.image(0, 0, id(photo));
+      const float local = id(batt_pct).state;
+
+      // ---- fallback page: the panel's own pack is nearly flat --------------------------
+      // Below ${low_batt_pct}% this replaces the BMS page with the screen the panel has
+      // always shown: what it is, and what its own cell is doing. Cabin data is worthless on
+      // a panel that is about to die.
+      if (!isnan(local) && local < ${low_batt_pct}) {
+        it.print(240, 24, id(roboto_20), TextAlign::CENTER, "JC4827W543 up");
+        if (!isnan(local)) {
+          char sbuf[48];
+          snprintf(sbuf, sizeof(sbuf), "BAT %3.0f%%   %.2f V", local, id(batt_v).state);
+          it.print(240, 84, id(roboto_20), TextAlign::CENTER, sbuf);
+        } else {
+          it.print(240, 84, id(roboto_20), TextAlign::CENTER, "BAT --");
+        }
+        const int bx = 170, by = 150, bw = 120, bh = 52, nub = 8, pad = 4;
+        it.rectangle(bx, by, bw, bh, COLOR_ON);
+        it.filled_rectangle(bx + bw + 1, by + bh / 3, nub, bh / 3, COLOR_ON);
+        int fillw = (int)((bw - 2 * pad) * local / 100.0f);
+        if (fillw > 0) it.filled_rectangle(bx + pad, by + pad, fillw, bh - 2 * pad, COLOR_ON);
         return;
       }
 
-      it.print(240, 24, id(roboto_20), TextAlign::CENTER, "JC4827W543 up");
+      // ---- BMS page --------------------------------------------------------------------
+      char buf[64];
 
-      if (!isnan(id(batt_pct).state)) {
-        char buf[48];
-        snprintf(buf, sizeof(buf), "BAT %3.0f%%   %.2f V", id(batt_pct).state, id(batt_v).state);
-        it.print(240, 84, id(roboto_20), TextAlign::CENTER, buf);
+      // Clock top-right with the date under it. Blank until HA's time actually arrives
+      // rather than showing a plausible fake one.
+      if (id(ha_time).now().is_valid()) {
+        auto t = id(ha_time).now();
+        it.print(464, 2, id(roboto_48), TextAlign::TOP_RIGHT, t.strftime("%H:%M").c_str());
+        it.print(464, 56, id(roboto_16), TextAlign::TOP_RIGHT, t.strftime("%a %d %b").c_str());
       } else {
-        it.print(240, 84, id(roboto_20), TextAlign::CENTER, "BAT --");
+        it.print(464, 2, id(roboto_48), TextAlign::TOP_RIGHT, "--:--");
       }
 
-      const int bx = 170, by = 150, bw = 120, bh = 52, nub = 8, pad = 4;
-      it.rectangle(bx, by, bw, bh, COLOR_ON);
-      it.filled_rectangle(bx + bw + 1, by + bh / 3, nub, bh / 3, COLOR_ON);
-      float pct = isnan(id(batt_pct).state) ? 0.0f : id(batt_pct).state;
-      int fillw = (int)((bw - 2 * pad) * pct / 100.0f);
-      if (fillw > 0) it.filled_rectangle(bx + pad, by + pad, fillw, bh - 2 * pad, COLOR_ON);
+      // Pack state of charge, hero size (the "%full" of the JK BMS)
+      if (isnan(id(bms_soc).state)) snprintf(buf, sizeof(buf), "--");
+      else snprintf(buf, sizeof(buf), "%.0f%%", id(bms_soc).state);
+      it.print(16, 2, id(roboto_48), TextAlign::TOP_LEFT, buf);
+      it.print(16, 56, id(roboto_16), TextAlign::TOP_LEFT, "PACK SOC");
+
+      it.line(16, 78, 464, 78);
+
+      // Two columns of label/value pairs, spread down the band below the divider (78..272)
+      // so the page reads as balanced rather than top-heavy: 34 px margin, 46 px rows,
+      // 34 px between them.
+      const int col2 = 250, r1lab = 112, r1val = 130, r2lab = 192, r2val = 210;
+
+      it.print(16, r1lab, id(roboto_16), TextAlign::TOP_LEFT, "PACK");
+      if (isnan(id(bms_v).state)) snprintf(buf, sizeof(buf), "--");
+      else snprintf(buf, sizeof(buf), "%.2f V", id(bms_v).state);
+      it.print(16, r1val, id(roboto_28), TextAlign::TOP_LEFT, buf);
+
+      // One signed number, two labels: the BMS reports charge positive, discharge negative,
+      // so the label follows the sign rather than pretending 49 A of discharge is a charge.
+      const float cur = id(bms_i).state;
+      it.print(col2, r1lab, id(roboto_16), TextAlign::TOP_LEFT,
+               (isnan(cur) || cur >= 0.0f) ? "CHARGE" : "DISCHG");
+      if (isnan(cur)) snprintf(buf, sizeof(buf), "--");
+      else snprintf(buf, sizeof(buf), "%+.1f A", cur);
+      it.print(col2, r1val, id(roboto_28), TextAlign::TOP_LEFT, buf);
+
+      it.print(16, r2lab, id(roboto_16), TextAlign::TOP_LEFT, "TEMP");
+      if (isnan(id(bms_t).state)) snprintf(buf, sizeof(buf), "--");
+      else snprintf(buf, sizeof(buf), "%.1f F", id(bms_t).state);
+      it.print(16, r2val, id(roboto_28), TextAlign::TOP_LEFT, buf);
+
+      // The panel's own cell, so nobody has to guess why the BMS page flipped to the
+      // status page.
+      it.print(col2, r2lab, id(roboto_16), TextAlign::TOP_LEFT, "PANEL");
+      if (isnan(local)) snprintf(buf, sizeof(buf), "--");
+      else snprintf(buf, sizeof(buf), "%.0f %%", local);
+      it.print(col2, r2val, id(roboto_28), TextAlign::TOP_LEFT, buf);
 
 font:
+  # 48pt: the clock and the state-of-charge hero. 28pt: the four field values. 24pt: the
+  # fallback status page. 16pt: field labels and the date.
+  - file: "gfonts://Roboto"
+    id: roboto_48
+    size: 48
+  - file: "gfonts://Roboto"
+    id: roboto_28
+    size: 28
   - file: "gfonts://Roboto"
     id: roboto_20
     size: 24
-
-# ---------------------------------------------------------------- random photo on idle
-# The panel cannot scale a photo itself: a 12 MP original is ~12 MB of decoded bitmap
-# against 8 MB of PSRAM. ${photo_url} therefore serves an image already cropped and scaled
-# to 480x272, and the panel only downloads and decodes it.
-# online_image needs an explicit http_request client; plain HTTP to the LAN service, so no
-# TLS verification is involved.
-http_request:
-  id: http_client
-  timeout: 10s
-  useragent: esphome-jc4827w543
-
-online_image:
-  - id: photo
-    # The component's own url is NOT templatable (only the set_url action is), so this is a
-    # static fallback; the cache-buster is applied by the set_url call in show_random_photo.
-    url: ${photo_url}
-    type: RGB565                 # required: full-colour panel
-    format: AUTO                 # let the Content-Type pick the decoder (JPEG here)
-    buffer_size: 65536
-    # nginx gates /panel/ with HTTP Basic auth; the value is a precomputed header in
-    # secrets.yaml so the password itself is never in this file. ESPHome carries it
-    # as a request header -- the capability that made this design possible.
-    request_headers:
-      Authorization: !secret panel_auth_header
-    on_download_finished:
-      - component.update: my_display
-
-globals:
-  - id: show_photo
-    type: bool
-    initial_value: 'false'
+  - file: "gfonts://Roboto"
+    id: roboto_16
+    size: 16
 
 # ---------------------------------------------------------------- backlight sleep
 # Touch or boot restarts the timer; the panel dims to off after sleep_time seconds.
 # This is the battery-relevant knob: the panel is the dominant load.
 script:
-  - id: show_random_photo
-    then:
-      - globals.set:
-          id: show_photo
-          value: 'true'
-      - online_image.set_url:
-          id: photo
-          url: !lambda |-
-            return std::string("${photo_url}?r=") + to_string((uint32_t) millis());
-      - component.update: my_display
-
   - id: inactivity_timer
     mode: restart
     then:
-      # any touch (or boot) wakes the panel: status screen back, full brightness
-      - globals.set:
-          id: show_photo
-          value: 'false'
+      # any touch (or boot) wakes the panel: full brightness back
       - light.turn_on:
           id: display_backlight
           brightness: 1.0
       - component.update: my_display
       - delay: !lambda 'return id(sleep_time).state * 1000;'
-      # idle: fetch a fresh random photo and dim to the configured level
-      - script.execute: show_random_photo
       # idle: DIM to the configured level rather than going black. Set Idle brightness to 0
       # to get the old full-off behaviour back.
       - if:
@@ -357,17 +377,31 @@ number:
 # and restarts the countdown. Makes the idle/dim behaviour testable without a finger, and
 # gives HA a "light the panel now" control.
 button:
+  # Wakes the panel exactly as a touch does: full brightness, timer restarted. Keeps the
+  # idle/dim behaviour testable without a finger, and gives HA a "light the panel now" control.
   - platform: template
     name: Wake screen
     id: wake_button
     on_press:
       - script.execute: inactivity_timer
 
-  - platform: template
-    name: Next image
-    id: next_image_button
-    on_press:
-      - script.execute: show_random_photo
+# ---------------------------------------------------------------- clock
+# Local time comes from Home Assistant over the native API, so the panel inherits HA's
+# timezone and its DST rules instead of carrying a POSIX TZ string that has to be revisited
+# twice a year. The minute trigger is what repaints the clock, and it doubles as a
+# once-a-minute readout of every value on the page (the panel has no other way to report
+# what it is actually showing).
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time:
+      - seconds: 0
+        then:
+          - lambda: |-
+              ESP_LOGI("bms", "soc=%.0f V=%.2f I=%+.1f T=%.1f local=%.0f%%",
+                       id(bms_soc).state, id(bms_v).state, id(bms_i).state,
+                       id(bms_t).state, id(batt_pct).state);
+          - component.update: my_display
 
 # ---------------------------------------------------------------- battery sense
 # FITTED divider is 160K/220K, NOT the 33K/100K the vendor schematic draws:
@@ -394,6 +428,41 @@ button:
 # number look flat while charging. The percentage comes from a piecewise Li-ion discharge
 # curve, approximate under load -- the panel sags the cell while it is on.
 sensor:
+  # ---- JK-BMS, imported from Home Assistant --------------------------------------------
+  # The bench pack's JK BMS is already integrated in HA (jk_bms); these import four of its
+  # entities instead of putting a second reader on the same BMS. HA pushes the live state
+  # when the panel connects and again on every change, so the panel runs no polling loop and
+  # holds no credential of its own. `internal` defaults to true for imports, so they do not
+  # turn up on the panel's own HA device page. State is NAN until that first push -- the
+  # display prints "--" rather than a number it cannot vouch for.
+  - platform: homeassistant
+    entity_id: sensor.jk_bms_jk_bms_state_of_charge
+    id: bms_soc
+    on_value:
+      then:
+        - component.update: my_display
+
+  - platform: homeassistant
+    entity_id: sensor.jk_bms_jk_bms_total_voltage
+    id: bms_v
+    on_value:
+      then:
+        - component.update: my_display
+
+  - platform: homeassistant
+    entity_id: sensor.jk_bms_jk_bms_current
+    id: bms_i
+    on_value:
+      then:
+        - component.update: my_display
+
+  - platform: homeassistant
+    entity_id: sensor.jk_bms_jk_bms_temperature_sensor_1
+    id: bms_t
+    on_value:
+      then:
+        - component.update: my_display
+
   - platform: adc
     pin: GPIO5
     id: batt_v

@@ -398,9 +398,13 @@ time:
       - seconds: 0
         then:
           - lambda: |-
-              ESP_LOGI("bms", "soc=%.0f V=%.2f I=%+.1f T=%.1f local=%.0f%%",
-                       id(bms_soc).state, id(bms_v).state, id(bms_i).state,
-                       id(bms_t).state, id(batt_pct).state);
+              // Same condition as the display lambda's page select, and it must stay that
+              // way -- this line is the only way to observe which page the panel chose.
+              const float local = id(batt_pct).state;
+              const bool low = !isnan(local) && local < ${low_batt_pct};
+              ESP_LOGI("bms", "page=%s soc=%.0f V=%.2f I=%+.1f T=%.1f local=%.0f%%",
+                       low ? "status" : "bms", id(bms_soc).state, id(bms_v).state,
+                       id(bms_i).state, id(bms_t).state, local);
           - component.update: my_display
 
 # ---------------------------------------------------------------- battery sense

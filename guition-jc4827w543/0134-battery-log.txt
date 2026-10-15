@@ -1,0 +1,68 @@
+# 0134 — battery ADC evidence (Guition JC4827W543C bench panel, 44:bd:8d:7a:cc:cc)
+
+Both captures are `esphome logs jc4827w543.yaml --device 192.168.1.72` — the ESPHome
+API log stream, which reads the device over the network and does **not** touch
+DTR/RTS, so nothing here reset the board.
+
+## BEFORE — running build compiled 2026-10-14 08:50:48 -0600, factor 1.32998
+
+    09:17:43.548 [S][sensor]: 'Battery' >> 3 %
+    09:17:43.548 [S][sensor]: 'Battery voltage' >> 3.268 V
+    09:17:53.583 [S][sensor]: 'Battery voltage' >> 3.268 V
+    09:18:03.516 [S][sensor]: 'Battery voltage' >> 3.268 V
+    09:18:13.479 [S][sensor]: 'Battery voltage' >> 3.268 V
+    09:18:23.586 [S][sensor]: 'Battery voltage' >> 3.268 V
+    09:18:34.676 [S][sensor]: 'Battery voltage' >> 3.268 V
+    09:18:43.565 [S][sensor]: 'Battery voltage' >> 3.268 V
+    09:18:53.590 [S][sensor]: 'Battery voltage' >> 3.268 V
+
+3.268 V / 1.32998 = 2.4572 V at the pin. The *node* never moved; only the factor
+applied to it was wrong.
+
+## AFTER — running build compiled 2026-10-15 09:22:58 -0600, factor 1.72727
+
+INFO ESPHome 2026.9.1
+INFO Loaded validated config cache for jc4827w543.yaml, skipping validation.
+INFO Starting log output from 192.168.1.72 using esphome API
+INFO Successfully resolved jc4827w543 @ 192.168.1.72 in 0.000s
+INFO Successfully connected to jc4827w543 @ 192.168.1.72 in 0.019s
+INFO Successful handshake with jc4827w543 @ 192.168.1.72 in 0.012s
+[09:24:14.311][I][app:151]: ESPHome version 2026.9.1 compiled on 2026-10-15 09:22:58 -0600
+[09:24:14.319][I][app:158]: ESP32 Chip: ESP32-S3 rev0.2, 2 core(s)
+[09:24:14.944][S][sensor]: 'Battery' >> 100 %
+[09:24:19.940][S][sensor]: 'Battery' >> 100 %
+[09:24:20.652][I][battery:428]: GPIO5 (ADC1_CH4) raw=2982 pin=2.4580 V batt=4.2456 V
+[09:24:20.722][S][sensor]: 'Battery voltage' >> 4.246 V
+[09:24:24.954][S][sensor]: 'Battery' >> 100 %
+[09:24:30.009][S][sensor]: 'Battery' >> 100 %
+[09:24:31.328][I][battery:428]: GPIO5 (ADC1_CH4) raw=2980 pin=2.4583 V batt=4.2462 V
+[09:24:31.328][S][sensor]: 'Battery voltage' >> 4.246 V
+[09:24:35.036][S][sensor]: 'Battery' >> 100 %
+[09:24:40.018][S][sensor]: 'Battery' >> 100 %
+[09:24:40.724][I][battery:428]: GPIO5 (ADC1_CH4) raw=2979 pin=2.4583 V batt=4.2462 V
+[09:24:40.724][S][sensor]: 'Battery voltage' >> 4.246 V
+[09:24:45.037][S][sensor]: 'Battery' >> 100 %
+[09:24:49.530][I][safe_mode:154]: Boot seems successful; resetting boot loop counter
+[09:24:50.042][S][sensor]: 'Battery' >> 100 %
+[09:24:52.500][I][online_image:140]: Downloading image (Size: 11787)
+[09:24:52.655][W][component:419]: inactivity_timer took a long time for an operation (2448 ms), max is 50 ms
+[09:24:52.655][S][light]: 'Display Backlight' >> ON
+[09:24:52.655][S][light]:   Brightness: 60%
+[09:24:52.655][S][light]:   Red: 100%, Green: 100%, Blue: 100%
+[09:24:53.240][W][component:419]: online_image.image took a long time for an operation (610 ms), max is 50 ms
+[09:24:53.249][I][battery:428]: GPIO5 (ADC1_CH4) raw=2982 pin=2.4587 V batt=4.2468 V
+[09:24:53.611][S][sensor]: 'Battery voltage' >> 4.247 V
+[09:24:55.163][W][component:419]: template.sensor took a long time for an operation (340 ms), max is 150 ms
+[09:24:55.164][S][sensor]: 'Battery' >> 100 %
+[09:25:00.134][S][sensor]: 'Battery' >> 100 %
+[09:25:03.252][I][battery:428]: GPIO5 (ADC1_CH4) raw=2981 pin=2.4587 V batt=4.2468 V
+[09:25:03.355][S][sensor]: 'Battery voltage' >> 4.247 V
+[09:25:05.129][S][sensor]: 'Battery' >> 100 %
+[09:25:10.131][S][sensor]: 'Battery' >> 100 %
+[09:25:13.247][I][battery:428]: GPIO5 (ADC1_CH4) raw=2981 pin=2.4593 V batt=4.2479 V
+[09:25:13.345][S][sensor]: 'Battery voltage' >> 4.248 V
+[09:25:15.138][S][sensor]: 'Battery' >> 100 %
+[09:25:20.147][S][sensor]: 'Battery' >> 100 %
+[09:25:23.243][I][battery:428]: GPIO5 (ADC1_CH4) raw=2979 pin=2.4590 V batt=4.2474 V
+[09:25:23.350][S][sensor]: 'Battery voltage' >> 4.247 V
+[09:25:25.130][S][sensor]: 'Battery' >> 100 %

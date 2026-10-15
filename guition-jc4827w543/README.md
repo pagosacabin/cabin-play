@@ -127,7 +127,43 @@ reading's own noise (±15 mV), and it flapped CHG/BATT ~50 times across a single
 bulk-charge, load-step, resting-cell, unplug and boot cases, and fails on flapping. Run it after
 touching either threshold.
 
-Two honest caveats left in place: the reading is load-sagged (the backlight alone moves it
-~30 mV, about 5 points on the Li-ion curve), so the percentage reads a few points **low** on
-battery; and the recorded history contains a two-minute 4.25 → 3.04 V excursion mid-charge that
-briefly flips the label — bounded, not hidden, by the test.
+Two honest caveats left in place: the reading is load-sagged (measured: the backlight alone
+moves it 39 mV, about 6.5 points on the Li-ion curve) and only the *load-proportional* part of
+that is compensated — see the next section; and the recorded history contains a two-minute
+4.25 → 3.04 V excursion mid-charge that briefly flips the label — bounded, not hidden, by the
+test.
+
+## Load-sag compensation
+
+The SoC curve is a *resting*-voltage curve, but the reading is the cell's terminal voltage under
+this panel's own load, so the percentage sits low. The backlight is the largest single load and
+its duty is known to the firmware, so that part of the sag is added back before the curve lookup:
+
+```
+V_rest ≈ V_measured + batt_sag_v_per_duty × duty      (duty: 0 = off, 1 = full)
+```
+
+| | |
+|---|---|
+| Constant | `batt_sag_v_per_duty`, in `substitutions:` — measured **0.0392** on this board |
+| Measured by | `tools/calibrate_batt_sag.py` |
+| Applied | in the `batt_pct` lambda, and only when **not** charging |
+
+On this board the measured result was **39 mV at full duty** (100 %: 3.8478 V bracketed, 0 %:
+3.8869 V), which is ~6.5 points of state of charge.
+
+**The measurement is slow on purpose (25 min).** A Li-ion cell does not step to a new voltage
+when its load changes — it relaxes over minutes — so a short settle measures the transient rather
+than the sag. The first version of the tool used 60 s settles and reported 0 % and 50 % duty
+within 1.4 mV of each other, with 26 mV of movement still inside its own sampling window. On top
+of that the panel drains its cell at a few mV/min, which across one phase is comparable to the
+sag being measured; so the tool holds full duty *either side* of the unloaded phase and averages
+them, which makes the cell's own discharge common to both and cancels it. On this board that
+drift measured **40.9 mV across the run — larger than the 39 mV sag being measured**, so the
+bracketing is not a refinement here, it is the difference between a number and a coincidence.
+
+**Not compensated:** the constant part of the sag — ESP32, WiFi, DC-DC, none of which switch off
+— cannot be separated from the cell's true resting voltage by this ADC alone; only a multimeter
+at rest can tell them apart. Expect the reading to stay a point or two low. Linearity in duty is
+assumed: true for PWM'd LED current, and the only duties this panel uses in anger are 1.0 and the
+idle dim level.

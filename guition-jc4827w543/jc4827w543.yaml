@@ -18,6 +18,14 @@ substitutions:
   # says "charge me" instead of showing cabin data it cannot keep live. Left unquoted on
   # purpose: it is substituted into the display lambda as a C++ literal.
   low_batt_pct: 10
+  # Load-sag compensation for the panel's own cell, in volts per unit of backlight duty
+  # (0 = off, 1 = full). The SoC curve below is a RESTING-voltage curve, but the reading is the
+  # cell's terminal voltage under this panel's own load, so it sits low; the backlight is the
+  # largest single load and its duty is known, so that part is added back. Measured on this board
+  # by tools/calibrate_batt_sag.py: 39 mV at full duty, ~6.5 points of state of charge. The
+  # constant part of the sag (ESP32 + WiFi, which never switch off) stays uncompensated -- the
+  # ADC alone cannot separate it from the cell's true resting voltage.
+  batt_sag_v_per_duty: "0.0392"
 
 esphome:
   name: ${name}
@@ -631,6 +639,16 @@ sensor:
       static const float p[] = {  0.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0};
       float x = id(batt_v).state;
       if (isnan(x)) return NAN;
+      // The curve above is a RESTING-voltage curve, but this reading is the cell's terminal
+      // voltage under the panel's own load, so it sits a few points low. The backlight is the
+      // largest single load and its duty is known to the firmware, so add that part of the sag
+      // back (constant is measured, see tools/calibrate_batt_sag.py). Not applied while
+      // charging: there the reading is the charger's net rather than a loaded cell, and the
+      // header masks the number anyway.
+      if (!id(batt_charging)) {
+        const auto &bl = id(display_backlight).current_values;
+        x += ${batt_sag_v_per_duty} * (bl.is_on() ? bl.get_brightness() : 0.0f);
+      }
       if (x <= v[0]) return 0.0f;
       if (x >= v[11]) return 100.0f;
       for (int i = 0; i < 11; i++) {

@@ -43,9 +43,9 @@ WHITE = (255, 255, 255)
 
 # --- dial geometry (must match the lambda) -------------------------------------------
 CX, CY = 240, 122
-R_IN, R_OUT = 54, 66
+R_MID, DISC_R = 60, 6                 # ring is 2*DISC_R thick (r 54..66), centred on R_MID
 SWEEP_START, SWEEP_DEG = 120, 300     # 0 deg = 3 o'clock, positive = clockwise on screen
-SEG_DEG = 3                           # 300 deg / 3 = 100 segments = exactly 1 % of SOC each
+SEG_DEG = 3                           # disc spacing along the arc
 
 # --- values to draw (edit these to check other states) -------------------------------
 BMS = dict(soc=86.0, volts=54.54, amps=29.4, temp=58.5, local=91.0, clock='11:19', date='Wed 15 Oct')
@@ -62,34 +62,28 @@ def text_w(s, px):
 
 
 def pill(d, x, y, w, h, c):
-    """LCARS pill: straight body plus a filled circle at each end."""
-    r = h // 2
-    d.rectangle([x + r, y, x + w - r, y + h], fill=c)
-    d.ellipse([x, y, x + 2 * r, y + h], fill=c)
-    d.ellipse([x + w - 2 * r, y, x + w, y + h], fill=c)
+    """LCARS pill: body plus a disc capping each end.
+
+    h must be odd. ESPHome's filled_circle covers 2r+1 px, so h = 2r+1 makes each cap box
+    exactly the end h x h cells of the pill; an even height overhangs by a pixel at each end.
+    """
+    r = (h - 1) // 2
+    d.rectangle([x + r, y, x + w - 1 - r, y + h - 1], fill=c)
+    d.ellipse([x, y, x + 2 * r, y + 2 * r], fill=c)
+    d.ellipse([x + w - 1 - 2 * r, y, x + w - 1, y + 2 * r], fill=c)
 
 
 def dial(d, soc):
-    """Ring drawn as filled quads, SEG_DEG degrees each (the lambda draws the same quad as
-    two filled_triangle calls). Spokes of 1 deg looked striped on the glass; quads share
-    their radial edges, so there is nothing between them to show through."""
+    """A chain of overlapping discs along the arc, as the lambda draws it: discs cannot seam
+    (the quad version left 1 px gaps along shared edges) and their round ends come free."""
     lit = SALMON if soc < 25 else GOLD
     frac = max(0.0, min(100.0, soc)) / 100.0
-    for a in range(SWEEP_START, SWEEP_START + SWEEP_DEG, SEG_DEG):
-        mid = (a + SEG_DEG / 2 - SWEEP_START) / SWEEP_DEG
-        c = lit if mid <= frac else DIM
-        pts = []
-        for ang, r in ((a, R_IN), (a, R_OUT), (a + SEG_DEG, R_OUT), (a + SEG_DEG, R_IN)):
-            ra = math.radians(ang)
-            pts.append((CX + r * math.cos(ra), CY + r * math.sin(ra)))
-        d.polygon(pts, fill=c)
-    # round off the two sweep ends, each taking the colour of the segment it terminates
-    cap_mid, cap_r = (R_IN + R_OUT) // 2, (R_OUT - R_IN) // 2
-    for ang, colour in ((SWEEP_START, lit if frac > 0 else DIM),
-                        (SWEEP_START + SWEEP_DEG, lit if frac >= 1 else DIM)):
-        ra = math.radians(ang)
-        x, y = CX + cap_mid * math.cos(ra), CY + cap_mid * math.sin(ra)
-        d.ellipse([x - cap_r, y - cap_r, x + cap_r, y + cap_r], fill=colour)
+    for a in range(SWEEP_START, SWEEP_START + SWEEP_DEG + 1, SEG_DEG):
+        f = (a - SWEEP_START) / SWEEP_DEG
+        c = lit if f <= frac else DIM
+        ra = math.radians(a)
+        x, y = CX + R_MID * math.cos(ra), CY + R_MID * math.sin(ra)
+        d.ellipse([x - DISC_R, y - DISC_R, x + DISC_R, y + DISC_R], fill=c)
 
 
 def render_bms(v):
@@ -98,9 +92,9 @@ def render_bms(v):
 
     # --- top band: panel cell + clock ---
     # 20 pt, not 24: at arm's length the header is a status strip, not a headline.
-    pill(d, 8, 4, 168, 28, ORANGE)
+    pill(d, 8, 4, 168, 27, ORANGE)
     d.text((8 + 84, 7), 'PANEL %.0f%%' % v['local'], font=font(20), fill=INK, anchor='mt')
-    pill(d, 304, 4, 168, 28, BLUE)
+    pill(d, 304, 4, 168, 27, BLUE)
     d.text((304 + 84, 7), v['clock'], font=font(20), fill=INK, anchor='mt')
     # LCARS frames join their blocks rather than floating them: a bar across the gap
     # between the two pills, and a rule closing the header off from the dial.
@@ -119,14 +113,14 @@ def render_bms(v):
     d.text((464, CY), v['date'], font=font(16), fill=LAVENDER, anchor='rm')
     for probe in ('9', '86', '100'):
         print('  soc %-4s -> %3d px wide, clearance to the inner ring: %+d px'
-              % (probe, text_w(probe, 48), R_IN - text_w(probe, 48) / 2))
+              % (probe, text_w(probe, 48), (R_MID - DISC_R) - text_w(probe, 48) / 2))
 
     # --- three data pills under the dial, columns flush with the header and footer ---
     cols = [(8, 150, BLUE, 'PACK V', '%.2f V' % v['volts']),
             (164, 151, GOLD, 'CHARGE' if v['amps'] >= 0 else 'DISCHG', '%+.1f A' % v['amps']),
             (321, 151, LAVENDER, 'TEMP', '%.1f F' % v['temp'])]
     for x, w, colour, label, value in cols:
-        pill(d, x, 192, w, 22, colour)
+        pill(d, x, 192, w, 21, colour)
         d.text((x + w // 2, 195), label, font=font(16), fill=INK, anchor='mt')
         d.text((x + w // 2, 218), value, font=font(28), fill=WHITE, anchor='mt')
 

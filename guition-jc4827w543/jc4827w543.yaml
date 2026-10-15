@@ -260,14 +260,20 @@ display:
           BLUE(153, 153, 204), SALMON(204, 102, 102), TAN(204, 153, 102),
           DIM(44, 44, 80), INK(0, 0, 0);
 
-      // An LCARS pill: straight body capped by a filled circle at each end. Text drawn on
-      // one must be printed with the pill colour as its `background`, because the font
-      // blends glyph edges against that colour -- black would ring every letter.
+      // An LCARS pill: straight body, a filled circle capping each end. Text drawn on one must
+      // be printed with the pill colour as its `background`, because the font blends glyph
+      // edges against that colour -- black would ring every letter.
+      //
+      // The heights are ODD on purpose: filled_circle covers 2r+1 px (its loop starts at
+      // dx = -radius and draws 2*(-dx)+1 across), so with an even height the caps overhang the
+      // body by a pixel above, below and past each end -- visible on every pill on the page.
+      // With h = 2r+1 and the caps centred r in from each end, the cap boxes are exactly the
+      // end h x h cells of the pill.
       auto pill = [&](int x, int y, int w, int h, Color c) {
-        const int r = h / 2;
+        const int r = (h - 1) / 2;
         it.filled_rectangle(x + r, y, w - 2 * r, h, c);
         it.filled_circle(x + r, y + r, r, c);
-        it.filled_circle(x + w - r, y + r, r, c);
+        it.filled_circle(x + w - 1 - r, y + r, r, c);
       };
 
       char buf[64];
@@ -278,12 +284,12 @@ display:
       // not reported yet.
       if (isnan(local)) snprintf(buf, sizeof(buf), "PANEL --");
       else snprintf(buf, sizeof(buf), "PANEL %.0f%%", local);
-      pill(8, 4, 168, 28, ORANGE);
+      pill(8, 4, 168, 27, ORANGE);
       it.print(8 + 84, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, ORANGE);
 
       if (have_time) snprintf(buf, sizeof(buf), "%s", id(ha_time).now().strftime("%H:%M").c_str());
       else snprintf(buf, sizeof(buf), "--:--");
-      pill(304, 4, 168, 28, BLUE);
+      pill(304, 4, 168, 27, BLUE);
       it.print(304 + 84, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, BLUE);
 
       // LCARS frames join their blocks instead of floating them: a bar across the gap
@@ -291,33 +297,23 @@ display:
       it.filled_rectangle(184, 15, 112, 6, TAN);
       it.filled_rectangle(8, 38, 464, 3, TAN);
 
-      // The dial: 3-degree quads (two triangles each), 100 of them, so one segment is exactly
-      // 1 % of state of charge. Spokes 1 degree apart read as stripes on the glass; quads
-      // share their radial edges, so nothing shows between them and both circular edges stay
-      // smooth. Salmon under 25% is the only place this page raises its voice.
+      // The dial: a chain of overlapping discs along the arc. Two earlier attempts are worth
+      // not repeating -- 1 deg radial spokes read as stripes, and 3 deg quads (two
+      // filled_triangle calls each) left 1 px seams along the shared edges, which show up as
+      // dark slivers in a bright arc. Overlapping discs of the same colour cannot seam, and
+      // they give the round ends for free: no separate end caps. The ring is 2*disc_r thick,
+      // centred on r_mid, so r_in = r_mid - disc_r and r_out = r_mid + disc_r.
+      // Salmon under 25% is the only place this page raises its voice.
       const float soc = id(bms_soc).state;
-      const int cx = 240, cy = 122, r_in = 54, r_out = 66;
+      const int cx = 240, cy = 122, r_mid = 60, disc_r = 6;
       const Color lit = (!isnan(soc) && soc < 25.0f) ? SALMON : GOLD;
       const float frac = isnan(soc) ? 0.0f : (soc < 0.0f ? 0.0f : (soc > 100.0f ? 100.0f : soc)) / 100.0f;
       const float RAD = 0.0174532925f;
-      for (int a = 120; a < 420; a += 3) {        // 120..420 = 300 deg, gap centred at the bottom
-        const float seg_mid = (a + 1.5f - 120.0f) / 300.0f;
-        const Color c = (seg_mid <= frac) ? lit : DIM;
-        const float a0 = a * RAD, a1 = (a + 3) * RAD;
-        const int x1 = cx + r_in * std::cos(a0),  y1 = cy + r_in * std::sin(a0);
-        const int x2 = cx + r_out * std::cos(a0), y2 = cy + r_out * std::sin(a0);
-        const int x3 = cx + r_out * std::cos(a1), y3 = cy + r_out * std::sin(a1);
-        const int x4 = cx + r_in * std::cos(a1),  y4 = cy + r_in * std::sin(a1);
-        it.filled_triangle(x1, y1, x2, y2, x3, y3, c);
-        it.filled_triangle(x1, y1, x3, y3, x4, y4, c);
+      for (int a = 120; a <= 420; a += 3) {       // 120..420 = 300 deg, gap centred at the bottom
+        const float f = (a - 120) / 300.0f;
+        it.filled_circle(cx + r_mid * std::cos(a * RAD), cy + r_mid * std::sin(a * RAD), disc_r,
+                         (f <= frac) ? lit : DIM);
       }
-      // Round off the two sweep ends. A blunt radial cut reads as a rough edge on a gauge --
-      // each cap takes the colour of the segment it terminates.
-      const int cap_mid = (r_in + r_out) / 2, cap_r = (r_out - r_in) / 2;
-      it.filled_circle(cx + cap_mid * std::cos(120 * RAD), cy + cap_mid * std::sin(120 * RAD), cap_r,
-                       (frac > 0.0f) ? lit : DIM);
-      it.filled_circle(cx + cap_mid * std::cos(420 * RAD), cy + cap_mid * std::sin(420 * RAD), cap_r,
-                       (frac >= 1.0f) ? lit : DIM);
       // Nothing but the number goes inside the ring: at 48 pt a 3-digit reading plus "%" is
       // wider than the inner diameter, and a label under it crosses the lower arms. The unit
       // rides on the left-hand label, and the two dead bands beside the dial carry the label
@@ -335,7 +331,7 @@ display:
       // the footer. The current's label follows the sign: the BMS reports charge positive,
       // discharge negative, so 49 A out is not labelled CHARGE.
       auto datum = [&](int x, int w, Color bar, const char *label, const char *value) {
-        pill(x, 192, w, 22, bar);
+        pill(x, 192, w, 21, bar);
         it.print(x + w / 2, 195, id(roboto_16), INK, TextAlign::TOP_CENTER, label, bar);
         it.print(x + w / 2, 218, id(roboto_28), COLOR_ON, TextAlign::TOP_CENTER, value);
       };

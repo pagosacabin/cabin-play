@@ -1,0 +1,40 @@
+# Build log (excerpt) - PlatformIO, target esp32dev (classic ESP32-WROOM-32)
+#
+# Reproduce with:
+#   cd living-frame/firmware/vga-proof && pio run
+#
+# Full log: 166 lines. Lines elided below are the per-object 'Compiling ...'
+# and 'Archiving ...' lines only: 64 objects compiled, 12 warnings, all of them
+# the vendored ESP32Lib's pre-existing '-Wpointer-arith' notes. No warning or
+# error comes from src/main.cpp.
+
+Processing esp32dev (platform: espressif32@6.12.0; board: esp32dev; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32dev.html
+PLATFORM: Espressif 32 (6.12.0) > Espressif ESP32 Dev Module
+HARDWARE: ESP32 240MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 2.40900.250804 (4.9.0) 
+ - toolchain-xtensa-esp32 @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 34 compatible libraries
+Scanning dependencies...
+Compiling .pio/build/esp32dev/src/main.cpp.o
+... (63 x Compiling / Archiving lines elided) ...
+Linking .pio/build/esp32dev/firmware.elf
+Retrieving maximum program size .pio/build/esp32dev/firmware.elf
+Checking size .pio/build/esp32dev/firmware.elf
+Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
+RAM:   [=         ]   7.1% (used 23128 bytes from 327680 bytes)
+Flash: [==        ]  24.0% (used 315009 bytes from 1310720 bytes)
+Building .pio/build/esp32dev/firmware.bin
+esptool.py v4.9.0
+Creating esp32 image...
+Merged 2 ELF sections
+Successfully created esp32 image.
+========================= [SUCCESS] Took 6.18 seconds =========================
+

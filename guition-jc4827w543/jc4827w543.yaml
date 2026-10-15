@@ -258,7 +258,7 @@ display:
       // pack state of charge as a 300-degree dial, and three labelled data pills under it.
       const Color ORANGE(255, 156, 0), GOLD(255, 204, 102), LAVENDER(204, 153, 204),
           BLUE(153, 153, 204), SALMON(204, 102, 102), TAN(204, 153, 102),
-          DIM(32, 32, 64), INK(0, 0, 0);
+          DIM(44, 44, 80), INK(0, 0, 0);
 
       // An LCARS pill: straight body capped by a filled circle at each end. Text drawn on
       // one must be printed with the pill colour as its `background`, because the font
@@ -289,7 +289,7 @@ display:
       // LCARS frames join their blocks instead of floating them: a bar across the gap
       // between the two pills, and a rule closing the header off from the dial.
       it.filled_rectangle(184, 15, 112, 6, TAN);
-      it.filled_rectangle(8, 38, 464, 2, TAN);
+      it.filled_rectangle(8, 38, 464, 3, TAN);
 
       // The dial: 3-degree quads (two triangles each), 100 of them, so one segment is exactly
       // 1 % of state of charge. Spokes 1 degree apart read as stripes on the glass; quads
@@ -311,6 +311,13 @@ display:
         it.filled_triangle(x1, y1, x2, y2, x3, y3, c);
         it.filled_triangle(x1, y1, x3, y3, x4, y4, c);
       }
+      // Round off the two sweep ends. A blunt radial cut reads as a rough edge on a gauge --
+      // each cap takes the colour of the segment it terminates.
+      const int cap_mid = (r_in + r_out) / 2, cap_r = (r_out - r_in) / 2;
+      it.filled_circle(cx + cap_mid * std::cos(120 * RAD), cy + cap_mid * std::sin(120 * RAD), cap_r,
+                       (frac > 0.0f) ? lit : DIM);
+      it.filled_circle(cx + cap_mid * std::cos(420 * RAD), cy + cap_mid * std::sin(420 * RAD), cap_r,
+                       (frac >= 1.0f) ? lit : DIM);
       // Nothing but the number goes inside the ring: at 48 pt a 3-digit reading plus "%" is
       // wider than the inner diameter, and a label under it crosses the lower arms. The unit
       // rides on the left-hand label, and the two dead bands beside the dial carry the label

@@ -45,7 +45,10 @@ a row of coloured blocks along the bottom. Palette: `#FF9C00` orange, `#FFCC66` 
 - The dial is a 300° ring with the gap at the bottom, drawn as 3° quads (two filled triangles
   each) — 100 of them, so one segment is exactly 1 % of state of charge. Radial spokes 1°
   apart were tried first and read as stripes on the glass; quads share their radial edges, so
-  nothing shows between them and both circular edges stay smooth. The arc turns salmon below
+  nothing shows between them and both circular edges stay smooth. The two sweep ends are
+  rounded off with a filled circle each (a blunt radial cut reads as an unfinished gauge),
+  and the unlit remainder sits at `#2C2C50` rather than a near-black navy so the dial still
+  reads as a gauge when the state of charge is low. The arc turns salmon below
   25 % — the only place the page raises its voice. The ring carries **no** unit sign and
   nothing else inside it: at 48 pt a 3-digit reading plus `%` is wider than the inner
   diameter, and a label under the number crosses the ring's lower arms. The unit rides on

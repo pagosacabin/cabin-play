@@ -37,7 +37,7 @@ BLUE = (153, 153, 204)
 SALMON = (204, 102, 102)
 TAN = (204, 153, 102)
 GREEN = (153, 204, 153)
-DIM = (32, 32, 64)          # unlit arc segments
+DIM = (44, 44, 80)          # unlit arc segments
 INK = (0, 0, 0)             # text sitting on a lit pill
 WHITE = (255, 255, 255)
 
@@ -83,6 +83,13 @@ def dial(d, soc):
             ra = math.radians(ang)
             pts.append((CX + r * math.cos(ra), CY + r * math.sin(ra)))
         d.polygon(pts, fill=c)
+    # round off the two sweep ends, each taking the colour of the segment it terminates
+    cap_mid, cap_r = (R_IN + R_OUT) // 2, (R_OUT - R_IN) // 2
+    for ang, colour in ((SWEEP_START, lit if frac > 0 else DIM),
+                        (SWEEP_START + SWEEP_DEG, lit if frac >= 1 else DIM)):
+        ra = math.radians(ang)
+        x, y = CX + cap_mid * math.cos(ra), CY + cap_mid * math.sin(ra)
+        d.ellipse([x - cap_r, y - cap_r, x + cap_r, y + cap_r], fill=colour)
 
 
 def render_bms(v):
@@ -98,7 +105,7 @@ def render_bms(v):
     # LCARS frames join their blocks rather than floating them: a bar across the gap
     # between the two pills, and a rule closing the header off from the dial.
     d.rectangle([184, 15, 296, 20], fill=TAN)
-    d.rectangle([8, 38, 472, 39], fill=TAN)
+    d.rectangle([8, 38, 472, 40], fill=TAN)
 
     # --- dial, with its label and the date bookending it ---
     # The number is drawn WITHOUT the % sign and with nothing else inside the ring: at

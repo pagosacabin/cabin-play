@@ -42,14 +42,21 @@ body capped by a filled circle at each end), a tan bar joining the two header pi
 a row of coloured blocks along the bottom. Palette: `#FF9C00` orange, `#FFCC66` gold,
 `#9999CC` blue, `#CC99CC` lavender, `#CC6666` salmon, `#CC9966` tan.
 
-- The dial is a 300° ring with the gap at the bottom, drawn as radial spokes 1° apart whose
-  lit ones stop at the state of charge; the unlit remainder is a solid dim-navy ring (a disc
-  with its middle punched out) so it cannot show hairline gaps. The arc turns salmon below
+- The dial is a 300° ring with the gap at the bottom, drawn as 3° quads (two filled triangles
+  each) — 100 of them, so one segment is exactly 1 % of state of charge. Radial spokes 1°
+  apart were tried first and read as stripes on the glass; quads share their radial edges, so
+  nothing shows between them and both circular edges stay smooth. The arc turns salmon below
   25 % — the only place the page raises its voice. The ring carries **no** unit sign and
   nothing else inside it: at 48 pt a 3-digit reading plus `%` is wider than the inner
   diameter, and a label under the number crosses the ring's lower arms. The unit rides on
   the left-hand `PACK SOC %` label, and the two dead bands beside the dial carry that label
   and the date.
+- Type sizes are named for what they are: `roboto_48` the dial number, `roboto_28` the data
+  values, `roboto_24` the status page, `roboto_hdr` (20 pt) the header pills, `roboto_16`
+  labels and the date. The header is deliberately the smallest type on the page — at arm's
+  length it is a status strip, not a headline.
+- The three data pills' outer edges line up with the header pills and the footer blocks, so
+  the page has two clean columns of structure rather than three slightly different ones.
 - Text printed on a pill must be given the pill's own colour as its `background`: ESPHome's
   font blends glyph edges against that colour, so the default black would ring every letter.
 - The threshold is the `low_batt_pct` substitution. Below it the BMS page is replaced —

@@ -237,13 +237,13 @@ display:
       // always shown: what it is, and what its own cell is doing. Cabin data is worthless on
       // a panel that is about to die.
       if (!isnan(local) && local < ${low_batt_pct}) {
-        it.print(240, 24, id(roboto_20), TextAlign::CENTER, "JC4827W543 up");
+        it.print(240, 24, id(roboto_24), TextAlign::CENTER, "JC4827W543 up");
         if (!isnan(local)) {
           char sbuf[48];
           snprintf(sbuf, sizeof(sbuf), "BAT %3.0f%%   %.2f V", local, id(batt_v).state);
-          it.print(240, 84, id(roboto_20), TextAlign::CENTER, sbuf);
+          it.print(240, 84, id(roboto_24), TextAlign::CENTER, sbuf);
         } else {
-          it.print(240, 84, id(roboto_20), TextAlign::CENTER, "BAT --");
+          it.print(240, 84, id(roboto_24), TextAlign::CENTER, "BAT --");
         }
         const int bx = 170, by = 150, bw = 120, bh = 52, nub = 8, pad = 4;
         it.rectangle(bx, by, bw, bh, COLOR_ON);
@@ -273,37 +273,43 @@ display:
       char buf[64];
       const bool have_time = id(ha_time).now().is_valid();
 
-      // Header: the panel's own cell and the clock. Both blank rather than fake when their
-      // source has not reported yet.
+      // Header: the panel's own cell and the clock, 20 pt PILL type -- at arm's length this
+      // is a status strip, not a headline. Both blank rather than fake when their source has
+      // not reported yet.
       if (isnan(local)) snprintf(buf, sizeof(buf), "PANEL --");
       else snprintf(buf, sizeof(buf), "PANEL %.0f%%", local);
-      pill(8, 6, 168, 32, ORANGE);
-      it.print(8 + 84, 11, id(roboto_20), INK, TextAlign::TOP_CENTER, buf, ORANGE);
+      pill(8, 4, 168, 28, ORANGE);
+      it.print(8 + 84, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, ORANGE);
 
       if (have_time) snprintf(buf, sizeof(buf), "%s", id(ha_time).now().strftime("%H:%M").c_str());
       else snprintf(buf, sizeof(buf), "--:--");
-      pill(304, 6, 168, 32, BLUE);
-      it.print(304 + 84, 11, id(roboto_20), INK, TextAlign::TOP_CENTER, buf, BLUE);
+      pill(304, 4, 168, 28, BLUE);
+      it.print(304 + 84, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, BLUE);
 
       // LCARS frames join their blocks instead of floating them: a bar across the gap
       // between the two pills, and a rule closing the header off from the dial.
-      it.filled_rectangle(184, 19, 112, 6, TAN);
-      it.filled_rectangle(8, 44, 464, 2, TAN);
+      it.filled_rectangle(184, 15, 112, 6, TAN);
+      it.filled_rectangle(8, 38, 464, 2, TAN);
 
-      // The dial: spokes 1 degree apart make the ring; the lit ones stop at state of charge.
-      // Salmon under 25% is the only place this page raises its voice.
+      // The dial: 3-degree quads (two triangles each), 100 of them, so one segment is exactly
+      // 1 % of state of charge. Spokes 1 degree apart read as stripes on the glass; quads
+      // share their radial edges, so nothing shows between them and both circular edges stay
+      // smooth. Salmon under 25% is the only place this page raises its voice.
       const float soc = id(bms_soc).state;
-      const int cx = 240, cy = 126, r_in = 50, r_out = 64;
+      const int cx = 240, cy = 122, r_in = 54, r_out = 66;
       const Color lit = (!isnan(soc) && soc < 25.0f) ? SALMON : GOLD;
       const float frac = isnan(soc) ? 0.0f : (soc < 0.0f ? 0.0f : (soc > 100.0f ? 100.0f : soc)) / 100.0f;
-      // The unlit part of the ring is drawn solid (a disc with the middle punched out) so it
-      // cannot show hairline gaps between spokes; only the lit arc is spoked, where the
-      // spokes overlap each other.
-      it.filled_circle(cx, cy, r_out, DIM);
-      it.filled_circle(cx, cy, r_in - 1, COLOR_OFF);
-      for (int a = 120; a <= 420; a++) {          // 120..420 = 300 deg, gap centred at the bottom
-        const float f = (a - 120) / 300.0f;
-        if (f <= frac) it.line_at_angle(cx, cy, a, r_in, r_out, lit);
+      const float RAD = 0.0174532925f;
+      for (int a = 120; a < 420; a += 3) {        // 120..420 = 300 deg, gap centred at the bottom
+        const float seg_mid = (a + 1.5f - 120.0f) / 300.0f;
+        const Color c = (seg_mid <= frac) ? lit : DIM;
+        const float a0 = a * RAD, a1 = (a + 3) * RAD;
+        const int x1 = cx + r_in * std::cos(a0),  y1 = cy + r_in * std::sin(a0);
+        const int x2 = cx + r_out * std::cos(a0), y2 = cy + r_out * std::sin(a0);
+        const int x3 = cx + r_out * std::cos(a1), y3 = cy + r_out * std::sin(a1);
+        const int x4 = cx + r_in * std::cos(a1),  y4 = cy + r_in * std::sin(a1);
+        it.filled_triangle(x1, y1, x2, y2, x3, y3, c);
+        it.filled_triangle(x1, y1, x3, y3, x4, y4, c);
       }
       // Nothing but the number goes inside the ring: at 48 pt a 3-digit reading plus "%" is
       // wider than the inner diameter, and a label under it crosses the lower arms. The unit
@@ -318,38 +324,40 @@ display:
                  id(ha_time).now().strftime("%a %d %b").c_str());
       }
 
-      // Three data pills under the dial. The current's label follows the sign: the BMS
-      // reports charge positive, discharge negative, so 49 A out is not labelled CHARGE.
+      // Three data pills under the dial, their outer edges flush with the header pills and
+      // the footer. The current's label follows the sign: the BMS reports charge positive,
+      // discharge negative, so 49 A out is not labelled CHARGE.
       auto datum = [&](int x, int w, Color bar, const char *label, const char *value) {
-        pill(x, 196, w, 22, bar);
-        it.print(x + w / 2, 199, id(roboto_16), INK, TextAlign::TOP_CENTER, label, bar);
-        it.print(x + w / 2, 222, id(roboto_28), COLOR_ON, TextAlign::TOP_CENTER, value);
+        pill(x, 192, w, 22, bar);
+        it.print(x + w / 2, 195, id(roboto_16), INK, TextAlign::TOP_CENTER, label, bar);
+        it.print(x + w / 2, 218, id(roboto_28), COLOR_ON, TextAlign::TOP_CENTER, value);
       };
       if (isnan(id(bms_v).state)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.2f V", id(bms_v).state);
-      datum(8, 148, BLUE, "PACK V", buf);
+      datum(8, 150, BLUE, "PACK V", buf);
 
       const float cur = id(bms_i).state;
       if (isnan(cur)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%+.1f A", cur);
-      datum(166, 148, GOLD, (isnan(cur) || cur >= 0.0f) ? "CHARGE" : "DISCHG", buf);
+      datum(164, 151, GOLD, (isnan(cur) || cur >= 0.0f) ? "CHARGE" : "DISCHG", buf);
 
       if (isnan(id(bms_t).state)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.1f F", id(bms_t).state);
-      datum(324, 148, LAVENDER, "TEMP", buf);
+      datum(321, 151, LAVENDER, "TEMP", buf);
 
       // LCARS footer: a row of coloured blocks.
       const int fw[5] = {120, 80, 60, 100, 80};
       const Color fc[5] = {ORANGE, GOLD, SALMON, BLUE, LAVENDER};
       int bx = 8;
       for (int i = 0; i < 5; i++) {
-        it.filled_rectangle(bx, 258, fw[i], 6, fc[i]);
+        it.filled_rectangle(bx, 256, fw[i], 6, fc[i]);
         bx += fw[i] + 6;
       }
 
 font:
-  # 48pt: the state-of-charge number inside the dial. 28pt: the three data values. 24pt: the
-  # header pills and the fallback status page. 16pt: field labels and the date.
+  # Sizes named for what they are: 48pt the state-of-charge number inside the dial, 28pt the
+  # three data values, 24pt the fallback status page, 20pt the header pills, 16pt field
+  # labels and the date.
   - file: "gfonts://Roboto"
     id: roboto_48
     size: 48
@@ -357,8 +365,11 @@ font:
     id: roboto_28
     size: 28
   - file: "gfonts://Roboto"
-    id: roboto_20
+    id: roboto_24
     size: 24
+  - file: "gfonts://Roboto"
+    id: roboto_hdr
+    size: 20
   - file: "gfonts://Roboto"
     id: roboto_16
     size: 16

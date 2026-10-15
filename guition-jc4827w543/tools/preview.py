@@ -42,9 +42,10 @@ INK = (0, 0, 0)             # text sitting on a lit pill
 WHITE = (255, 255, 255)
 
 # --- dial geometry (must match the lambda) -------------------------------------------
-CX, CY = 240, 126
-R_IN, R_OUT = 50, 64
+CX, CY = 240, 122
+R_IN, R_OUT = 54, 66
 SWEEP_START, SWEEP_DEG = 120, 300     # 0 deg = 3 o'clock, positive = clockwise on screen
+SEG_DEG = 3                           # 300 deg / 3 = 100 segments = exactly 1 % of SOC each
 
 # --- values to draw (edit these to check other states) -------------------------------
 BMS = dict(soc=86.0, volts=54.54, amps=29.4, temp=58.5, local=91.0, clock='11:19', date='Wed 15 Oct')
@@ -69,30 +70,35 @@ def pill(d, x, y, w, h, c):
 
 
 def dial(d, soc):
-    """Ring drawn as radial spokes, 1 deg apart — the same call the lambda makes."""
+    """Ring drawn as filled quads, SEG_DEG degrees each (the lambda draws the same quad as
+    two filled_triangle calls). Spokes of 1 deg looked striped on the glass; quads share
+    their radial edges, so there is nothing between them to show through."""
     lit = SALMON if soc < 25 else GOLD
     frac = max(0.0, min(100.0, soc)) / 100.0
-    for a in range(SWEEP_START, SWEEP_START + SWEEP_DEG + 1):
-        f = (a - SWEEP_START) / SWEEP_DEG
-        c = lit if f <= frac else DIM
-        ra = math.radians(a)
-        d.line([(CX + R_IN * math.cos(ra), CY + R_IN * math.sin(ra)),
-                (CX + R_OUT * math.cos(ra), CY + R_OUT * math.sin(ra))], fill=c)
+    for a in range(SWEEP_START, SWEEP_START + SWEEP_DEG, SEG_DEG):
+        mid = (a + SEG_DEG / 2 - SWEEP_START) / SWEEP_DEG
+        c = lit if mid <= frac else DIM
+        pts = []
+        for ang, r in ((a, R_IN), (a, R_OUT), (a + SEG_DEG, R_OUT), (a + SEG_DEG, R_IN)):
+            ra = math.radians(ang)
+            pts.append((CX + r * math.cos(ra), CY + r * math.sin(ra)))
+        d.polygon(pts, fill=c)
 
 
 def render_bms(v):
     img = Image.new('RGB', (W, H), BG)
     d = ImageDraw.Draw(img)
 
-    # --- top band: panel cell + clock, small type on LCARS pills ---
-    pill(d, 8, 6, 168, 32, ORANGE)
-    d.text((8 + 84, 11), 'PANEL %.0f%%' % v['local'], font=font(24), fill=INK, anchor='mt')
-    pill(d, 304, 6, 168, 32, BLUE)
-    d.text((304 + 84, 11), v['clock'], font=font(24), fill=INK, anchor='mt')
+    # --- top band: panel cell + clock ---
+    # 20 pt, not 24: at arm's length the header is a status strip, not a headline.
+    pill(d, 8, 4, 168, 28, ORANGE)
+    d.text((8 + 84, 7), 'PANEL %.0f%%' % v['local'], font=font(20), fill=INK, anchor='mt')
+    pill(d, 304, 4, 168, 28, BLUE)
+    d.text((304 + 84, 7), v['clock'], font=font(20), fill=INK, anchor='mt')
     # LCARS frames join their blocks rather than floating them: a bar across the gap
     # between the two pills, and a rule closing the header off from the dial.
-    d.rectangle([184, 19, 296, 24], fill=TAN)
-    d.rectangle([8, 44, 472, 45], fill=TAN)
+    d.rectangle([184, 15, 296, 20], fill=TAN)
+    d.rectangle([8, 38, 472, 39], fill=TAN)
 
     # --- dial, with its label and the date bookending it ---
     # The number is drawn WITHOUT the % sign and with nothing else inside the ring: at
@@ -108,19 +114,19 @@ def render_bms(v):
         print('  soc %-4s -> %3d px wide, clearance to the inner ring: %+d px'
               % (probe, text_w(probe, 48), R_IN - text_w(probe, 48) / 2))
 
-    # --- three data pills under the dial ---
-    cols = [(8, 148, BLUE, 'PACK V', '%.2f V' % v['volts']),
-            (166, 148, GOLD, 'CHARGE' if v['amps'] >= 0 else 'DISCHG', '%+.1f A' % v['amps']),
-            (324, 148, LAVENDER, 'TEMP', '%.1f F' % v['temp'])]
+    # --- three data pills under the dial, columns flush with the header and footer ---
+    cols = [(8, 150, BLUE, 'PACK V', '%.2f V' % v['volts']),
+            (164, 151, GOLD, 'CHARGE' if v['amps'] >= 0 else 'DISCHG', '%+.1f A' % v['amps']),
+            (321, 151, LAVENDER, 'TEMP', '%.1f F' % v['temp'])]
     for x, w, colour, label, value in cols:
-        pill(d, x, 196, w, 22, colour)
-        d.text((x + w // 2, 199), label, font=font(16), fill=INK, anchor='mt')
-        d.text((x + w // 2, 222), value, font=font(28), fill=WHITE, anchor='mt')
+        pill(d, x, 192, w, 22, colour)
+        d.text((x + w // 2, 195), label, font=font(16), fill=INK, anchor='mt')
+        d.text((x + w // 2, 218), value, font=font(28), fill=WHITE, anchor='mt')
 
     # --- LCARS footer: a row of coloured blocks ---
     bx = 8
     for colour, bw in ((ORANGE, 120), (GOLD, 80), (SALMON, 60), (BLUE, 100), (LAVENDER, 80)):
-        d.rectangle([bx, 258, bx + bw, 263], fill=colour)
+        d.rectangle([bx, 256, bx + bw, 261], fill=colour)
         bx += bw + 6
     return img
 

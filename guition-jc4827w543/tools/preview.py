@@ -48,7 +48,8 @@ SWEEP_START, SWEEP_DEG = 120, 300     # 0 deg = 3 o'clock, positive = clockwise 
 SEG_DEG = 3                           # disc spacing along the arc
 
 # --- values to draw (edit these to check other states) -------------------------------
-BMS = dict(soc=86.0, volts=54.54, amps=29.4, temp=58.5, local=91.0, clock='11:19', date='Wed 15 Oct')
+BMS = dict(soc=86.0, volts=54.54, amps=29.4, temp=58.5, local=91.0, clock='11:19', date='Wed 15 Oct',
+           charging=False)   # set True to preview the header's CHG state (on the charger)
 LOW = dict(local=8.0, volts=3.58)
 
 
@@ -93,7 +94,8 @@ def render_bms(v):
     # --- top band: panel cell + clock ---
     # 20 pt, not 24: at arm's length the header is a status strip, not a headline.
     pill(d, 8, 4, 168, 27, ORANGE)
-    d.text((8 + 84, 7), 'PANEL %.0f%%' % v['local'], font=font(20), fill=INK, anchor='mt')
+    d.text((8 + 84, 7), 'PANEL CHG' if v['charging'] else 'PANEL %.0f%%' % v['local'],
+           font=font(20), fill=INK, anchor='mt')
     pill(d, 304, 4, 168, 27, BLUE)
     d.text((304 + 84, 7), v['clock'], font=font(20), fill=INK, anchor='mt')
     # LCARS frames join their blocks rather than floating them: a bar across the gap

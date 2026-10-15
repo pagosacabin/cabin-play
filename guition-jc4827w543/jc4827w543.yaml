@@ -64,6 +64,31 @@ wifi:
   # console is always available.
   power_save_mode: none                  # a wall/mains panel wants latency over mW
 
+# ------------------------------------------------------- battery state (inferred)
+# There is no charger status pin on this board: the vendor's own notes say the TP4056's status
+# leg is not connected to the ESP32, so "is it charging?" has to come from the reading itself.
+# The charger parks the BAT net on its CV plateau -- the TP4056 holds 4.20 V there -- whereas
+# a cell running the panel reads 4.05 with the backlight on and 4.16 at most with it off. So
+# the test is a band plus a two-poll debounce, not a trend.
+#
+# A trend test was tried first and thrown away: +-3 mV between 30 s polls is under the noise
+# floor of the smoothed reading (+-15 mV in the live history), so it flapped CHG/BATT ~50 times
+# during a single discharge. The band cannot do that -- and tools/test_batt_state.py replays the
+# real 24 h history to hold the transition count and the CHG coverage, precisely to keep it so.
+#
+# Scope, deliberately: this sees the CV plateau. A charger in bulk (below the plateau) drives
+# the net from the cell's own voltage, so the label reads BATT and the percentage climbs
+# through real values -- honest, and the case the mask is not needed for.
+globals:
+  - id: batt_charging
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: batt_agree                     # consecutive polls agreeing that a change is due
+    type: int
+    restore_value: no
+    initial_value: '0'
+
 # ---------------------------------------------------------------- backlight
 output:
   - platform: ledc
@@ -282,7 +307,10 @@ display:
       // Header: the panel's own cell and the clock, 20 pt PILL type -- at arm's length this
       // is a status strip, not a headline. Both blank rather than fake when their source has
       // not reported yet.
+      // Charging is masked, not guessed: with the cable in this reading is the charger's
+      // voltage, so a percentage would be a confident lie. CHG says only what is known.
       if (isnan(local)) snprintf(buf, sizeof(buf), "PANEL --");
+      else if (id(batt_charging)) snprintf(buf, sizeof(buf), "PANEL CHG");
       else snprintf(buf, sizeof(buf), "PANEL %.0f%%", local);
       pill(8, 4, 168, 27, ORANGE);
       it.print(8 + 84, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, ORANGE);
@@ -484,10 +512,40 @@ time:
 # it is an ADC1 pin (ADC2 is unusable while WiFi is up). No pin move was needed.
 #
 # No charge-status GPIO exists on this board, so "charging" is inferred from a sustained
-# high reading. The reading is only a pack voltage with USB UNPLUGGED: with the cable in,
-# the TP4056 holds the BAT net at the charge voltage (~4.2 V), which is what makes the
-# number look flat while charging. The percentage comes from a piecewise Li-ion discharge
-# curve, approximate under load -- the panel sags the cell while it is on.
+# high reading (id(batt_charging), set below). The reading is only a pack voltage with USB
+# UNPLUGGED: with the cable in, the TP4056 holds the BAT net at the charge voltage (~4.2 V),
+# which is what makes the number look flat while charging -- and why the page prints CHG
+# instead of a percentage it cannot stand behind. The percentage comes from a piecewise
+# Li-ion discharge curve, approximate under load -- the panel sags the cell while it is on.
+text_sensor:
+  # The inference itself, on a slow poll (the ADC's own averaging sends every 10 s, so a faster
+  # poll would only re-read the same value). Exported to HA so it can be checked without
+  # standing at the panel: cable in, CHG once the pack reaches the CV plateau; cable out, BATT
+  # once the reading has dropped clear of it.
+  - platform: template
+    id: batt_state
+    name: "Panel battery state"
+    icon: mdi:battery-charging
+    update_interval: 30s
+    lambda: |-
+      const float v = id(batt_v).state;
+      if (isnan(v)) return std::string("--");
+      // Enter on the charger's CV plateau -- the TP4056 rests at 4.20 V there -- and leave only
+      // 100 mV below it. 4.20 is above anything a resting cell reaches under this panel's load
+      // (4.16 unloaded, ~4.05 with the backlight on), so a full cell off-charge stays BATT; the
+      // plateau still runs 19 polls above it in the recorded history, so entry is never missed.
+      const bool want = id(batt_charging) ? (v < 4.10f) : (v >= 4.20f);
+      // Two agreeing polls (60 s). One sample is not evidence: the history contains a two-minute
+      // excursion from 4.25 V down to 3.04 V in the middle of a charge, which a single poll
+      // cannot tell apart from a genuine unplug. It still shows as a brief flip -- accepted, and
+      // bounded by tools/test_batt_state.py rather than hidden.
+      id(batt_agree) = want ? id(batt_agree) + 1 : 0;
+      if (id(batt_agree) >= 2) {
+        id(batt_charging) = !id(batt_charging);
+        id(batt_agree) = 0;
+      }
+      return id(batt_charging) ? std::string("CHG") : std::string("BATT");
+
 sensor:
   # ---- JK-BMS, imported from Home Assistant --------------------------------------------
   # The bench pack's JK BMS is already integrated in HA (jk_bms); these import four of its
@@ -536,7 +594,8 @@ sensor:
     accuracy_decimals: 3
     filters:
       - multiply: 1.72727                 # 160K/220K FITTED divider (schematic's 33K/100K is wrong). Valid ONLY when USB is UNPLUGGED.
-      # With USB plugged in, the TP4056 charger drives the BAT net; reading reflects charger output, not battery.
+      # With USB plugged in the TP4056 drives the BAT net, so the reading is the charger's
+      # output rather than the cell -- which is why the page shows CHG (id(batt_state)) then.
       - clamp:
           min_value: 2.5
           max_value: 4.3
@@ -555,8 +614,8 @@ sensor:
             id(batt_v).set_output_raw(true);
             int raw = (int) (id(batt_v).sample() + 0.5f);
             id(batt_v).set_output_raw(false);
-            ESP_LOGI("battery", "GPIO5 (ADC1_CH4) raw=%d pin=%.4f V batt=%.4f V",
-                     raw, x / DIVIDER, x);
+            ESP_LOGI("battery", "GPIO5 (ADC1_CH4) raw=%d pin=%.4f V batt=%.4f V state=%s",
+                     raw, x / DIVIDER, x, id(batt_charging) ? "CHG" : "BATT");
 
   - platform: template
     id: batt_pct

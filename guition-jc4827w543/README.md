@@ -95,12 +95,39 @@ a row of coloured blocks along the bottom. Palette: `#FF9C00` orange, `#FFCC66` 
 | Fitted divider | **160K / 220K**, node = 220/380 = 0.57895 of the pack |
 | Scale factor | **1.72727** (was `1.32998`, the schematic's unfitted 33K/100K) |
 | Attenuation | fixed `12db` (node peaks at 2.43 V on a full pack, so nothing clips) |
-| Debug line | `[I][battery] GPIO5 (ADC1_CH4) raw=<counts> pin=<V> V batt=<V> V`, once per logged read |
+| Debug line | `[I][battery] GPIO5 (ADC1_CH4) raw=<counts> pin=<V> V batt=<V> V state=CHG\|BATT`, once per logged read |
 
 The vendor reference for fitted-vs-drawn is
 <https://github.com/78/xiaozhi-esp32/blob/HEAD/main/boards/guition/jc4827w543/README.md>.
 
-A pack reading is only a pack reading with the USB cable out: while charging, the
-on-board TP4056 holds the BAT net at the charge voltage (~4.2 V), which is why the
-number looks flat — the reading follows the net, not the state of charge. The same
-caveat applies to the 10 % page threshold: plugged in, the panel reports ~90 %.
+## Charging state — inferred, because the board cannot report it
+
+The reading is only a state of charge with the USB cable **out**: while charging, the on-board
+TP4056 parks the BAT net on its CV plateau, so the number follows the charger rather than the
+cell. The vendor's notes give the hardware reason it cannot be read directly — the charger's
+status leg is not connected to the ESP32.
+
+So the page infers it from the reading itself, and stops printing a percentage it cannot stand
+behind: the header pill reads `PANEL CHG` instead. Exported to Home Assistant as
+`sensor.living_room_bench_panel_4_3_panel_battery_state` (`CHG` / `BATT` / `--`).
+
+| | |
+|---|---|
+| Enter `CHG` | reading ≥ **4.20 V** for 2 consecutive polls (the TP4056's CV setpoint — above anything a resting cell reaches on this board: 4.16 V unloaded, ~4.05 V with the backlight on) |
+| Leave `CHG` | reading < **4.10 V** for 2 consecutive polls |
+| Poll | 30 s |
+
+**Scope, measured rather than assumed.** The plateau is what this sees. A charger in *bulk*
+drives the net from the cell's own voltage, so the label reads `BATT` and the percentage climbs
+through real values — the mask is not needed there. A trend-based version (rising/falling
+evaluated per poll) was tried first and discarded: ±3 mV between 30 s polls sits under this
+reading's own noise (±15 mV), and it flapped CHG/BATT ~50 times across a single discharge.
+
+`tools/test_batt_state.py` replays the rule against the panel's real 24 h history plus synthetic
+bulk-charge, load-step, resting-cell, unplug and boot cases, and fails on flapping. Run it after
+touching either threshold.
+
+Two honest caveats left in place: the reading is load-sagged (the backlight alone moves it
+~30 mV, about 5 points on the Li-ion curve), so the percentage reads a few points **low** on
+battery; and the recorded history contains a two-minute 4.25 → 3.04 V excursion mid-charge that
+briefly flips the label — bounded, not hidden, by the test.

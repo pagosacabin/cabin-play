@@ -57,8 +57,8 @@ Two pages, both drawn by the display lambda in `jc4827w543.yaml`:
   remaining HA entities are Display Backlight, Sleep time, Idle brightness, Wake screen.
 - `tools/preview.py` mirrors the lambda's geometry for a two-second look at the layout.
   It is a guide, not proof: PIL's antialiasing and anchor points differ slightly from
-  ESPHome's rasteriser, and the panel runs `rotation: 180`, so on the glass the preview
-  is upside down.
+  ESPHome's rasteriser, and it draws the lambda's logical canvas — the physical mounting
+  is set separately by `rotation: 180`, which the preview does not model.
 
 ## Battery sensing (task 0134)
 

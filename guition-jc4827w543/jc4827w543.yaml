@@ -8,10 +8,14 @@
 # Display: two pages. The normal page is an LCARS-styled readout of the bench pack's JK BMS:
 # one big asymmetric peach elbow (the left column turning into the full-width header bar,
 # swept at the joint, with a short periwinkle stub off the other end), the panel's own cell,
-# clock and date in black on that header, a long purple rule under it, then the state of
-# charge as the page's biggest number over a two-tone bar and pack volts, charge/discharge
-# current and temperature as label pills with large white readings -- the canonical TNG
-# palette, no green and no cyan anywhere.
+# clock and date in black on that header, then -- down a single x = 72 content margin --
+# the state of charge as the page's biggest number on a coloured label pill with its meter
+# directly beneath it, and pack volts, charge/discharge current and temperature as three
+# equal label-pill-plus-reading columns along the bottom: the canonical TNG palette, no
+# green and no cyan anywhere. (Geometry pass 2026-10-16, task 0144: the label pill, the
+# number and the meter now form one SOC block instead of a number at the top and a bar at
+# the bottom, the three readings are coherent columns rather than pills beside loose
+# numbers, and the decorative block row along the bottom edge is gone.)
 # When the panel's own cell falls below ${low_batt_pct}% the display swaps to the plain
 # status page (model, its own battery voltage/percentage, battery icon).
 substitutions:
@@ -295,6 +299,16 @@ display:
       // full-width header bar) with a concave sweep at the joint, section labels as pills
       // carrying BLACK text, and every reading large on black. Palette is the canonical TNG
       // list, declared verbatim: there is no green and no cyan anywhere on this page.
+      //
+      // GEOMETRY (2026-10-16, task 0144). The page is one content column at x = 72 with a
+      // single left margin: the SOC block (label pill, 80 pt number, meter) on top, then the
+      // three readings as three equal columns along the bottom. The elbow's swept joint lives
+      // entirely inside the header band (it reaches x = 61 at y = 22, and x = 41 below the
+      // bar), so x = 72 clears the frame everywhere -- the old layout started the SOC pill at
+      // x = 44, 9 px off the column, which is what made it read as jammed into the elbow.
+      // Text y values are the ASCENDER line, not the ink: ESPHome anchors TextAlign::TOP_*
+      // there (glyph offset_y = ascender - bitmap_top), so an 80 pt digit's ink starts 17 px
+      // below the y passed here and a 28 pt string's 6 px below.
       const Color PEACH(255, 204, 153),       // #FFCC99  large elbow frame pieces
           ORANGE(255, 153, 0),                // #FF9900  primary frame, main pills, key labels
           LORANGE(255, 204, 102),             // #FFCC66  secondary pills
@@ -362,77 +376,73 @@ display:
       // subtracted. A short periwinkle bar hangs off the header's right end -- that asymmetry
       // (wide elbow at one end, small one at the other) is what makes the frame read as LCARS
       // rather than as a page border. Both bars carry the same 13 px cap radius, so the outer
-      // corners come free.
-      vbar(8, 4, 27, 260, PEACH);              // left column, y 4..263
-      pill(8, 4, 464, 27, PEACH);              // header bar, x 8..471
-      sweep(48, 44, 26, 13, 180, 270, PEACH);  // the joint: round outside, concave inside
-      vbar(445, 4, 27, 60, PERIWINKLE);        // right elbow stub, x 445..471, y 4..63
+      // corners come free. Margins are 8 px on every side the frame touches: the column runs
+      // y 8..263 down a 272-high canvas and the header x 8..471 across a 480-wide one.
+      vbar(8, 8, 27, 256, PEACH);              // left column, y 8..263
+      pill(8, 8, 464, 27, PEACH);              // header bar, x 8..471
+      sweep(48, 48, 26, 13, 180, 270, PEACH);  // the joint: round outside, concave inside
+      vbar(445, 8, 27, 56, PERIWINKLE);        // right elbow stub, x 445..471, y 8..63
 
-      it.print(107, 6, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, PEACH);
+      // The header is a status strip, so its three fields are spaced to stay clear of the
+      // elbow: the panel's own cell starts at x = 66 (past the sweep's reach) and the date
+      // ends at x = 436 (clear of the periwinkle stub at 445, which the text's peach
+      // background would otherwise punch through).
+      it.print(118, 9, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, PEACH);
       if (have_time) snprintf(buf, sizeof(buf), "%s", id(ha_time).now().strftime("%H:%M").c_str());
       else snprintf(buf, sizeof(buf), "--:--");
-      it.print(285, 6, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, PEACH);
+      it.print(300, 9, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, PEACH);
       if (have_time) {
-        it.print(410, 6, id(roboto_hdr), INK, TextAlign::TOP_CENTER,
+        it.print(385, 9, id(roboto_hdr), INK, TextAlign::TOP_CENTER,
                  id(ha_time).now().strftime("%a %d %b").c_str(), PEACH);
       }
 
-      // The long purple rule under the header: the horizontal bar the reference graphic uses to
-      // close the frame off. It stops short of the right stub so that stub stays one shape.
-      pill(44, 36, 393, 7, PURPLE);
-
-      // ---- state of charge: label pill, the page's biggest number, and a two-tone bar ------
+      // ---- state of charge: label pill, the page's biggest number, then its own meter ------
       // The number is the highlight colour (#FFFF99) -- the one place the palette allows it, and
-      // it is where the eye should land first.
-      pill(44, 52, 120, 17, ORANGE);
-      it.print(104, 55, id(roboto_16), INK, TextAlign::TOP_CENTER, "PACK SOC %", ORANGE);
+      // it is where the eye should land first. The meter sits directly under it rather than
+      // along the bottom edge: a bar 70 px away from the number it reads is decoration, and
+      // that plus the row of colour blocks under it is what this revision removes.
+      pill(72, 42, 112, 23, ORANGE);
+      it.print(128, 44, id(roboto_16), INK, TextAlign::TOP_CENTER, "PACK SOC %", ORANGE);
 
       const float soc = id(bms_soc).state;
       if (isnan(soc)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.0f", soc);
-      it.print(44, 76, id(roboto_80), PALE, TextAlign::TOP_LEFT, buf);
+      it.print(72, 59, id(roboto_80), PALE, TextAlign::TOP_LEFT, buf);
 
       // A value with a range gets a bar: lavender track, orange fill, salmon under 25 % -- the
       // only place this page raises its voice. The fill is a pill drawn over the track, so its
-      // right end is round like every other bar on the page; at 0 % it is just the end knob.
+      // right end is round like every other shape on the page; at 0 % it is just the end knob.
+      // The track spans the full content width, so the number above it has a scale to sit on.
       const float frac = isnan(soc) ? 0.0f : (soc < 0.0f ? 0.0f : (soc > 100.0f ? 100.0f : soc)) / 100.0f;
-      pill(44, 212, 427, 21, LAVENDER);
+      pill(72, 152, 400, 21, LAVENDER);
       if (frac > 0.0f) {
-        const int fill = 21 + (int) ((427 - 21) * frac);
-        pill(44, 212, fill, 21, (!isnan(soc) && soc < 25.0f) ? SALMON : ORANGE);
+        const int fill = 21 + (int) ((400 - 21) * frac);
+        pill(72, 152, fill, 21, (!isnan(soc) && soc < 25.0f) ? SALMON : ORANGE);
       }
 
-      // ---- the three readings: label pill with black text, value large in white on black ----
-      // The gap between them is wide on purpose: at arm's length the label bars line up as a
-      // column and the readings sit on black where nothing competes with them.
-      auto datum = [&](int y, Color bar, const char *label, const char *value) {
-        pill(250, y, 85, 15, bar);
-        it.print(292, y + 2, id(roboto_16), INK, TextAlign::TOP_CENTER, label, bar);
-        it.print(342, y - 4, id(roboto_28), WHITE, TextAlign::TOP_LEFT, value);
+      // ---- the three readings: one coherent column each ---------------------------------
+      // Each stat is a unit, not a pill floating next to a number: an equal 126 px column, a
+      // 23 px label pill (as tall as the reading's own ink) with the label in black on it, and
+      // the reading directly beneath in the same column. The discharge pill turns salmon so
+      // the sign is legible without reading the number.
+      auto datum = [&](int x, Color bar, const char *label, const char *value) {
+        pill(x, 196, 126, 23, bar);
+        it.print(x + 63, 198, id(roboto_16), INK, TextAlign::TOP_CENTER, label, bar);
+        it.print(x, 220, id(roboto_28), WHITE, TextAlign::TOP_LEFT, value);
       };
       if (isnan(id(bms_v).state)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.2f V", id(bms_v).state);
-      datum(52, LORANGE, "PACK V", buf);
+      datum(72, LORANGE, "PACK V", buf);
 
       const float cur = id(bms_i).state;
+      const bool discharging = !isnan(cur) && cur < 0.0f;
       if (isnan(cur)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%+.1f A", cur);
-      datum(96, ORANGE, (isnan(cur) || cur >= 0.0f) ? "CHARGE" : "DISCHG", buf);
+      datum(208, discharging ? SALMON : ORANGE, discharging ? "DISCHG" : "CHARGE", buf);
 
       if (isnan(id(bms_t).state)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.1f F", id(bms_t).state);
-      datum(140, PURPLE, "TEMP", buf);
-
-      // ---- LCARS footer: the reference's row of colour blocks, the column standing on it -----
-      // Plain rectangles with an even gap, as in the reference: no subtraction at the column's
-      // foot either, so the joint there is a right angle rather than another round bite.
-      const int fw[5] = {110, 80, 60, 110, 80};
-      const Color fc[5] = {ORANGE, PEACH, SALMON, LAVENDER, PURPLE};
-      int bx = 8;
-      for (int i = 0; i < 5; i++) {
-        it.filled_rectangle(bx, 255, fw[i], 9, fc[i]);
-        bx += fw[i] + 6;
-      }
+      datum(344, PURPLE, "TEMP", buf);
 
 font:
   # Sizes named for what they are: 80pt the state-of-charge number, 28pt the three readings,

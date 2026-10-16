@@ -5,9 +5,11 @@
 # Config follows the official ESPHome device page for this board:
 #   https://devices.esphome.io/devices/guition-jc4827543c
 #
-# Display: two pages. The normal page is an LCARS-styled readout of the bench pack's JK BMS
-# -- the panel's own cell and the clock in a header strip of pills, state of charge as a
-# dial, then pack volts, charge/discharge current and temperature as labelled data pills.
+# Display: two pages. The normal page is an LCARS-styled readout of the bench pack's JK BMS,
+# framed by elbow bars (a column down the left edge turning into the header bar, a mirror of
+# it off the clock's right end) -- the panel's own cell and the clock in the header strip,
+# state of charge as a dial, then pack volts, charge/discharge current and temperature as
+# labelled data pills.
 # When the panel's own cell falls below ${low_batt_pct}% the display swaps to the plain
 # status page (model, its own battery voltage/percentage, battery icon).
 substitutions:
@@ -287,11 +289,19 @@ display:
       }
 
       // ---- BMS page: LCARS console -----------------------------------------------------
-      // TNG console palette. Layout is a header strip of pills (panel cell + clock), the
-      // pack state of charge as a 300-degree dial, and three labelled data pills under it.
-      const Color ORANGE(255, 156, 0), GOLD(255, 204, 102), LAVENDER(204, 153, 204),
-          BLUE(153, 153, 204), SALMON(204, 102, 102), TAN(204, 153, 102),
-          DIM(44, 44, 80), INK(0, 0, 0);
+      // TNG console framing. The signature shapes are the elbow bars: a column down the left
+      // edge that turns right into the header bar, and a short bar turning down off the
+      // clock's right end. Each elbow is the *union* of two bars plus a black disc cut out of
+      // the inner corner -- that concave cut is the whole idiom; two bars merely crossed read
+      // as a plus sign. Palette is the task's hex list verbatim.
+      const Color ORANGE(255, 153, 0),        // #FF9900
+          GOLD(255, 204, 153),                // #FFCC99
+          SALMON(204, 102, 102),              // #CC6666
+          PURPLE(204, 153, 204),              // #CC99CC
+          PERIWINKLE(153, 153, 255),          // #9999FF
+          PALE(255, 255, 204),                // #FFFFCC
+          DIM(44, 44, 80),                    // unlit dial arc (functional, not in the hex list)
+          INK(0, 0, 0);
 
       // An LCARS pill: straight body, a filled circle capping each end. Text drawn on one must
       // be printed with the pill colour as its `background`, because the font blends glyph
@@ -309,6 +319,16 @@ display:
         it.filled_circle(x + w - 1 - r, y + r, r, c);
       };
 
+      // The same shape stood on end, for the column and the bars turning off the header. One
+      // helper per orientation, because the cap radius comes from the SHORT side: a tall pill
+      // built with the horizontal maths would be a disc the size of the page.
+      auto vbar = [&](int x, int y, int w, int h, Color c) {
+        const int r = (w - 1) / 2;
+        it.filled_rectangle(x, y + r, w, h - 2 * r, c);
+        it.filled_circle(x + r, y + r, r, c);
+        it.filled_circle(x + r, y + h - 1 - r, r, c);
+      };
+
       char buf[64];
       const bool have_time = id(ha_time).now().is_valid();
 
@@ -320,18 +340,29 @@ display:
       if (isnan(local)) snprintf(buf, sizeof(buf), "PANEL --");
       else if (id(batt_charging)) snprintf(buf, sizeof(buf), "PANEL CHG");
       else snprintf(buf, sizeof(buf), "PANEL %.0f%%", local);
-      pill(8, 4, 168, 27, ORANGE);
-      it.print(8 + 84, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, ORANGE);
 
+      // Column and header share a corner: both bars are 27 px across, so their end caps are
+      // the same 13 px disc and the union is a single L with a round outer corner. The clock
+      // segment gets the mirrored treatment at its right end.
+      vbar(8, 4, 27, 260, ORANGE);          // column, y 4..263
+      vbar(445, 4, 27, 60, PERIWINKLE);     // right elbow, y 4..63
+      pill(8, 4, 202, 27, ORANGE);          // header: panel segment
+      pill(240, 4, 232, 27, PERIWINKLE);    // header: clock segment
+      pill(206, 11, 38, 11, GOLD);          // the bar joining them
+
+      // The inner corners, cut concave. Drawn after every bar they belong to, and before any
+      // text: this is a subtraction, so anything drawn earlier at that corner would be eaten.
+      it.filled_circle(34, 30, 9, INK);
+      it.filled_circle(445, 30, 9, INK);
+
+      it.print(8 + 101, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, ORANGE);
       if (have_time) snprintf(buf, sizeof(buf), "%s", id(ha_time).now().strftime("%H:%M").c_str());
       else snprintf(buf, sizeof(buf), "--:--");
-      pill(304, 4, 168, 27, BLUE);
-      it.print(304 + 84, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, BLUE);
+      it.print(240 + 116, 7, id(roboto_hdr), INK, TextAlign::TOP_CENTER, buf, PERIWINKLE);
 
-      // LCARS frames join their blocks instead of floating them: a bar across the gap
-      // between the two pills, and a rule closing the header off from the dial.
-      it.filled_rectangle(184, 15, 112, 6, TAN);
-      it.filled_rectangle(8, 38, 464, 3, TAN);
+      // A section divider closing the header off from the dial. It stops short of the right
+      // elbow so that elbow stays one unbroken shape.
+      pill(44, 35, 393, 7, GOLD);
 
       // The dial: a chain of overlapping discs along the arc. Two earlier attempts are worth
       // not repeating -- 1 deg radial spokes read as stripes, and 3 deg quads (two
@@ -339,10 +370,12 @@ display:
       // dark slivers in a bright arc. Overlapping discs of the same colour cannot seam, and
       // they give the round ends for free: no separate end caps. The ring is 2*disc_r thick,
       // centred on r_mid, so r_in = r_mid - disc_r and r_out = r_mid + disc_r.
-      // Salmon under 25% is the only place this page raises its voice.
+      // The arc is orange, not gold: it is the one reading that has to carry across the room,
+      // so it takes the accent colour and leaves #FFCC99 to the frame. Salmon under 25% is the
+      // only place this page raises its voice.
       const float soc = id(bms_soc).state;
-      const int cx = 240, cy = 122, r_mid = 60, disc_r = 6;
-      const Color lit = (!isnan(soc) && soc < 25.0f) ? SALMON : GOLD;
+      const int cx = 258, cy = 118, r_mid = 60, disc_r = 6;
+      const Color lit = (!isnan(soc) && soc < 25.0f) ? SALMON : ORANGE;
       const float frac = isnan(soc) ? 0.0f : (soc < 0.0f ? 0.0f : (soc > 100.0f ? 100.0f : soc)) / 100.0f;
       const float RAD = 0.0174532925f;
       for (int a = 120; a <= 420; a += 3) {       // 120..420 = 300 deg, gap centred at the bottom
@@ -353,45 +386,50 @@ display:
       // Nothing but the number goes inside the ring: at 48 pt a 3-digit reading plus "%" is
       // wider than the inner diameter, and a label under it crosses the lower arms. The unit
       // rides on the left-hand label, and the two dead bands beside the dial carry the label
-      // and the date.
+      // and the date. The number is pale yellow (#FFFFCC): the LCARS readout colour, and the
+      // brightest thing on the page -- it is where the eye should land first.
       if (isnan(soc)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.0f", soc);
-      it.print(cx, cy - 24, id(roboto_48), COLOR_ON, TextAlign::TOP_CENTER, buf);
-      it.print(16, cy, id(roboto_16), GOLD, TextAlign::CENTER_LEFT, "PACK SOC %");
+      it.print(cx, cy - 24, id(roboto_48), PALE, TextAlign::TOP_CENTER, buf);
+      it.print(44, cy, id(roboto_16), GOLD, TextAlign::CENTER_LEFT, "PACK SOC %");
       if (have_time) {
-        it.print(464, cy, id(roboto_16), LAVENDER, TextAlign::CENTER_RIGHT,
+        it.print(464, cy, id(roboto_16), PURPLE, TextAlign::CENTER_RIGHT,
                  id(ha_time).now().strftime("%a %d %b").c_str());
       }
 
-      // Three data pills under the dial, their outer edges flush with the header pills and
-      // the footer. The current's label follows the sign: the BMS reports charge positive,
-      // discharge negative, so 49 A out is not labelled CHARGE.
+      // Three data pills under the dial, their columns set inside the left column and the
+      // right elbow, and their outer edges flush with the header bar (44 / 471). The middle
+      // column is centred on the dial, so the page reads as three aligned columns rather than
+      // three slightly different ones. The current's label follows the sign: the BMS reports
+      // charge positive, discharge negative, so 49 A out is not labelled CHARGE.
       auto datum = [&](int x, int w, Color bar, const char *label, const char *value) {
         pill(x, 192, w, 21, bar);
         it.print(x + w / 2, 195, id(roboto_16), INK, TextAlign::TOP_CENTER, label, bar);
-        it.print(x + w / 2, 218, id(roboto_28), COLOR_ON, TextAlign::TOP_CENTER, value);
+        it.print(x + w / 2, 218, id(roboto_28), PALE, TextAlign::TOP_CENTER, value);
       };
       if (isnan(id(bms_v).state)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.2f V", id(bms_v).state);
-      datum(8, 150, BLUE, "PACK V", buf);
+      datum(44, 139, PERIWINKLE, "PACK V", buf);
 
       const float cur = id(bms_i).state;
       if (isnan(cur)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%+.1f A", cur);
-      datum(164, 151, GOLD, (isnan(cur) || cur >= 0.0f) ? "CHARGE" : "DISCHG", buf);
+      datum(189, 139, ORANGE, (isnan(cur) || cur >= 0.0f) ? "CHARGE" : "DISCHG", buf);
 
       if (isnan(id(bms_t).state)) snprintf(buf, sizeof(buf), "--");
       else snprintf(buf, sizeof(buf), "%.1f F", id(bms_t).state);
-      datum(321, 151, LAVENDER, "TEMP", buf);
+      datum(334, 138, PURPLE, "TEMP", buf);
 
-      // LCARS footer: a row of coloured blocks.
-      const int fw[5] = {120, 80, 60, 100, 80};
-      const Color fc[5] = {ORANGE, GOLD, SALMON, BLUE, LAVENDER};
+      // LCARS footer: the column turns into it at the near end, so the two are one elbow --
+      // the concave cut below is the same subtraction the header elbows use.
+      const int fw[5] = {110, 80, 60, 110, 80};
+      const Color fc[5] = {ORANGE, GOLD, SALMON, PERIWINKLE, PURPLE};
       int bx = 8;
       for (int i = 0; i < 5; i++) {
-        it.filled_rectangle(bx, 256, fw[i], 6, fc[i]);
+        it.filled_rectangle(bx, 255, fw[i], 9, fc[i]);
         bx += fw[i] + 6;
       }
+      it.filled_circle(34, 255, 9, INK);          // column -> footer elbow
 
 font:
   # Sizes named for what they are: 48pt the state-of-charge number inside the dial, 28pt the

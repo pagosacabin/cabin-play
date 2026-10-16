@@ -34,32 +34,53 @@ Two pages, both drawn by the display lambda in `jc4827w543.yaml`:
 
 | page | shown when | contents |
 |---|---|---|
-| **BMS** | panel's own cell ≥ 10 % | LCARS console: header pills with the panel's own cell % and the clock, pack state of charge as a dial, then pack voltage, charge/discharge current and temperature as labelled data pills |
+| **BMS** | panel's own cell ≥ 10 % | LCARS console: header bar with the panel's own cell % and the clock, pack state of charge as a dial, then pack voltage, charge/discharge current and temperature as labelled data pills |
 | **status** | panel's own cell < 10 % | the panel's original screen: model name, its own battery %, its own battery volts, battery icon |
 
-The BMS page is drawn in the TNG console idiom: black field, LCARS pills (a straight
-body capped by a filled circle at each end), a tan bar joining the two header pills, and
-a row of coloured blocks along the bottom. Palette: `#FF9C00` orange, `#FFCC66` gold,
-`#9999CC` blue, `#CC99CC` lavender, `#CC6666` salmon, `#CC9966` tan.
+The BMS page is drawn in the TNG console idiom (restyle 2026-10-16): black field, LCARS
+pills (a straight body capped by a filled circle at each end), a row of coloured blocks
+along the bottom, and **elbow bars** framing the sections — a 27 px column down the left
+edge that turns right into the header bar, a mirrored stub turning down off the clock's
+right end, and the column turning into the footer bar at the bottom.
 
-- The dial is a 300° ring with the gap at the bottom, drawn as 3° quads (two filled triangles
-  each) — 100 of them, so one segment is exactly 1 % of state of charge. Radial spokes 1°
-  apart were tried first and read as stripes on the glass; quads share their radial edges, so
-  nothing shows between them and both circular edges stay smooth. The two sweep ends are
-  rounded off with a filled circle each (a blunt radial cut reads as an unfinished gauge),
-  and the unlit remainder sits at `#2C2C50` rather than a near-black navy so the dial still
-  reads as a gauge when the state of charge is low. The arc turns salmon below
-  25 % — the only place the page raises its voice. The ring carries **no** unit sign and
-  nothing else inside it: at 48 pt a 3-digit reading plus `%` is wider than the inner
-  diameter, and a label under the number crosses the ring's lower arms. The unit rides on
-  the left-hand `PACK SOC %` label, and the two dead bands beside the dial carry that label
-  and the date.
+Each elbow is drawn as the *union* of two bars (both 27 px across, so their end caps are
+the same 13 px disc and the outer corner is one round arc) **minus a black disc at the
+inner corner** — that concave cut is the whole idiom. Two bars merely crossed at a right
+angle read as a plus sign, not an elbow; the subtraction has to be drawn after both bars
+and before any text, because it is a fill-order trick, not a shape. It is also the one
+thing `tools/preview.py` can check without a panel.
+
+Palette (verbatim hex, restyle 0140): `#FF9900` orange (column, header bar, dial arc,
+char/discharge pill), `#FFCC99` gold (bar joining the header segments, section divider,
+footer block), `#CC6666` salmon (dial arc below 25 %, footer block), `#CC99CC` purple
+(temperature pill, date, footer block), `#9999FF` periwinkle (clock segment, right elbow,
+pack-voltage pill, footer block), `#FFFFCC` pale yellow (the state-of-charge readout and
+the three data values). `#2C2C50` remains only as the dial's unlit arc, a functional
+colour rather than a console one.
+
+- The SOC readout is the brightest thing on the page on purpose: at arm's length it is
+  where the eye should land first, so it is the only large run of `#FFFFCC`.
+
+- The dial is a 300° ring with the gap at the bottom, drawn as overlapping discs every 3°
+  along the arc (101 of them, so 3° ≈ 1 % of state of charge). Radial spokes 1° apart were
+  tried first and read as stripes on the glass; 3° quads (two filled triangles each) were
+  tried next and left 1 px seams along their shared radial edges, which show up as dark
+  slivers in a bright arc. Discs of one colour cannot seam and their round ends come free,
+  so no separate end caps are drawn. The unlit remainder sits at `#2C2C50` rather than a
+  near-black navy so the dial still reads as a gauge when the state of charge is low. The
+  arc turns salmon below 25 % — the only place the page raises its voice. The ring carries
+  **no** unit sign and nothing else inside it: at 48 pt a 3-digit reading plus `%` is wider
+  than the inner diameter, and a label under the number crosses the ring's lower arms. The
+  unit rides on the left-hand `PACK SOC %` label, and the two dead bands beside the dial
+  carry that label and the date. *(Corrected 2026-10-16: this bullet described the quads
+  that commit `ee5f40f` had already replaced with discs.)*
 - Type sizes are named for what they are: `roboto_48` the dial number, `roboto_28` the data
-  values, `roboto_24` the status page, `roboto_hdr` (20 pt) the header pills, `roboto_16`
+  values, `roboto_24` the status page, `roboto_hdr` (20 pt) the header bar, `roboto_16`
   labels and the date. The header is deliberately the smallest type on the page — at arm's
   length it is a status strip, not a headline.
-- The three data pills' outer edges line up with the header pills and the footer blocks, so
-  the page has two clean columns of structure rather than three slightly different ones.
+- The three data columns sit inside the frame (x 44 … 471, the same span as the header bar
+  and the footer), and the middle column is centred on the dial, so the page reads as three
+  aligned columns rather than three slightly different ones.
 - Text printed on a pill must be given the pill's own colour as its `background`: ESPHome's
   font blends glyph edges against that colour, so the default black would ring every letter.
 - The threshold is the `low_batt_pct` substitution. Below it the BMS page is replaced —

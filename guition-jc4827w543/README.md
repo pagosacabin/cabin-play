@@ -34,53 +34,46 @@ Two pages, both drawn by the display lambda in `jc4827w543.yaml`:
 
 | page | shown when | contents |
 |---|---|---|
-| **BMS** | panel's own cell ≥ 10 % | LCARS console: header bar with the panel's own cell % and the clock, pack state of charge as a dial, then pack voltage, charge/discharge current and temperature as labelled data pills |
+| **BMS** | panel's own cell ≥ 10 % | LCARS console: one big peach elbow framing the page, the panel's own cell % / clock / date in black on the header bar, a purple rule, then pack state of charge as the page's biggest number over a two-tone bar and pack voltage, charge/discharge current and temperature as label pills with large white readings |
 | **status** | panel's own cell < 10 % | the panel's original screen: model name, its own battery %, its own battery volts, battery icon |
 
-The BMS page is drawn in the TNG console idiom (restyle 2026-10-16): black field, LCARS
-pills (a straight body capped by a filled circle at each end), a row of coloured blocks
-along the bottom, and **elbow bars** framing the sections — a 27 px column down the left
-edge that turns right into the header bar, a mirrored stub turning down off the clock's
-right end, and the column turning into the footer bar at the bottom.
+The BMS page is drawn in the TNG console idiom (restyle 2026-10-16, revised for canonical
+palette and elbows in 0141): black field, canonical TNG palette, LCARS pills (a straight body
+capped by a filled circle at each end), a row of coloured blocks along the bottom, and **one
+big asymmetric elbow** framing the page — a 27 px column down the left edge turning into the
+full-width header bar, with a short periwinkle stub turning down off the bar's right end.
 
-Each elbow is drawn as the *union* of two bars (both 27 px across, so their end caps are
-the same 13 px disc and the outer corner is one round arc) **minus a black disc at the
-inner corner** — that concave cut is the whole idiom. Two bars merely crossed at a right
-angle read as a plus sign, not an elbow; the subtraction has to be drawn after both bars
-and before any text, because it is a fill-order trick, not a shape. It is also the one
-thing `tools/preview.py` can check without a panel.
+The elbow joint is **swept, not subtracted.** `sweep()` draws a chain of 13 px discs along a
+26 px-radius arc centred on the joint, which adds the concave inner corner (radius = half the
+bar width) while the outer corner stays the bars' own round cap. The previous revision instead
+cut a 9 px black disc out of the corner: that is a subtraction, so it eats both bars and leaves
+a round black blob — the defect this revision exists to remove. The same subtraction at the
+column's foot is gone too, so the footer joint is a plain right angle. Any subtraction is also
+a fill-order trick (it must come after the bars and before any text), which is exactly why a
+sweep is more robust: it is drawn *with* the bars.
 
-Palette (verbatim hex, restyle 0140): `#FF9900` orange (column, header bar, dial arc,
-char/discharge pill), `#FFCC99` gold (bar joining the header segments, section divider,
-footer block), `#CC6666` salmon (dial arc below 25 %, footer block), `#CC99CC` purple
-(temperature pill, date, footer block), `#9999FF` periwinkle (clock segment, right elbow,
-pack-voltage pill, footer block), `#FFFFCC` pale yellow (the state-of-charge readout and
-the three data values). `#2C2C50` remains only as the dial's unlit arc, a functional
-colour rather than a console one.
+Palette (canonical TNG hex, revised 0141): `#FFCC99` peach (the elbow frame: column + header
+bar, and the second footer block), `#FF9900` orange (the main label pills, the meter fill, a
+footer block), `#FFCC66` light orange (the pack-voltage pill), `#CC6666` salmon (the meter
+below 25 %, a footer block), `#CC99CC` purple (the rule under the header, the temperature pill,
+a footer block), `#9999CC` lavender (the meter's track, a footer block), `#9999FF` periwinkle
+(the right stub), `#FFFF99` pale yellow (the SOC number only — "highlights only" in the spec),
+white for the readings on black, black for text on any lit bar. **There is no green and no cyan
+anywhere on the page**, and no colour from the previous palette survives — `#FFFFCC` and
+`#FFCC99`-as-`GOLD` are gone, and with them the old `#2C2C50` dial arc. Checked by family, not
+by hex: `tools/audit_layout.py` counts zero pixels that are green-dominant or cyan-dominant.
 
-- The SOC readout is the brightest thing on the page on purpose: at arm's length it is
-  where the eye should land first, so it is the only large run of `#FFFFCC`.
-
-- The dial is a 300° ring with the gap at the bottom, drawn as overlapping discs every 3°
-  along the arc (101 of them, so 3° ≈ 1 % of state of charge). Radial spokes 1° apart were
-  tried first and read as stripes on the glass; 3° quads (two filled triangles each) were
-  tried next and left 1 px seams along their shared radial edges, which show up as dark
-  slivers in a bright arc. Discs of one colour cannot seam and their round ends come free,
-  so no separate end caps are drawn. The unlit remainder sits at `#2C2C50` rather than a
-  near-black navy so the dial still reads as a gauge when the state of charge is low. The
-  arc turns salmon below 25 % — the only place the page raises its voice. The ring carries
-  **no** unit sign and nothing else inside it: at 48 pt a 3-digit reading plus `%` is wider
-  than the inner diameter, and a label under the number crosses the ring's lower arms. The
-  unit rides on the left-hand `PACK SOC %` label, and the two dead bands beside the dial
-  carry that label and the date. *(Corrected 2026-10-16: this bullet described the quads
-  that commit `ee5f40f` had already replaced with discs.)*
-- Type sizes are named for what they are: `roboto_48` the dial number, `roboto_28` the data
-  values, `roboto_24` the status page, `roboto_hdr` (20 pt) the header bar, `roboto_16`
-  labels and the date. The header is deliberately the smallest type on the page — at arm's
-  length it is a status strip, not a headline.
-- The three data columns sit inside the frame (x 44 … 471, the same span as the header bar
-  and the footer), and the middle column is centred on the dial, so the page reads as three
-  aligned columns rather than three slightly different ones.
+- The SOC readout is the brightest thing on the page on purpose: at arm's length it is where
+  the eye should land first, so it is the only large run of `#FFFF99`.
+- The state-of-charge bar is the LCARS readout for a value with a range: a lavender track with
+  an orange fill pill drawn over it (so its right end is round like every other bar), turning
+  salmon below 25 % — the only place the page raises its voice. At 0 % only the end knob is lit,
+  and at `NAN` the track is drawn bare with no fill at all.
+- Type sizes are named for what they are: `roboto_80` the SOC number (with an explicit
+  `glyphs: "0123456789-."` — left to the default set, ESPHome would rasterise ~95 ASCII glyphs
+  at 80 pt, roughly 200 kB of the 4 MB flash, to draw three digits), `roboto_28` the readings,
+  `roboto_24` the status page, `roboto_hdr` (20 pt) the header labels, `roboto_16` the pill
+  labels. The header is deliberately not the biggest type on the page — it is a status strip.
 - Text printed on a pill must be given the pill's own colour as its `background`: ESPHome's
   font blends glyph edges against that colour, so the default black would ring every letter.
 - The threshold is the `low_batt_pct` substitution. Below it the BMS page is replaced —
@@ -102,11 +95,17 @@ colour rather than a console one.
   (2026-10-15, at the user's request): the panel no longer fetches images at all. The
   remaining HA entities are Display Backlight, Sleep time, Idle brightness, Wake screen.
 - `tools/preview.py` mirrors the lambda's geometry and palette for a two-second look at the
-  layout, and reports the SOC readout's half-width against the dial's inner radius — the one
-  place this design can silently collide with the ring. It is a guide, not proof: PIL's
-  antialiasing and anchor points differ slightly from ESPHome's rasteriser, and it draws the
-  lambda's logical canvas — the physical mounting is set separately by `rotation: 180`, which
-  the preview does not model.
+  layout, and reports each reading's width against the right margin and the SOC number's width
+  against the block it has to fit in — the two places this design can silently overflow its
+  column. It is a guide, not proof: PIL's antialiasing and anchor points differ slightly from
+  ESPHome's rasteriser, and it draws the lambda's logical canvas — the physical mounting is set
+  separately by `rotation: 180`, which the preview does not model, as is the panel's own colour
+  polarity (`invert_colors` in the display block).
+- `tools/audit_layout.py` is the check that can run without a panel: it re-derives every box
+  from the same constants and measures the rendered pixels — palette by hex count, the banned
+  colour families by hue, a black-blob search inside the elbow band, the joint's monotonicity,
+  every text box against its own column, and the meter, alarm, 0 % and `NAN` states. 42 checks,
+  non-zero exit on failure. The render it audits is the committed `preview-bms-lcars.png`.
 
 ## Battery sensing (task 0134)
 

@@ -22,7 +22,6 @@ esphome compile jc4827w543.yaml
 esphome upload  jc4827w543.yaml --device 192.168.1.72   # OTA; no USB cable needed
 esphome logs    jc4827w543.yaml --device 192.168.1.72   # stream the console
 python3 tools/preview.py preview.png                    # offline render of both pages
-python3 tools/audit_layout.py                           # gates the layout; non-zero if it fails
 ```
 
 `secrets.yaml` (`wifi_ssid`, `wifi_password`, `ota_password`, plus a now-unused
@@ -35,35 +34,14 @@ Two pages, both drawn by the display lambda in `jc4827w543.yaml`:
 
 | page | shown when | contents |
 |---|---|---|
-| **BMS** | panel's own cell ≥ 10 % | LCARS console: one big peach elbow framing the page, the panel's own cell % / clock / date in black on the header bar, then pack state of charge as the page's biggest number on a label pill with its meter directly beneath it, and pack voltage, charge/discharge current and temperature as three equal label-pill-plus-reading columns along the bottom |
+| **BMS** | panel's own cell ≥ 10 % | LCARS console: one big peach elbow framing the page, the panel's own cell % / clock / date in black on the header bar, a purple rule, then pack state of charge as the page's biggest number over a two-tone bar and pack voltage, charge/discharge current and temperature as label pills with large white readings |
 | **status** | panel's own cell < 10 % | the panel's original screen: model name, its own battery %, its own battery volts, battery icon |
 
-The BMS page is drawn in the TNG console idiom (restyle 2026-10-16, canonical palette and
-swept elbows in 0141, **geometry pass in 0144**): black field, canonical TNG palette, LCARS
-pills (a straight body capped by a filled circle at each end), and **one big asymmetric elbow**
-framing the page — a 27 px column down the left edge turning into the full-width header bar,
-with a short periwinkle stub turning down off the bar's right end.
-
-**Layout (0144).** Everything sits on one content margin, x = 72, which is clear of the
-elbow everywhere (the swept joint lives inside the header band: it reaches x = 61 at y = 22
-and x = 41 just below the bar). The page is then two bands:
-
-```
-y  8.. 34   header bar          PANEL 91 % · 11:19 · Wed 15 Oct
-y 42.. 64   SOC label pill      x 72..183
-y 76..135   SOC number's ink    80 pt, x 72..207
-y152..172   SOC meter           x 72..471  (lavender track, orange fill)
-y196..218   three label pills   x 72..197 / 208..333 / 344..469
-y226..245   three readings      28 pt, one under each pill
-```
-
-Why it changed, in the order the defects were reported: the SOC pill used to start at x = 44
-— 9 px off the column and inside the elbow's reach, which is what read as jammed into the
-joint; the stat pills were 85×15 beside 28 pt numbers, so the pill was a shrunk chip next to
-a value twice its height; and the meter sat at y = 212, 70 px below the number it belongs to,
-with a row of five colour blocks under it that meant nothing. The block row is gone, the meter
-moved up to sit directly under the number, and each reading is now a 126 px column holding a
-23 px label pill (as tall as the reading's own ink) and the reading itself.
+The BMS page is drawn in the TNG console idiom (restyle 2026-10-16, revised for canonical
+palette and elbows in 0141): black field, canonical TNG palette, LCARS pills (a straight body
+capped by a filled circle at each end), a row of coloured blocks along the bottom, and **one
+big asymmetric elbow** framing the page — a 27 px column down the left edge turning into the
+full-width header bar, with a short periwinkle stub turning down off the bar's right end.
 
 The elbow joint is **swept, not subtracted.** `sweep()` draws a chain of 13 px discs along a
 26 px-radius arc centred on the joint, which adds the concave inner corner (radius = half the
@@ -74,15 +52,13 @@ column's foot is gone too, so the footer joint is a plain right angle. Any subtr
 a fill-order trick (it must come after the bars and before any text), which is exactly why a
 sweep is more robust: it is drawn *with* the bars.
 
-Palette (canonical TNG hex, revised 0141, unchanged by 0144 — the palette block is
-byte-identical to the 0141 revision, `sha256 75656057…` in the lambda and `2f04a183…` in the
-preview, so renders stay comparable across the two): `#FFCC99` peach (the elbow frame: column +
-header bar), `#FF9900` orange (the SOC and CHARGE label pills, the meter fill), `#FFCC66` light
-orange (the pack-voltage pill), `#CC6666` salmon (the meter below 25 %, and the pill turns
-DISCHG/salmon on discharge), `#CC99CC` purple (the temperature pill), `#9999CC` lavender (the
-meter's track), `#9999FF` periwinkle (the right stub), `#FFFF99` pale yellow (the SOC number
-only — "highlights only" in the spec), white for the readings on black, black for text on any
-lit bar. **There is no green and no cyan
+Palette (canonical TNG hex, revised 0141): `#FFCC99` peach (the elbow frame: column + header
+bar, and the second footer block), `#FF9900` orange (the main label pills, the meter fill, a
+footer block), `#FFCC66` light orange (the pack-voltage pill), `#CC6666` salmon (the meter
+below 25 %, a footer block), `#CC99CC` purple (the rule under the header, the temperature pill,
+a footer block), `#9999CC` lavender (the meter's track, a footer block), `#9999FF` periwinkle
+(the right stub), `#FFFF99` pale yellow (the SOC number only — "highlights only" in the spec),
+white for the readings on black, black for text on any lit bar. **There is no green and no cyan
 anywhere on the page**, and no colour from the previous palette survives — `#FFFFCC` and
 `#FFCC99`-as-`GOLD` are gone, and with them the old `#2C2C50` dial arc. Checked by family, not
 by hex: `tools/audit_layout.py` counts zero pixels that are green-dominant or cyan-dominant.
@@ -90,18 +66,9 @@ by hex: `tools/audit_layout.py` counts zero pixels that are green-dominant or cy
 - The SOC readout is the brightest thing on the page on purpose: at arm's length it is where
   the eye should land first, so it is the only large run of `#FFFF99`.
 - The state-of-charge bar is the LCARS readout for a value with a range: a lavender track with
-  an orange fill pill drawn over it (so its right end is round like every other shape), turning
-  salmon below 25 % — one of the two places the page raises its voice. It spans the full content
-  width, directly under the number, so the reading has a scale to sit on. At 0 % only the end
-  knob is lit, and at `NAN` the track is drawn bare with no fill at all.
-- The other raised voice is the current pill: `CHARGE` on orange, `DISCHG` on salmon, so the
-  sign is legible without reading the number. `NAN` stays `CHARGE`-coloured with a `--` reading
-  rather than guessing a direction.
-- **Text y values are the ASCENDER line, not the ink.** ESPHome's `glyph_to_glyphinfo()` sets
-  each glyph's `offset_y = ascender - bitmap_top` and the renderer draws from `y_start +
-  offset_y`, so `TextAlign::TOP_*` anchors the ascender line: an 80 pt digit's ink starts 17 px
-  below the y in the config, a 28 pt string's 6 px, a 20 pt header field's 5 px, a 16 pt pill
-  label's 3 px. Every y above is chosen for the ink, not the anchor.
+  an orange fill pill drawn over it (so its right end is round like every other bar), turning
+  salmon below 25 % — the only place the page raises its voice. At 0 % only the end knob is lit,
+  and at `NAN` the track is drawn bare with no fill at all.
 - Type sizes are named for what they are: `roboto_80` the SOC number (with an explicit
   `glyphs: "0123456789-."` — left to the default set, ESPHome would rasterise ~95 ASCII glyphs
   at 80 pt, roughly 200 kB of the 4 MB flash, to draw three digits), `roboto_28` the readings,
@@ -128,24 +95,17 @@ by hex: `tools/audit_layout.py` counts zero pixels that are green-dominant or cy
   (2026-10-15, at the user's request): the panel no longer fetches images at all. The
   remaining HA entities are Display Backlight, Sleep time, Idle brightness, Wake screen.
 - `tools/preview.py` mirrors the lambda's geometry and palette for a two-second look at the
-  layout, and reports each reading's width against its own column and the SOC number's width
-  against the content edge — the places this design can silently overflow. It is a guide, not
-  proof: it draws the lambda's logical canvas, so the physical mounting (`rotation: 180`) and
-  the panel's own colour polarity (`invert_colors`) are outside it.
-  **It is now faithful about text, which it was not before 0144.** It drew every string with
-  PIL's `'t'` anchor (the ink box) while the firmware anchors the ascender line, so the mirror
-  floated each string 3–17 px above where the panel puts it — 17 px on the 80 pt number. The
-  anchor is now `'a'`, which is the same model as `offset_y = ascender - bitmap_top`, so the
-  same y goes into the config and into this file and the two agree to within antialiasing.
+  layout, and reports each reading's width against the right margin and the SOC number's width
+  against the block it has to fit in — the two places this design can silently overflow its
+  column. It is a guide, not proof: PIL's antialiasing and anchor points differ slightly from
+  ESPHome's rasteriser, and it draws the lambda's logical canvas — the physical mounting is set
+  separately by `rotation: 180`, which the preview does not model, as is the panel's own colour
+  polarity (`invert_colors` in the display block).
 - `tools/audit_layout.py` is the check that can run without a panel: it re-derives every box
-  from the same constants **and from the font metrics** and measures the rendered pixels —
-  palette by hex count, the banned colour families by hue, the retired colours, a black-blob
-  search inside the elbow band, the joint's monotonicity, every string's measured ink box
-  against the box the constants predict, each label inside its own pill and clear of the cap
-  radius, each reading inside its own column, the three columns' equal width and gutter, the
-  meter's fill against 86 %, the alarm/discharge/0 %/`NAN` states, that no content sits on the
-  bottom edge any more, and that the column runs the full height. 63 checks, non-zero exit on
-  failure. The render it audits is the committed `preview-bms-lcars.png`.
+  from the same constants and measures the rendered pixels — palette by hex count, the banned
+  colour families by hue, a black-blob search inside the elbow band, the joint's monotonicity,
+  every text box against its own column, and the meter, alarm, 0 % and `NAN` states. 42 checks,
+  non-zero exit on failure. The render it audits is the committed `preview-bms-lcars.png`.
 
 ## Battery sensing (task 0134)
 

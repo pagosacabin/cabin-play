@@ -108,10 +108,14 @@ globals:
     type: int
     restore_value: no
     initial_value: '0'
-  - id: sweep_deg                      # radar sweep angle, degrees
+  - id: sweep_deg                      # radar sweep angle, degrees of travel inside the wedge
     type: int
     restore_value: no
     initial_value: '0'
+  - id: sweep_dir                      # +1 / -1: the arm ping-pongs, it does not wrap
+    type: int
+    restore_value: no
+    initial_value: '1'
 
 # ---------------------------------------------------------------- backlight
 output:
@@ -322,19 +326,33 @@ display:
         it.print(420, 8, id(roboto_16), T_INK, TextAlign::TOP_CENTER,
                  contact ? "CONTACT" : "CLEAR", flag);
 
-        // scope: three rings, edge ticks, then the arm and whatever it has just lit up
-        const int cx = 118, cy = 152, R = 92;
-        it.circle(cx, cy, R, T_PEACH);
-        it.circle(cx, cy, R * 2 / 3, T_GRID);
-        it.circle(cx, cy, R / 3, T_GRID);
-        it.line(cx - R, cy, cx - R + 7, cy, T_PEACH);
-        it.line(cx + R, cy, cx + R - 7, cy, T_PEACH);
-        it.line(cx, cy - R, cx, cy - R + 7, T_PEACH);
-        it.line(cx, cy + R, cx, cy + R - 7, T_PEACH);
+        // 120 deg wedge, not a full circle: that is the C4002's own field of view. The sensor
+        // sits at the apex, the two PEACH rays are its limits, and the arm only ever runs
+        // between them -- a full-circle scope would be drawing coverage this part does not
+        // have. There is no arc primitive, so each ring is a chain of 3 deg line segments.
+        const int cx = 170, cy = 146, R = 96;
+        auto arc = [&](int r, Color c) {
+          for (int deg = 120; deg < 240; deg += 3) {
+            const float a0 = deg * 0.017453292f, a1 = (deg + 3) * 0.017453292f;
+            it.line(cx + (int) (r * cosf(a0)), cy + (int) (r * sinf(a0)),
+                    cx + (int) (r * cosf(a1)), cy + (int) (r * sinf(a1)), c);
+          }
+        };
+        arc(R, T_PEACH);
+        arc(R * 2 / 3, T_GRID);
+        arc(R / 3, T_GRID);
+        const float e0 = 2.0943951f, e1 = 4.1887902f;    // 120 deg and 240 deg, the wedge edges
+        it.line(cx, cy, cx + (int) (R * cosf(e0)), cy + (int) (R * sinf(e0)), T_PEACH);
+        it.line(cx, cy, cx + (int) (R * cosf(e1)), cy + (int) (R * sinf(e1)), T_PEACH);
+        it.filled_rectangle(cx - 4, cy - 4, 9, 9, T_PEACH);   // the sensor, at the apex
+        it.print(cx, 232, id(roboto_16), T_LAVENDER, TextAlign::TOP_CENTER, "120 DEG FOV");
 
-        const float arm = id(sweep_deg) * 0.017453292f;
+        // The arm sweeps inside the wedge (0..120 deg of travel, ping-pong), so the blip it
+        // paints is always somewhere the sensor can actually see.
+        const float arm = (120 + id(sweep_deg)) * 0.017453292f;
+        const float trail = id(sweep_dir) * 0.055f;
         for (int t = 4; t >= 1; t--) {
-          const float a = arm - t * 0.16f;
+          const float a = arm - trail * t;
           it.line(cx, cy, cx + (int) (R * cosf(a)), cy + (int) (R * sinf(a)),
                   (t >= 3) ? T_GRID : T_LAVENDER);
         }
@@ -350,7 +368,7 @@ display:
           if (m > 6.0f) m = 6.0f;                        // the scope is scaled to 6 m
           const int br = 14 + (int) ((R - 18) * m / 6.0f);
           for (int t = 3; t >= 1; t--) {                  // comet tail behind the arm
-            const float a = arm - t * 0.16f;
+            const float a = arm - trail * t;
             it.filled_circle(cx + (int) (br * cosf(a)), cy + (int) (br * sinf(a)), 5 - t, T_SALMON);
           }
           it.filled_circle(cx + (int) (br * cosf(arm)), cy + (int) (br * sinf(arm)), 4, T_PALE);
@@ -630,7 +648,8 @@ switch:
 interval:
   # The sweep animates only while the tracker page is the one on screen; the BMS and status
   # pages keep their event-driven repaints, so an idle panel does no extra work for this.
-  # 18 deg per 150 ms is one revolution in 3 s.
+  # The arm ping-pongs across the sensor's 120 deg wedge: 12 deg per 150 ms covers it in 1.5 s
+  # each way, so a full out-and-back is 3 s.
   - interval: 150ms
     then:
       - if:
@@ -638,7 +657,16 @@ interval:
             lambda: 'return id(tracker_force).state || id(tracker_hold) > 0;'
           then:
             - lambda: |-
-                id(sweep_deg) = (id(sweep_deg) + 18) % 360;
+                int next = id(sweep_deg) + 12 * id(sweep_dir);
+                if (next >= 120) {
+                  next = 120;
+                  id(sweep_dir) = -1;
+                }
+                if (next <= 0) {
+                  next = 0;
+                  id(sweep_dir) = 1;
+                }
+                id(sweep_deg) = next;
             - component.update: my_display
 
   # Countdown that hands the page back to the BMS ${tracker_dwell}s after the contact clears.

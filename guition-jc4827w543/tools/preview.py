@@ -179,9 +179,9 @@ def render_status(v):
 
 
 GRID = (84, 84, 120)                    # scope rings / inactive track (not in the TNG list)
-TRACK = dict(presence=True, dist=1.4, speed=0.04, energy=99.0, sweep_deg=35)
-TRACK_CLEAR = dict(presence=False, dist=0.0, speed=0.0, energy=0.0, sweep_deg=200)
-SCOPE = (118, 152, 92)                  # centre x, centre y, radius
+TRACK = dict(presence=True, dist=1.4, speed=0.04, energy=99.0, sweep_deg=42, dir=1)
+TRACK_CLEAR = dict(presence=False, dist=0.0, speed=0.0, energy=0.0, sweep_deg=96, dir=-1)
+SCOPE = (170, 146, 96)                  # apex x, apex y, radius
 
 
 def render_tracker(v):
@@ -201,16 +201,27 @@ def render_tracker(v):
     d.text((420, 8), 'CONTACT' if contact else 'CLEAR', font=font(16), fill=INK, anchor='mt')
 
     cx, cy, R = SCOPE
-    d.ellipse([cx - R, cy - R, cx + R, cy + R], outline=PEACH)
-    for rr in (R * 2 // 3, R // 3):
-        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], outline=GRID)
-    for x0, y0, x1, y1 in ((cx - R, cy, cx - R + 7, cy), (cx + R, cy, cx + R - 7, cy),
-                           (cx, cy - R, cx, cy - R + 7), (cx, cy + R, cx, cy + R - 7)):
-        d.line([x0, y0, x1, y1], fill=PEACH)
 
-    arm = math.radians(v['sweep_deg'])
+    # 120 deg wedge -- the C4002's field of view. PIL has no arc-into-polyline primitive either,
+    # so each ring is a polyline over 3 deg steps, exactly as the lambda chains line segments.
+    def arc(r, c):
+        pts = [(cx + r * math.cos(math.radians(d)), cy + r * math.sin(math.radians(d)))
+               for d in range(120, 241, 3)]
+        d.line(pts, fill=c)
+
+    arc(R, PEACH)
+    arc(R * 2 // 3, GRID)
+    arc(R // 3, GRID)
+    for deg in (120, 240):
+        a = math.radians(deg)
+        d.line([cx, cy, cx + R * math.cos(a), cy + R * math.sin(a)], fill=PEACH)
+    d.rectangle([cx - 4, cy - 4, cx + 4, cy + 4], fill=PEACH)          # the sensor, at the apex
+    d.text((cx, 232), '120 DEG FOV', font=font(16), fill=LAVENDER, anchor='mt')
+
+    arm = math.radians(120 + v['sweep_deg'])
+    trail = v.get('dir', 1) * 0.055
     for t in range(4, 0, -1):
-        a = arm - t * 0.16
+        a = arm - trail * t
         d.line([cx, cy, cx + R * math.cos(a), cy + R * math.sin(a)],
                fill=GRID if t >= 3 else LAVENDER)
     d.line([cx, cy, cx + R * math.cos(arm), cy + R * math.sin(arm)], fill=PALE)
@@ -220,7 +231,7 @@ def render_tracker(v):
         m = min(max(v['dist'], 0.0), 6.0)          # scope scaled to 6 m
         br = 14 + int((R - 18) * m / 6.0)
         for t in range(3, 0, -1):
-            a = arm - t * 0.16
+            a = arm - trail * t
             x, y = cx + br * math.cos(a), cy + br * math.sin(a)
             rr = 5 - t
             d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=SALMON)

@@ -324,7 +324,7 @@ display:
         const Color flag = contact ? T_SALMON : T_LAVENDER;
         it.filled_rectangle(368, 5, 104, 22, flag);
         it.print(420, 8, id(roboto_16), T_INK, TextAlign::TOP_CENTER,
-                 contact ? "CONTACT" : "CLEAR", flag);
+                 contact ? "PRESENT" : "CLEAR", flag);
 
         // 120 deg wedge, not a full circle: that is the C4002's own field of view. The sensor
         // sits at the apex, the two PEACH rays are its limits, and the arm only ever runs
@@ -386,29 +386,23 @@ display:
         };
         char tbuf[40];
         tpill(232, 40, 92, 15, T_LORANGE);
-        it.print(278, 41, id(roboto_16), T_INK, TextAlign::TOP_CENTER, "RANGE", T_LORANGE);
+        it.print(278, 41, id(roboto_16), T_INK, TextAlign::TOP_CENTER, "NEAREST", T_LORANGE);
         if (isnan(d)) snprintf(tbuf, sizeof(tbuf), "--");
         else snprintf(tbuf, sizeof(tbuf), "%.1f", d);
         it.print(420, 58, id(roboto_80), T_PALE, TextAlign::TOP_RIGHT, tbuf);
         it.print(428, 122, id(roboto_24), T_WHITE, TextAlign::TOP_LEFT, "m");
 
+        // Detection state as one number: 0 none, 1 stationary, 2 moving.
+        const int stt = isnan(id(tgt_state).state) ? 0 : (int) id(tgt_state).state;
         tpill(232, 158, 92, 15, T_LORANGE);
-        it.print(278, 159, id(roboto_16), T_INK, TextAlign::TOP_CENTER, "SPEED", T_LORANGE);
-        if (isnan(id(tgt_speed).state)) snprintf(tbuf, sizeof(tbuf), "-- m/s");
-        else snprintf(tbuf, sizeof(tbuf), "%+.2f m/s", id(tgt_speed).state);
-        it.print(330, 152, id(roboto_28), T_WHITE, TextAlign::TOP_LEFT, tbuf);
+        it.print(278, 159, id(roboto_16), T_INK, TextAlign::TOP_CENTER, "STATE", T_LORANGE);
+        it.print(330, 152, id(roboto_28), T_WHITE, TextAlign::TOP_LEFT,
+                 stt == 2 ? "MOVING" : (stt == 1 ? "STILL" : "NONE"));
 
-        tpill(232, 196, 92, 15, T_SALMON);
-        it.print(278, 197, id(roboto_16), T_INK, TextAlign::TOP_CENTER, "ENERGY", T_SALMON);
-        const float e = id(tgt_energy).state;
-        it.filled_rectangle(330, 198, 118, 12, T_GRID);
-        if (!isnan(e) && e > 0.0f) {
-          const float ep = (e > 100.0f) ? 100.0f : e;
-          it.filled_rectangle(330, 198, (int) (118 * ep / 100.0f), 12, T_PALE);
-        }
-
-        it.print(232, 226, id(roboto_16), contact ? T_SALMON : T_LAVENDER, TextAlign::TOP_LEFT,
-                 contact ? "TARGET TRACKED" : "SCANNING  //  NO CONTACT");
+        // Said out loud on the page, where the energy bar used to be: this part reports one
+        // target's range, and anything past that is presence only.
+        it.print(232, 198, id(roboto_16), T_LAVENDER, TextAlign::TOP_LEFT, "SINGLE TARGET RANGE");
+        it.print(232, 216, id(roboto_16), T_LAVENDER, TextAlign::TOP_LEFT, "2+ BODIES = PRESENCE ONLY");
 
         const int tfw[5] = {110, 80, 60, 110, 80};
         const Color tfc[5] = {T_ORANGE, T_PEACH, T_SALMON, T_LAVENDER, T_LORANGE};
@@ -620,7 +614,7 @@ script:
 # every change.
 binary_sensor:
   - platform: homeassistant
-    entity_id: binary_sensor.c4002_presence_room_presence
+    entity_id: binary_sensor.c4002_presence_presence
     id: presence
     on_state:
       then:
@@ -833,26 +827,21 @@ sensor:
         - component.update: my_display
 
   # ---- C4002 proximity, imported from Home Assistant -----------------------------------
-  # Same push model as the BMS imports above. `target_distance` is 0.0 and energy 0 when the
-  # sensor has nothing in front of it, so the page tests presence rather than the distance
-  # before it draws a blip.
+  # Same push model as the BMS imports above. The sensor exposes one presence bit, a
+  # single-target range and a 0/1/2 detection state; the speed/energy channels were dropped in
+  # the 2026-11-06 clean-up because with two or more bodies in the beam they are not
+  # attributable to a target. Range is 0.0 when nothing is detected.
   - platform: homeassistant
-    entity_id: sensor.c4002_presence_target_distance
+    entity_id: sensor.c4002_presence_range
     id: tgt_dist
     on_value:
       then:
         - component.update: my_display
 
+  # 0 = no body, 1 = stationary, 2 = moving.
   - platform: homeassistant
-    entity_id: sensor.c4002_presence_target_speed
-    id: tgt_speed
-    on_value:
-      then:
-        - component.update: my_display
-
-  - platform: homeassistant
-    entity_id: sensor.c4002_presence_target_energy
-    id: tgt_energy
+    entity_id: sensor.c4002_presence_detected
+    id: tgt_state
     on_value:
       then:
         - component.update: my_display

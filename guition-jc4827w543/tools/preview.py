@@ -179,8 +179,8 @@ def render_status(v):
 
 
 GRID = (84, 84, 120)                    # scope rings / inactive track (not in the TNG list)
-TRACK = dict(presence=True, dist=1.4, speed=0.04, energy=99.0, sweep_deg=42, dir=1)
-TRACK_CLEAR = dict(presence=False, dist=0.0, speed=0.0, energy=0.0, sweep_deg=96, dir=-1)
+TRACK = dict(presence=True, dist=1.4, state_text='STILL', sweep_deg=42, dir=1)
+TRACK_CLEAR = dict(presence=False, dist=0.0, state_text='NONE', sweep_deg=96, dir=-1)
 SCOPE = (170, 146, 96)                  # apex x, apex y, radius
 
 
@@ -198,7 +198,7 @@ def render_tracker(v):
     d.text((10, 6), 'PROXIMITY SCAN', font=font(20), fill=INK, anchor='lt')
     flag = SALMON if contact else LAVENDER
     d.rectangle([368, 5, 471, 26], fill=flag)
-    d.text((420, 8), 'CONTACT' if contact else 'CLEAR', font=font(16), fill=INK, anchor='mt')
+    d.text((420, 8), 'PRESENT' if contact else 'CLEAR', font=font(16), fill=INK, anchor='mt')
 
     cx, cy, R = SCOPE
 
@@ -240,24 +240,18 @@ def render_tracker(v):
         d.ellipse([x - 9, y - 9, x + 9, y + 9], outline=LORANGE)
 
     pill(d, 232, 40, 92, 15, LORANGE)
-    d.text((278, 41), 'RANGE', font=font(16), fill=INK, anchor='mt')
+    d.text((278, 41), 'NEAREST', font=font(16), fill=INK, anchor='mt')
     d.text((420, 58), '--' if v['dist'] is None else '%.1f' % v['dist'],
            font=font(80), fill=PALE, anchor='rt')
     d.text((428, 122), 'm', font=font(24), fill=WHITE, anchor='lt')
 
     pill(d, 232, 158, 92, 15, LORANGE)
-    d.text((278, 159), 'SPEED', font=font(16), fill=INK, anchor='mt')
-    d.text((330, 152), '%+.2f m/s' % v['speed'], font=font(28), fill=WHITE, anchor='lt')
+    d.text((278, 159), 'STATE', font=font(16), fill=INK, anchor='mt')
+    d.text((330, 152), v.get('state_text', 'NONE'), font=font(28), fill=WHITE, anchor='lt')
 
-    pill(d, 232, 196, 92, 15, SALMON)
-    d.text((278, 197), 'ENERGY', font=font(16), fill=INK, anchor='mt')
-    d.rectangle([330, 198, 330 + 117, 198 + 11], fill=GRID)
-    e = min(max(v['energy'], 0.0), 100.0)
-    if e > 0:
-        d.rectangle([330, 198, 330 + int(117 * e / 100.0), 198 + 11], fill=PALE)
-
-    d.text((232, 226), 'TARGET TRACKED' if contact else 'SCANNING  //  NO CONTACT',
-           font=font(16), fill=SALMON if contact else LAVENDER, anchor='lt')
+    # Said out loud on the page, where the energy bar used to be.
+    d.text((232, 198), 'SINGLE TARGET RANGE', font=font(16), fill=LAVENDER, anchor='lt')
+    d.text((232, 216), '2+ BODIES = PRESENCE ONLY', font=font(16), fill=LAVENDER, anchor='lt')
 
     tx = 8
     for w, c in zip((110, 80, 60, 110, 80), (ORANGE, PEACH, SALMON, LAVENDER, LORANGE)):

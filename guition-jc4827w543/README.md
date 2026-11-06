@@ -36,7 +36,7 @@ Three pages, all drawn by the display lambda in `jc4827w543.yaml`:
 |---|---|---|
 | **BMS** | panel's own cell ≥ 10 %, no proximity contact | LCARS console: one big peach elbow framing the page, the panel's own cell % / clock / date in black on the header bar, a purple rule, then pack state of charge as the page's biggest number over a two-tone bar and pack voltage, charge/discharge current and temperature as label pills with large white readings |
 | **status** | panel's own cell < 10 % | the panel's original screen: model name, its own battery %, its own battery volts, battery icon |
-| **tracker** | the C4002 reports a target, for 20 s after it clears, or while the *Tracker page* switch pins it | proximity scope: a 120° wedge (the sensor's own field of view) with a sweeping arm that ping-pongs inside it, the target blipped on that arm at a radius the measured range sets, range as the big number in metres, speed and energy beneath, CONTACT/CLEAR flag in the header |
+| **tracker** | the C4002 reports presence, for 20 s after it clears, or while the *Tracker page* switch pins it | proximity scope: a 120° wedge (the sensor's own field of view) with a sweeping arm that ping-pongs inside it, the blip on that arm at a radius the single-target range sets, `NEAREST` in metres as the big number, a `STATE` row (NONE / STILL / MOVING), and two lines that say what the part cannot do |
 
 The BMS page is drawn in the TNG console idiom (restyle 2026-10-16, revised for canonical
 palette and elbows in 0141): black field, canonical TNG palette, LCARS pills (a straight body
@@ -118,10 +118,14 @@ credential of its own, no polling loop. HA pushes on connect and on every change
 
 | panel id | HA entity |
 |---|---|
-| `presence` | `binary_sensor.c4002_presence_room_presence` |
-| `tgt_dist` | `sensor.c4002_presence_target_distance` |
-| `tgt_speed` | `sensor.c4002_presence_target_speed` |
-| `tgt_energy` | `sensor.c4002_presence_target_energy` |
+| `presence` | `binary_sensor.c4002_presence_presence` |
+| `tgt_dist` | `sensor.c4002_presence_range` |
+| `tgt_state` | `sensor.c4002_presence_detected` (0 none / 1 still / 2 moving) |
+
+The speed, energy and gate-mask entities were dropped from the sensor on 2026-11-06, and the page
+followed: with two or more bodies in the beam those channels are not attributable to a target, so
+putting them on screen implied a tracker this part is not. What is left says so out loud —
+`SINGLE TARGET RANGE` / `2+ BODIES = PRESENCE ONLY` — across the space the energy bar used to fill.
 
 Page order is **fallback → tracker → BMS**: a panel that is about to die still says "charge me"
 first, whatever is walking past it. A contact sets `tracker_hold` to 20 s, so the page survives

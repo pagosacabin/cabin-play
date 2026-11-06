@@ -30,12 +30,13 @@ and never mirrored here; this file references those values as `!secret` only.
 
 ## Display
 
-Two pages, both drawn by the display lambda in `jc4827w543.yaml`:
+Three pages, all drawn by the display lambda in `jc4827w543.yaml`:
 
 | page | shown when | contents |
 |---|---|---|
-| **BMS** | panel's own cell ≥ 10 % | LCARS console: one big peach elbow framing the page, the panel's own cell % / clock / date in black on the header bar, a purple rule, then pack state of charge as the page's biggest number over a two-tone bar and pack voltage, charge/discharge current and temperature as label pills with large white readings |
+| **BMS** | panel's own cell ≥ 10 %, no proximity contact | LCARS console: one big peach elbow framing the page, the panel's own cell % / clock / date in black on the header bar, a purple rule, then pack state of charge as the page's biggest number over a two-tone bar and pack voltage, charge/discharge current and temperature as label pills with large white readings |
 | **status** | panel's own cell < 10 % | the panel's original screen: model name, its own battery %, its own battery volts, battery icon |
+| **tracker** | the C4002 reports a target, for 20 s after it clears, or while the *Tracker page* switch pins it | proximity scope: three-ring scope with a sweeping arm, the target blipped on that arm at a radius the measured range sets, range as the big number in metres, speed and energy beneath, CONTACT/CLEAR flag in the header |
 
 The BMS page is drawn in the TNG console idiom (restyle 2026-10-16, revised for canonical
 palette and elbows in 0141): black field, canonical TNG palette, LCARS pills (a straight body
@@ -106,6 +107,43 @@ by hex: `tools/audit_layout.py` counts zero pixels that are green-dominant or cy
   colour families by hue, a black-blob search inside the elbow band, the joint's monotonicity,
   every text box against its own column, and the meter, alarm, 0 % and `NAN` states. 42 checks,
   non-zero exit on failure. The render it audits is the committed `preview-bms-lcars.png`.
+
+## Proximity page — the C4002 tracker (2026-11-06)
+
+The DFRobot C4002 24 GHz presence sensor that nordtronics task 0169 brought up on the bench is
+now on this panel. The sensor board runs ESPHome on its own ESP32-C3 and is integrated in Home
+Assistant as *C4002 Presence*; the panel imports four of its entities with
+`platform: homeassistant`, exactly the way it already imports the JK BMS — no second radio, no
+credential of its own, no polling loop. HA pushes on connect and on every change.
+
+| panel id | HA entity |
+|---|---|
+| `presence` | `binary_sensor.c4002_presence_room_presence` |
+| `tgt_dist` | `sensor.c4002_presence_target_distance` |
+| `tgt_speed` | `sensor.c4002_presence_target_speed` |
+| `tgt_energy` | `sensor.c4002_presence_target_energy` |
+
+Page order is **fallback → tracker → BMS**: a panel that is about to die still says "charge me"
+first, whatever is walking past it. A contact sets `tracker_hold` to 20 s, so the page survives
+the sensor's own hold and then a tail, and then yields back to the BMS page. The *Tracker page*
+switch pins the page on regardless of contact, for inspecting it with nobody in front of the
+sensor; it is also the switch Home Assistant can flip.
+
+The sweep is animated by a 150 ms `interval` (one revolution in 3 s) that only runs while the
+tracker page is the one on screen — the BMS and status pages keep their event-driven repaints,
+so an idle panel pays nothing for this.
+
+Two deliberate choices in the drawing:
+
+- **The blip has no bearing, and does not pretend to have one.** A single-range mmWave sensor
+  reports distance, not angle, so the blip is painted where the arm currently is at a radius the
+  range sets (scope scaled 0–6 m). Parking it at a fixed bearing would be a lie drawn in pixels.
+- **No green.** A contact is amber/salmon in this palette, like every other raised voice on the
+  panel. Green would be the one colour the TNG idiom does not have.
+
+`tools/preview.py` renders the page offline next to the BMS and status pages (the last two rows of
+`preview-tracker.png`); like the rest of that file it is a PIL mirror of the lambda, so it is
+layout evidence, not a photograph of the panel.
 
 ## Battery sensing (task 0134)
 

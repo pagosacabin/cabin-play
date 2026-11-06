@@ -30,6 +30,10 @@ substitutions:
   # constant part of the sag (ESP32 + WiFi, which never switch off) stays uncompensated -- the
   # ADC alone cannot separate it from the cell's true resting voltage.
   batt_sag_v_per_duty: "0.0392"
+  # Seconds the tracker page stays up after the C4002 stops reporting a target. The sensor's
+  # own presence entity holds ~30 s upstream of this; this is the tail AFTER it clears, so the
+  # page does not flick away the instant the contact drops.
+  tracker_dwell: 20
 
 esphome:
   name: ${name}
@@ -97,6 +101,14 @@ globals:
     restore_value: no
     initial_value: 'false'
   - id: batt_agree                     # consecutive polls agreeing that a change is due
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: tracker_hold                   # seconds left before the tracker page yields to the BMS
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: sweep_deg                      # radar sweep angle, degrees
     type: int
     restore_value: no
     initial_value: '0'
@@ -287,6 +299,106 @@ display:
         it.filled_rectangle(bx + bw + 1, by + bh / 3, nub, bh / 3, COLOR_ON);
         int fillw = (int)((bw - 2 * pad) * local / 100.0f);
         if (fillw > 0) it.filled_rectangle(bx + pad, by + pad, fillw, bh - 2 * pad, COLOR_ON);
+        return;
+      }
+
+      // ---- tracker page: proximity scope -----------------------------------------------
+      // Shown while the C4002 sees a target, for ${tracker_dwell}s after it clears, or while
+      // the "Tracker page" switch pins it. A motion-tracker homage in the panel's own TNG
+      // palette: one pale arm on a three-ring scope, the target pinned to the arm at the range
+      // the sensor reports, numbers big enough to read across the room. Deliberately no green
+      // -- on this panel a contact is amber, not a traffic light.
+      if (id(tracker_force).state || id(tracker_hold) > 0) {
+        const Color T_ORANGE(255, 153, 0), T_PEACH(255, 204, 153), T_LORANGE(255, 204, 102),
+                    T_SALMON(204, 102, 102), T_LAVENDER(153, 153, 204), T_GRID(84, 84, 120),
+                    T_PALE(255, 255, 153), T_WHITE(255, 255, 255), T_INK(0, 0, 0);
+        const bool contact = id(presence).state;
+
+        // header band, contact flag on the right
+        it.filled_rectangle(0, 0, 480, 32, T_ORANGE);
+        it.print(10, 6, id(roboto_hdr), T_INK, TextAlign::TOP_LEFT, "PROXIMITY SCAN", T_ORANGE);
+        const Color flag = contact ? T_SALMON : T_LAVENDER;
+        it.filled_rectangle(368, 5, 104, 22, flag);
+        it.print(420, 8, id(roboto_16), T_INK, TextAlign::TOP_CENTER,
+                 contact ? "CONTACT" : "CLEAR", flag);
+
+        // scope: three rings, edge ticks, then the arm and whatever it has just lit up
+        const int cx = 118, cy = 152, R = 92;
+        it.circle(cx, cy, R, T_PEACH);
+        it.circle(cx, cy, R * 2 / 3, T_GRID);
+        it.circle(cx, cy, R / 3, T_GRID);
+        it.line(cx - R, cy, cx - R + 7, cy, T_PEACH);
+        it.line(cx + R, cy, cx + R - 7, cy, T_PEACH);
+        it.line(cx, cy - R, cx, cy - R + 7, T_PEACH);
+        it.line(cx, cy + R, cx, cy + R - 7, T_PEACH);
+
+        const float arm = id(sweep_deg) * 0.017453292f;
+        for (int t = 4; t >= 1; t--) {
+          const float a = arm - t * 0.16f;
+          it.line(cx, cy, cx + (int) (R * cosf(a)), cy + (int) (R * sinf(a)),
+                  (t >= 3) ? T_GRID : T_LAVENDER);
+        }
+        it.line(cx, cy, cx + (int) (R * cosf(arm)), cy + (int) (R * sinf(arm)), T_PALE);
+        it.filled_circle(cx, cy, 3, T_PALE);
+
+        // The blip sits where the arm is, at a radius the sensor's range sets. It is painted
+        // by the arm rather than parked: no bearing comes out of a single-range mmWave sensor,
+        // so pretending to have one would be the lie in this drawing.
+        const float d = id(tgt_dist).state;
+        if (contact && !isnan(d)) {
+          float m = (d < 0.0f) ? 0.0f : d;
+          if (m > 6.0f) m = 6.0f;                        // the scope is scaled to 6 m
+          const int br = 14 + (int) ((R - 18) * m / 6.0f);
+          for (int t = 3; t >= 1; t--) {                  // comet tail behind the arm
+            const float a = arm - t * 0.16f;
+            it.filled_circle(cx + (int) (br * cosf(a)), cy + (int) (br * sinf(a)), 5 - t, T_SALMON);
+          }
+          it.filled_circle(cx + (int) (br * cosf(arm)), cy + (int) (br * sinf(arm)), 4, T_PALE);
+          it.circle(cx + (int) (br * cosf(arm)), cy + (int) (br * sinf(arm)), 9, T_LORANGE);
+        }
+
+        // readouts: range is the page's big number, speed and energy underneath
+        // Local pill helper: the console page's pill() is declared further down the lambda and
+        // is not in scope here. Same odd-height rule -- h = 2r+1 keeps the caps inside the bar.
+        auto tpill = [&](int x, int y, int w, int h, Color c) {
+          const int r = (h - 1) / 2;
+          it.filled_rectangle(x + r, y, w - 2 * r, h, c);
+          it.filled_circle(x + r, y + r, r, c);
+          it.filled_circle(x + w - 1 - r, y + r, r, c);
+        };
+        char tbuf[40];
+        tpill(232, 40, 92, 15, T_LORANGE);
+        it.print(278, 41, id(roboto_16), T_INK, TextAlign::TOP_CENTER, "RANGE", T_LORANGE);
+        if (isnan(d)) snprintf(tbuf, sizeof(tbuf), "--");
+        else snprintf(tbuf, sizeof(tbuf), "%.1f", d);
+        it.print(420, 58, id(roboto_80), T_PALE, TextAlign::TOP_RIGHT, tbuf);
+        it.print(428, 122, id(roboto_24), T_WHITE, TextAlign::TOP_LEFT, "m");
+
+        tpill(232, 158, 92, 15, T_LORANGE);
+        it.print(278, 159, id(roboto_16), T_INK, TextAlign::TOP_CENTER, "SPEED", T_LORANGE);
+        if (isnan(id(tgt_speed).state)) snprintf(tbuf, sizeof(tbuf), "-- m/s");
+        else snprintf(tbuf, sizeof(tbuf), "%+.2f m/s", id(tgt_speed).state);
+        it.print(330, 152, id(roboto_28), T_WHITE, TextAlign::TOP_LEFT, tbuf);
+
+        tpill(232, 196, 92, 15, T_SALMON);
+        it.print(278, 197, id(roboto_16), T_INK, TextAlign::TOP_CENTER, "ENERGY", T_SALMON);
+        const float e = id(tgt_energy).state;
+        it.filled_rectangle(330, 198, 118, 12, T_GRID);
+        if (!isnan(e) && e > 0.0f) {
+          const float ep = (e > 100.0f) ? 100.0f : e;
+          it.filled_rectangle(330, 198, (int) (118 * ep / 100.0f), 12, T_PALE);
+        }
+
+        it.print(232, 226, id(roboto_16), contact ? T_SALMON : T_LAVENDER, TextAlign::TOP_LEFT,
+                 contact ? "TARGET TRACKED" : "SCANNING  //  NO CONTACT");
+
+        const int tfw[5] = {110, 80, 60, 110, 80};
+        const Color tfc[5] = {T_ORANGE, T_PEACH, T_SALMON, T_LAVENDER, T_LORANGE};
+        int tx = 8;
+        for (int i = 0; i < 5; i++) {
+          it.filled_rectangle(tx, 255, tfw[i], 9, tfc[i]);
+          tx += tfw[i] + 6;
+        }
         return;
       }
 
@@ -482,6 +594,62 @@ script:
           else:
             - light.turn_off: display_backlight
 
+# ---------------------------------------------------------------- proximity (C4002)
+# Driven by the DFRobot C4002 sensor that came up on the bench in nordtronics task 0169.
+# That board publishes over its own ESPHome API and Home Assistant already holds its
+# entities, so the panel imports them exactly the way it already imports the JK BMS: no
+# second radio, no credential of its own, no polling loop -- HA pushes on connect and on
+# every change.
+binary_sensor:
+  - platform: homeassistant
+    entity_id: binary_sensor.c4002_presence_room_presence
+    id: presence
+    on_state:
+      then:
+        # A contact latches the tracker page for the dwell time. The entity's own ~30 s hold
+        # happens upstream and is NOT what keeps this page up.
+        - lambda: |-
+            if (x) {
+              id(tracker_hold) = ${tracker_dwell};
+            }
+        - component.update: my_display
+
+switch:
+  # Pins the tracker page on regardless of contact, so the page can be inspected with nobody
+  # in front of the sensor. Also the switch HA can flip to show it off.
+  - platform: template
+    name: Tracker page
+    id: tracker_force
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - component.update: my_display
+    on_turn_off:
+      - component.update: my_display
+
+interval:
+  # The sweep animates only while the tracker page is the one on screen; the BMS and status
+  # pages keep their event-driven repaints, so an idle panel does no extra work for this.
+  # 18 deg per 150 ms is one revolution in 3 s.
+  - interval: 150ms
+    then:
+      - if:
+          condition:
+            lambda: 'return id(tracker_force).state || id(tracker_hold) > 0;'
+          then:
+            - lambda: |-
+                id(sweep_deg) = (id(sweep_deg) + 18) % 360;
+            - component.update: my_display
+
+  # Countdown that hands the page back to the BMS ${tracker_dwell}s after the contact clears.
+  - interval: 1000ms
+    then:
+      - lambda: |-
+          if (id(tracker_hold) > 0 && !id(presence).state) {
+            id(tracker_hold)--;
+            if (id(tracker_hold) == 0) id(sweep_deg) = 0;
+          }
+
 number:
   - platform: template
     name: Sleep time
@@ -539,9 +707,11 @@ time:
               // way -- this line is the only way to observe which page the panel chose.
               const float local = id(batt_pct).state;
               const bool low = !isnan(local) && local < ${low_batt_pct};
-              ESP_LOGI("bms", "page=%s soc=%.0f V=%.2f I=%+.1f T=%.1f local=%.0f%%",
-                       low ? "status" : "bms", id(bms_soc).state, id(bms_v).state,
-                       id(bms_i).state, id(bms_t).state, local);
+              const bool tracker = id(tracker_force).state || id(tracker_hold) > 0;
+              ESP_LOGI("bms", "page=%s soc=%.0f V=%.2f I=%+.1f T=%.1f local=%.0f%% presence=%s dist=%.2f",
+                       low ? "status" : (tracker ? "tracker" : "bms"),
+                       id(bms_soc).state, id(bms_v).state, id(bms_i).state, id(bms_t).state,
+                       local, id(presence).state ? "on" : "off", id(tgt_dist).state);
           - component.update: my_display
 
 # ---------------------------------------------------------------- battery sense
@@ -630,6 +800,31 @@ sensor:
   - platform: homeassistant
     entity_id: sensor.jk_bms_jk_bms_temperature_sensor_1
     id: bms_t
+    on_value:
+      then:
+        - component.update: my_display
+
+  # ---- C4002 proximity, imported from Home Assistant -----------------------------------
+  # Same push model as the BMS imports above. `target_distance` is 0.0 and energy 0 when the
+  # sensor has nothing in front of it, so the page tests presence rather than the distance
+  # before it draws a blip.
+  - platform: homeassistant
+    entity_id: sensor.c4002_presence_target_distance
+    id: tgt_dist
+    on_value:
+      then:
+        - component.update: my_display
+
+  - platform: homeassistant
+    entity_id: sensor.c4002_presence_target_speed
+    id: tgt_speed
+    on_value:
+      then:
+        - component.update: my_display
+
+  - platform: homeassistant
+    entity_id: sensor.c4002_presence_target_energy
+    id: tgt_energy
     on_value:
       then:
         - component.update: my_display

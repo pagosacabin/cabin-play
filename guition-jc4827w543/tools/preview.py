@@ -178,12 +178,97 @@ def render_status(v):
     return img
 
 
+GRID = (84, 84, 120)                    # scope rings / inactive track (not in the TNG list)
+TRACK = dict(presence=True, dist=1.4, speed=0.04, energy=99.0, sweep_deg=35)
+TRACK_CLEAR = dict(presence=False, dist=0.0, speed=0.0, energy=0.0, sweep_deg=200)
+SCOPE = (118, 152, 92)                  # centre x, centre y, radius
+
+
+def render_tracker(v):
+    """The proximity page: three-ring scope, one arm, the blip where the arm is.
+
+    Mirrors the tracker branch of the lambda. The blip is drawn at the arm's current angle --
+    a single-range mmWave sensor reports no bearing, so there is no honest place to park it.
+    """
+    img = Image.new('RGB', (W, H), BG)
+    d = ImageDraw.Draw(img)
+    contact = v['presence']
+
+    d.rectangle([0, 0, W - 1, 31], fill=ORANGE)
+    d.text((10, 6), 'PROXIMITY SCAN', font=font(20), fill=INK, anchor='lt')
+    flag = SALMON if contact else LAVENDER
+    d.rectangle([368, 5, 471, 26], fill=flag)
+    d.text((420, 8), 'CONTACT' if contact else 'CLEAR', font=font(16), fill=INK, anchor='mt')
+
+    cx, cy, R = SCOPE
+    d.ellipse([cx - R, cy - R, cx + R, cy + R], outline=PEACH)
+    for rr in (R * 2 // 3, R // 3):
+        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], outline=GRID)
+    for x0, y0, x1, y1 in ((cx - R, cy, cx - R + 7, cy), (cx + R, cy, cx + R - 7, cy),
+                           (cx, cy - R, cx, cy - R + 7), (cx, cy + R, cx, cy + R - 7)):
+        d.line([x0, y0, x1, y1], fill=PEACH)
+
+    arm = math.radians(v['sweep_deg'])
+    for t in range(4, 0, -1):
+        a = arm - t * 0.16
+        d.line([cx, cy, cx + R * math.cos(a), cy + R * math.sin(a)],
+               fill=GRID if t >= 3 else LAVENDER)
+    d.line([cx, cy, cx + R * math.cos(arm), cy + R * math.sin(arm)], fill=PALE)
+    d.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=PALE)
+
+    if contact:
+        m = min(max(v['dist'], 0.0), 6.0)          # scope scaled to 6 m
+        br = 14 + int((R - 18) * m / 6.0)
+        for t in range(3, 0, -1):
+            a = arm - t * 0.16
+            x, y = cx + br * math.cos(a), cy + br * math.sin(a)
+            rr = 5 - t
+            d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=SALMON)
+        x, y = cx + br * math.cos(arm), cy + br * math.sin(arm)
+        d.ellipse([x - 4, y - 4, x + 4, y + 4], fill=PALE)
+        d.ellipse([x - 9, y - 9, x + 9, y + 9], outline=LORANGE)
+
+    pill(d, 232, 40, 92, 15, LORANGE)
+    d.text((278, 41), 'RANGE', font=font(16), fill=INK, anchor='mt')
+    d.text((420, 58), '--' if v['dist'] is None else '%.1f' % v['dist'],
+           font=font(80), fill=PALE, anchor='rt')
+    d.text((428, 122), 'm', font=font(24), fill=WHITE, anchor='lt')
+
+    pill(d, 232, 158, 92, 15, LORANGE)
+    d.text((278, 159), 'SPEED', font=font(16), fill=INK, anchor='mt')
+    d.text((330, 152), '%+.2f m/s' % v['speed'], font=font(28), fill=WHITE, anchor='lt')
+
+    pill(d, 232, 196, 92, 15, SALMON)
+    d.text((278, 197), 'ENERGY', font=font(16), fill=INK, anchor='mt')
+    d.rectangle([330, 198, 330 + 117, 198 + 11], fill=GRID)
+    e = min(max(v['energy'], 0.0), 100.0)
+    if e > 0:
+        d.rectangle([330, 198, 330 + int(117 * e / 100.0), 198 + 11], fill=PALE)
+
+    d.text((232, 226), 'TARGET TRACKED' if contact else 'SCANNING  //  NO CONTACT',
+           font=font(16), fill=SALMON if contact else LAVENDER, anchor='lt')
+
+    tx = 8
+    for w, c in zip((110, 80, 60, 110, 80), (ORANGE, PEACH, SALMON, LAVENDER, LORANGE)):
+        d.rectangle([tx, 255, tx + w - 1, 263], fill=c)
+        tx += w + 6
+    return img
+
+
 def main():
     out = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'preview.png')
     pages = [
         ('BMS page  (panel >= 10%) — LCARS', render_bms(BMS)),
         ('status page  (panel < 10%) — unchanged fallback', render_status(LOW)),
     ]
+    # The tracker rows are opt-in: preview-bms-lcars.png is the audit's reference sheet
+    # (tools/audit_layout.py measures the console page's text boxes in it), and adding rows to
+    # that artifact would move every box the audit checks.
+    if '--with-tracker' in sys.argv:
+        pages += [
+            ('tracker page  (C4002 contact) — proximity scope', render_tracker(TRACK)),
+            ('tracker page  (no contact) — still on its dwell', render_tracker(TRACK_CLEAR)),
+        ]
     head = 22
     sheet = Image.new('RGB', (W, (H + head) * len(pages)), (24, 24, 24))
     d = ImageDraw.Draw(sheet)

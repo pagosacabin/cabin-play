@@ -1,0 +1,8 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# editor / OS cruft
+.vscode/.browse.c_cpp.db*
+.DS_Store

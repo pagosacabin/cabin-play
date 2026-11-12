@@ -1,0 +1,12 @@
+{
+  "name": "TJpgDec",
+  "version": "0.03",
+  "description": "Tiny JPEG Decompressor R0.03 by ChaN (elm-chan). Vendored for the living-frame photo-display rung; see NOTICE.md for provenance and the one configuration change.",
+  "keywords": ["jpeg", "decoder", "tjpgdec"],
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "srcDir": ".",
+    "includeDir": "."
+  }
+}

@@ -1,0 +1,4 @@
+.pio/
+.pioenvs/
+.piolibdeps/
+tools/*.ppm

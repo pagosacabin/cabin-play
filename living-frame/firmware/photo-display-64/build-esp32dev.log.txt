@@ -1,0 +1,259 @@
+********************************************************************************
+Obsolete PIO Core v6.1.19 is used (previous was 6.2.0)
+Please remove multiple PIO Cores from a system:
+https://docs.platformio.org/en/latest/core/installation/troubleshooting.html
+********************************************************************************
+Processing esp32dev (platform: espressif32@6.12.0; board: esp32dev; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32dev.html
+PLATFORM: Espressif 32 (6.12.0) > Espressif ESP32 Dev Module
+HARDWARE: ESP32 240MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 2.40900.250804 (4.9.0) 
+ - toolchain-xtensa-esp32 @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 35 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- FabGL @ 1.0.9
+|-- TJpgDec @ 0.03
+Building in release mode
+Converting .pio/build/esp32dev/photo.jpg.txt.o
+Compiling .pio/build/esp32dev/src/main.cpp.o
+Building .pio/build/esp32dev/bootloader.bin
+Generating partitions .pio/build/esp32dev/partitions.bin
+Compiling .pio/build/esp32dev/lib61f/SPI/SPI.cpp.o
+esptool.py v4.9.0
+Creating esp32 image...
+Merged 1 ELF section
+Successfully created esp32 image.
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFi.cpp.o
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFiAP.cpp.o
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFiClient.cpp.o
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFiGeneric.cpp.o
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFiMulti.cpp.o
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFiSTA.cpp.o
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFiScan.cpp.o
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFiServer.cpp.o
+Compiling .pio/build/esp32dev/libe32/WiFi/WiFiUdp.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/canvas.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/codepages.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/collisiondetector.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/comdrivers/ps2controller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/comdrivers/ps2device.cpp.o
+Archiving .pio/build/esp32dev/lib61f/libSPI.a
+Indexing .pio/build/esp32dev/lib61f/libSPI.a
+Compiling .pio/build/esp32dev/lib9d7/FabGL/comdrivers/serialport.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/comdrivers/tsi2c.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/devdrivers/DS3231.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/devdrivers/MCP23S17.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/devdrivers/cvbsgenerator.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/devdrivers/kbdlayouts.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/devdrivers/keyboard.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/devdrivers/mouse.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/devdrivers/soundgen.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/devdrivers/swgenerator.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/SSD1306Controller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/TFTControllerGeneric.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/TFTControllerSpecif.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/cvbs16controller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/cvbsbasecontroller.cpp.o
+Archiving .pio/build/esp32dev/libe32/libWiFi.a
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/cvbspalettedcontroller.cpp.o
+Indexing .pio/build/esp32dev/libe32/libWiFi.a
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vga16controller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vga2controller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vga4controller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vga8controller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vgabasecontroller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vgacontroller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vgadirectcontroller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vgapalettedcontroller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vgatextcontroller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/displaycontroller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/MC146818.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/MOS6502.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/PC8250.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/PIC8259.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/PIT8253.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/VIA6522.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/Z80.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/graphicsadapter.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/i8042.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/i8080.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/emudevs/i8086.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/fabfonts.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/fabui.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/fabutils.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/inputbox.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/network/ICMP.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/scene.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/terminal.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/terminfo.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/ulp_macro_ex.cpp.o
+Compiling .pio/build/esp32dev/lib997/TJpgDec/tjpgd.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/Esp.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/FirmwareMSC.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/FunctionalInterrupt.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/HWCDC.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/HardwareSerial.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/IPAddress.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/IPv6Address.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/MD5Builder.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/Print.cpp.o
+Archiving .pio/build/esp32dev/lib997/libTJpgDec.a
+Indexing .pio/build/esp32dev/lib997/libTJpgDec.a
+Compiling .pio/build/esp32dev/FrameworkArduino/Stream.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/StreamString.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/Tone.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/USB.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/USBCDC.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/USBMSC.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/WMath.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/WString.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/base64.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/cbuf.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-adc.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-bt.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-cpu.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-dac.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-gpio.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-i2c-slave.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-i2c.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-ledc.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-matrix.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-misc.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-psram.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-rgb-led.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-rmt.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-sigmadelta.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-spi.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-time.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-timer.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-tinyusb.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-touch.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-uart.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/firmware_msc_fat.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/libb64/cdecode.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/libb64/cencode.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/main.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/stdlib_noniso.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/wiring_pulse.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/wiring_shift.c.o
+Archiving .pio/build/esp32dev/libFrameworkArduino.a
+Indexing .pio/build/esp32dev/libFrameworkArduino.a
+Archiving .pio/build/esp32dev/lib9d7/libFabGL.a
+Indexing .pio/build/esp32dev/lib9d7/libFabGL.a
+Linking .pio/build/esp32dev/firmware.elf
+Retrieving maximum program size .pio/build/esp32dev/firmware.elf
+Checking size .pio/build/esp32dev/firmware.elf
+Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
+RAM:   [=         ]   8.1% (used 26432 bytes from 327680 bytes)
+Flash: [===       ]  34.2% (used 448025 bytes from 1310720 bytes)
+Building .pio/build/esp32dev/firmware.bin
+esptool.py v4.9.0
+Creating esp32 image...
+Merged 2 ELF sections
+Successfully created esp32 image.
+========================= [SUCCESS] Took 10.25 seconds =========================
+
+
+=== flash: pio run -t upload --upload-port /dev/ttyUSB1 ===
+********************************************************************************
+Obsolete PIO Core v6.1.19 is used (previous was 6.2.0)
+Please remove multiple PIO Cores from a system:
+https://docs.platformio.org/en/latest/core/installation/troubleshooting.html
+********************************************************************************
+Processing esp32dev (platform: espressif32@6.12.0; board: esp32dev; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32dev.html
+PLATFORM: Espressif 32 (6.12.0) > Espressif ESP32 Dev Module
+HARDWARE: ESP32 240MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 2.40900.250804 (4.9.0) 
+ - tool-mkfatfs @ 2.0.1 
+ - tool-mklittlefs @ 1.203.210628 (2.3) 
+ - tool-mkspiffs @ 2.230.0 (2.30) 
+ - toolchain-xtensa-esp32 @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 35 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- FabGL @ 1.0.9
+|-- TJpgDec @ 0.03
+Building in release mode
+Retrieving maximum program size .pio/build/esp32dev/firmware.elf
+Checking size .pio/build/esp32dev/firmware.elf
+Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
+RAM:   [=         ]   8.1% (used 26432 bytes from 327680 bytes)
+Flash: [===       ]  34.2% (used 448025 bytes from 1310720 bytes)
+Configuring upload protocol...
+AVAILABLE: cmsis-dap, esp-bridge, esp-prog, espota, esptool, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa
+CURRENT: upload_protocol = esptool
+Looking for upload port...
+Using manually specified: /dev/ttyUSB1
+Uploading .pio/build/esp32dev/firmware.bin
+esptool.py v4.9.0
+Serial port /dev/ttyUSB1
+Connecting.....
+Chip is ESP32-D0WD-V3 (revision v3.1)
+Features: WiFi, BT, Dual Core, 240MHz, VRef calibration in efuse, Coding Scheme None
+Crystal is 40MHz
+MAC: 4c:c3:82:da:d5:68
+Uploading stub...
+Running stub...
+Stub running...
+Changing baud rate to 460800
+Changed.
+Configuring flash size...
+Flash will be erased from 0x00001000 to 0x00005fff...
+Flash will be erased from 0x00008000 to 0x00008fff...
+Flash will be erased from 0x0000e000 to 0x0000ffff...
+Flash will be erased from 0x00010000 to 0x0007dfff...
+SHA digest in image updated
+Compressed 17536 bytes to 12196...
+Writing at 0x00001000... (100 %)
+Wrote 17536 bytes (12196 compressed) at 0x00001000 in 0.4 seconds (effective 376.9 kbit/s)...
+Hash of data verified.
+Compressed 3072 bytes to 146...
+Writing at 0x00008000... (100 %)
+Wrote 3072 bytes (146 compressed) at 0x00008000 in 0.0 seconds (effective 1634.6 kbit/s)...
+Hash of data verified.
+Compressed 8192 bytes to 47...
+Writing at 0x0000e000... (100 %)
+Wrote 8192 bytes (47 compressed) at 0x0000e000 in 0.0 seconds (effective 2470.7 kbit/s)...
+Hash of data verified.
+Compressed 448384 bytes to 307770...
+Writing at 0x00010000... (5 %)
+Writing at 0x000140af... (10 %)
+Writing at 0x000180a9... (15 %)
+Writing at 0x0001c0a4... (21 %)
+Writing at 0x0002009f... (26 %)
+Writing at 0x0002409a... (31 %)
+Writing at 0x00028095... (36 %)
+Writing at 0x0002e3c8... (42 %)
+Writing at 0x0003c1aa... (47 %)
+Writing at 0x00042ac0... (52 %)
+Writing at 0x00047e12... (57 %)
+Writing at 0x0004d240... (63 %)
+Writing at 0x00052798... (68 %)
+Writing at 0x00057e45... (73 %)
+Writing at 0x0005e60d... (78 %)
+Writing at 0x00066eaa... (84 %)
+Writing at 0x0006e70e... (89 %)
+Writing at 0x00073b6d... (94 %)
+Writing at 0x00078fc5... (100 %)
+Wrote 448384 bytes (307770 compressed) at 0x00010000 in 7.2 seconds (effective 498.9 kbit/s)...
+Hash of data verified.
+
+Leaving...
+Hard resetting via RTS pin...
+========================= [SUCCESS] Took 11.22 seconds =========================

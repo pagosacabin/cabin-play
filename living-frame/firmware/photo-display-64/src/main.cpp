@@ -50,6 +50,18 @@ static const gpio_num_t blueLSB  = GPIO_NUM_4;    // ~470R path -> VGA pin 3
 static const gpio_num_t hsyncPin = GPIO_NUM_23;   // 68R path  -> VGA pin 13
 static const gpio_num_t vsyncPin = GPIO_NUM_33;   // 68R path  -> VGA pin 14
 
+// Compile-time guard on the agreed table. If any pin is edited without the
+// table (and Stephen's wiring) moving with it, the build fails instead of
+// silently lighting the wrong DAC bit.
+static_assert(redMSB   == GPIO_NUM_22, "red MSB must be GPIO22 (~270R, VGA pin 1)");
+static_assert(redLSB   == GPIO_NUM_21, "red LSB must be GPIO21 (~470R, VGA pin 1)");
+static_assert(greenMSB == GPIO_NUM_19, "green MSB must be GPIO19 (~270R, VGA pin 2)");
+static_assert(greenLSB == GPIO_NUM_18, "green LSB must be GPIO18 (~470R, VGA pin 2)");
+static_assert(blueMSB  == GPIO_NUM_27, "blue MSB must be GPIO27 (~270R, VGA pin 3)");
+static_assert(blueLSB  == GPIO_NUM_4,  "blue LSB must be GPIO4 (~470R, VGA pin 3)");
+static_assert(hsyncPin == GPIO_NUM_23, "HSync must be GPIO23 (68R, VGA pin 13)");
+static_assert(vsyncPin == GPIO_NUM_33, "VSync must be GPIO33 (68R, VGA pin 14)");
+
 static const int H_RES = 320;
 static const int V_RES = 240;
 

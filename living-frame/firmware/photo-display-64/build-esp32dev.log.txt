@@ -61,10 +61,10 @@ Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/SSD1306Controller.cpp.o
 Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/TFTControllerGeneric.cpp.o
 Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/TFTControllerSpecif.cpp.o
 Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/cvbs16controller.cpp.o
-Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/cvbsbasecontroller.cpp.o
 Archiving .pio/build/esp32dev/libe32/libWiFi.a
-Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/cvbspalettedcontroller.cpp.o
 Indexing .pio/build/esp32dev/libe32/libWiFi.a
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/cvbsbasecontroller.cpp.o
+Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/cvbspalettedcontroller.cpp.o
 Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vga16controller.cpp.o
 Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vga2controller.cpp.o
 Compiling .pio/build/esp32dev/lib9d7/FabGL/dispdrivers/vga4controller.cpp.o
@@ -106,8 +106,8 @@ Compiling .pio/build/esp32dev/FrameworkArduino/IPv6Address.cpp.o
 Compiling .pio/build/esp32dev/FrameworkArduino/MD5Builder.cpp.o
 Compiling .pio/build/esp32dev/FrameworkArduino/Print.cpp.o
 Archiving .pio/build/esp32dev/lib997/libTJpgDec.a
-Indexing .pio/build/esp32dev/lib997/libTJpgDec.a
 Compiling .pio/build/esp32dev/FrameworkArduino/Stream.cpp.o
+Indexing .pio/build/esp32dev/lib997/libTJpgDec.a
 Compiling .pio/build/esp32dev/FrameworkArduino/StreamString.cpp.o
 Compiling .pio/build/esp32dev/FrameworkArduino/Tone.cpp.o
 Compiling .pio/build/esp32dev/FrameworkArduino/USB.cpp.o
@@ -159,7 +159,7 @@ esptool.py v4.9.0
 Creating esp32 image...
 Merged 2 ELF sections
 Successfully created esp32 image.
-========================= [SUCCESS] Took 10.25 seconds =========================
+========================= [SUCCESS] Took 10.20 seconds =========================
 
 
 === flash: pio run -t upload --upload-port /dev/ttyUSB1 ===
@@ -203,7 +203,7 @@ Using manually specified: /dev/ttyUSB1
 Uploading .pio/build/esp32dev/firmware.bin
 esptool.py v4.9.0
 Serial port /dev/ttyUSB1
-Connecting.....
+Connecting......
 Chip is ESP32-D0WD-V3 (revision v3.1)
 Features: WiFi, BT, Dual Core, 240MHz, VRef calibration in efuse, Coding Scheme None
 Crystal is 40MHz
@@ -221,17 +221,17 @@ Flash will be erased from 0x00010000 to 0x0007dfff...
 SHA digest in image updated
 Compressed 17536 bytes to 12196...
 Writing at 0x00001000... (100 %)
-Wrote 17536 bytes (12196 compressed) at 0x00001000 in 0.4 seconds (effective 376.9 kbit/s)...
+Wrote 17536 bytes (12196 compressed) at 0x00001000 in 0.4 seconds (effective 379.3 kbit/s)...
 Hash of data verified.
 Compressed 3072 bytes to 146...
 Writing at 0x00008000... (100 %)
-Wrote 3072 bytes (146 compressed) at 0x00008000 in 0.0 seconds (effective 1634.6 kbit/s)...
+Wrote 3072 bytes (146 compressed) at 0x00008000 in 0.0 seconds (effective 1617.0 kbit/s)...
 Hash of data verified.
 Compressed 8192 bytes to 47...
 Writing at 0x0000e000... (100 %)
-Wrote 8192 bytes (47 compressed) at 0x0000e000 in 0.0 seconds (effective 2470.7 kbit/s)...
+Wrote 8192 bytes (47 compressed) at 0x0000e000 in 0.0 seconds (effective 2473.4 kbit/s)...
 Hash of data verified.
-Compressed 448384 bytes to 307770...
+Compressed 448384 bytes to 307768...
 Writing at 0x00010000... (5 %)
 Writing at 0x000140af... (10 %)
 Writing at 0x000180a9... (15 %)
@@ -242,18 +242,18 @@ Writing at 0x00028095... (36 %)
 Writing at 0x0002e3c8... (42 %)
 Writing at 0x0003c1aa... (47 %)
 Writing at 0x00042ac0... (52 %)
-Writing at 0x00047e12... (57 %)
+Writing at 0x00047e13... (57 %)
 Writing at 0x0004d240... (63 %)
-Writing at 0x00052798... (68 %)
+Writing at 0x00052799... (68 %)
 Writing at 0x00057e45... (73 %)
 Writing at 0x0005e60d... (78 %)
 Writing at 0x00066eaa... (84 %)
 Writing at 0x0006e70e... (89 %)
 Writing at 0x00073b6d... (94 %)
 Writing at 0x00078fc5... (100 %)
-Wrote 448384 bytes (307770 compressed) at 0x00010000 in 7.2 seconds (effective 498.9 kbit/s)...
+Wrote 448384 bytes (307768 compressed) at 0x00010000 in 7.2 seconds (effective 498.8 kbit/s)...
 Hash of data verified.
 
 Leaving...
 Hard resetting via RTS pin...
-========================= [SUCCESS] Took 11.22 seconds =========================
+========================= [SUCCESS] Took 11.35 seconds =========================

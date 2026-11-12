@@ -1,0 +1,6 @@
+chunk  10240 B: differing bytes 0 of 307200  PASS
+chunk 307200 B: differing bytes 0 of 307200  PASS
+chunk   1000 B: differing bytes 0 of 307200  PASS
+negative control (reference shifted 1 px right): differing bytes 152486 OK (comparison is live)
+negative control (one source byte flipped):      differing bytes 4 OK
+RESULT: PASS

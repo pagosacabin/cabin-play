@@ -1,0 +1,7 @@
+.pio/
+tools/*.ppm
+# PlatformIO generates sdkconfig.<env> from sdkconfig.defaults and then REUSES
+# it: later edits to the defaults are silently ignored until this file is
+# deleted. Keeping it out of the tree means a fresh clone always regenerates it
+# from the committed defaults.
+sdkconfig.heltec-s3

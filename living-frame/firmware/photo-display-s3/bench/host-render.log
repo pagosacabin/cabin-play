@@ -1,0 +1,10 @@
+level sRGB codes: 0 115 182 255
+wrote tools/ramp-native.ppm (320x240)
+wrote tools/ramp-doubled.ppm (640x480)
+ramp patch centres (raw byte per channel row, left->right 0/LSB/MSB/both):
+  row R: 00 01 02 03
+  row G: 00 04 08 0C
+  row B: 00 10 20 30
+  row W: 00 15 2A 3F
+wrote tools/img_lorikeet-doubled.ppm (640x480)
+wrote tools/img_blue_marble-doubled.ppm (640x480)

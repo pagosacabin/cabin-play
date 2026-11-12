@@ -1,0 +1,33 @@
+# 0179: Heltec WiFi LoRa 32 V3 = ESP32-S3FN8, 8 MB flash, NO PSRAM.
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# No PSRAM on this part (probed: 0 bytes, 0178).  The rung's whole design
+# follows from that: no 640x480 buffer exists, the 320x240 buffer is doubled
+# inside the bounce-buffer ISR instead.
+# CONFIG_SPIRAM is not set
+
+# The bounce-buffer fill runs in an ISR at ~60 Hz; -Og (IDF's default) is not
+# an option, and the driver's ISR-safety path is not needed because the
+# callback is IRAM_ATTR regardless.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_ENABLE=y
+
+CONFIG_FREERTOS_HZ=1000
+
+# Console on UART0 -> CP2102 -> /dev/ttyUSB1 at 115200.  USB-Serial/JTAG is
+# left alone: on this board the console must survive an esptool flash.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# NOTE on the driver's DEBUG log: CONFIG_LCD_ENABLE_DEBUG_LOG would print the
+# pclk the HAL programmed, but ESP_LOGD is also gated by CONFIG_LOG_MAXIMUM_LEVEL,
+# so it would need a second switch and a full rebuild. The scanout counters in
+# main.cpp measure the frame rate instead (VSYNC x total line/pixel counts gives
+# the pixel clock to 0.1%), which is a measurement rather than a driver claim.
+#
+# The RGB panel DMA needs a few IRAM-safe pieces; keep the cache config simple.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+

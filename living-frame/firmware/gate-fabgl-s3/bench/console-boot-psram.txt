@@ -1,0 +1,23 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (90) psram: PSRAM ID read error: 0x00ffffff, PSRAM chip not found or not supported, or wrong PSRAM line mode
+
+=== 0178 bench identification probe ===
+chip model      : ESP32-S3
+chip revision   : 0
+cores           : 2
+cpu freq MHz    : 240
+flash size      : 8388608 bytes
+psram size      : 0 bytes
+psram free      : 0 bytes
+heap total      : 399188 bytes
+heap free       : 373460 bytes
+largest DMA blk : 335860 bytes
+=== end probe ===

@@ -1,0 +1,13 @@
+
+=== 0178 bench identification probe ===
+chip model      : ESP32-S3
+chip revision   : 0
+cores           : 2
+cpu freq MHz    : 240
+flash size      : 8388608 bytes
+psram size      : 0 bytes
+psram free      : 0 bytes
+heap total      : 400604 bytes
+heap free       : 374876 bytes
+largest DMA blk : 335860 bytes
+=== end probe ===

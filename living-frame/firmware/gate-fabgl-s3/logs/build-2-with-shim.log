@@ -1,0 +1,314 @@
+********************************************************************************
+Obsolete PIO Core v6.1.19 is used (previous was 6.2.0)
+Please remove multiple PIO Cores from a system:
+https://docs.platformio.org/en/latest/core/installation/troubleshooting.html
+********************************************************************************
+Processing heltec (platform: espressif32@6.12.0; board: heltec_wifi_lora_32_V3; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/heltec_wifi_lora_32_V3.html
+PLATFORM: Espressif 32 (6.12.0) > Heltec WiFi LoRa 32 (V3)
+HARDWARE: ESP32S3 240MHz, 320KB RAM, 8MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-builtin, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 2.40900.250804 (4.9.0) 
+ - toolchain-riscv32-esp @ 8.4.0+2021r2-patch5 
+ - toolchain-xtensa-esp32s3 @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 34 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- FabGL @ 1.0.9
+Building in release mode
+Compiling .pio/build/heltec/src/main.cpp.o
+Building .pio/build/heltec/bootloader.bin
+Generating partitions .pio/build/heltec/partitions.bin
+Compiling .pio/build/heltec/lib61f/SPI/SPI.cpp.o
+esptool.py v4.9.0
+Creating esp32s3 image...
+Merged 1 ELF section
+Successfully created esp32s3 image.
+Compiling .pio/build/heltec/libe32/WiFi/WiFi.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiAP.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiClient.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiGeneric.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiMulti.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiSTA.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiScan.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiServer.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiUdp.cpp.o
+Compiling .pio/build/heltec/lib9d7/FabGL/canvas.cpp.o
+Compiling .pio/build/heltec/lib9d7/FabGL/codepages.cpp.o
+Compiling .pio/build/heltec/lib9d7/FabGL/collisiondetector.cpp.o
+Compiling .pio/build/heltec/lib9d7/FabGL/comdrivers/ps2controller.cpp.o
+Compiling .pio/build/heltec/lib9d7/FabGL/comdrivers/ps2device.cpp.o
+In file included from /home/astroboy/.platformio/lib/FabGL/src/devdrivers/soundgen.h:45,
+                 from /home/astroboy/.platformio/lib/FabGL/src/terminal.h:55,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:314,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/lldesc.h:67:16: error: redefinition of 'struct lldesc_s'
+ typedef struct lldesc_s {
+                ^~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabutils.h:46,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/lldesc.h:65:16: note: previous definition of 'struct lldesc_s'
+ typedef struct lldesc_s {
+                ^~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/devdrivers/soundgen.h:45,
+                 from /home/astroboy/.platformio/lib/FabGL/src/terminal.h:55,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:314,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/lldesc.h:79:3: error: conflicting declaration 'typedef int lldesc_t'
+ } lldesc_t;
+   ^~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabutils.h:46,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/lldesc.h:77:3: note: previous declaration as 'typedef struct lldesc_s lldesc_t'
+ } lldesc_t;
+   ^~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/devdrivers/soundgen.h:45,
+                 from /home/astroboy/.platformio/lib/FabGL/src/terminal.h:55,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:314,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/lldesc.h:81:16: error: redefinition of 'struct tx_ampdu_entry_s'
+ typedef struct tx_ampdu_entry_s{
+                ^~~~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabutils.h:46,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/lldesc.h:79:16: note: previous definition of 'struct tx_ampdu_entry_s'
+ typedef struct tx_ampdu_entry_s {
+                ^~~~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/devdrivers/soundgen.h:45,
+                 from /home/astroboy/.platformio/lib/FabGL/src/terminal.h:55,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:314,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/lldesc.h:89:3: error: conflicting declaration 'typedef int tx_ampdu_entry_t'
+ } tx_ampdu_entry_t;
+   ^~~~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabutils.h:46,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/lldesc.h:87:3: note: previous declaration as 'typedef struct tx_ampdu_entry_s tx_ampdu_entry_t'
+ } tx_ampdu_entry_t;
+   ^~~~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/devdrivers/soundgen.h:45,
+                 from /home/astroboy/.platformio/lib/FabGL/src/terminal.h:55,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:314,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/lldesc.h:91:16: error: redefinition of 'struct lldesc_chain_s'
+ typedef struct lldesc_chain_s {
+                ^~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabutils.h:46,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/lldesc.h:89:16: note: previous definition of 'struct lldesc_chain_s'
+ typedef struct lldesc_chain_s {
+                ^~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/devdrivers/soundgen.h:45,
+                 from /home/astroboy/.platformio/lib/FabGL/src/terminal.h:55,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:314,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/lldesc.h:94:3: error: conflicting declaration 'typedef int lldesc_chain_t'
+ } lldesc_chain_t;
+   ^~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabutils.h:46,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/lldesc.h:92:3: note: previous declaration as 'typedef struct lldesc_chain_s lldesc_chain_t'
+ } lldesc_chain_t;
+   ^~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/devdrivers/soundgen.h:45,
+                 from /home/astroboy/.platformio/lib/FabGL/src/terminal.h:55,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:314,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/lldesc.h:138:24: error: redefinition of 'uint32_t lldesc_get_chain_length(lldesc_t*)'
+ static inline uint32_t lldesc_get_chain_length(lldesc_t *head)
+                        ^~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabutils.h:46,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/lldesc.h:136:24: note: 'uint32_t lldesc_get_chain_length(lldesc_t*)' previously defined here
+ static inline uint32_t lldesc_get_chain_length(lldesc_t *head)
+                        ^~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/devdrivers/soundgen.h:45,
+                 from /home/astroboy/.platformio/lib/FabGL/src/terminal.h:55,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:314,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32/rom/lldesc.h:151:20: error: redefinition of 'void lldesc_config(lldesc_t*, uint8_t, uint8_t, uint8_t, uint16_t)'
+ static inline void lldesc_config(lldesc_t *ds, uint8_t owner, uint8_t eof, uint8_t sosf, uint16_t len)
+                    ^~~~~~~~~~~~~
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabutils.h:46,
+                 from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/lldesc.h:149:20: note: 'void lldesc_config(lldesc_t*, uint8_t, uint8_t, uint8_t, uint16_t)' previously defined here
+ static inline void lldesc_config(lldesc_t *ds, uint8_t owner, uint8_t eof, uint8_t sosf, uint16_t len)
+                    ^~~~~~~~~~~~~
+Archiving .pio/build/heltec/lib61f/libSPI.a
+*** [.pio/build/heltec/src/main.cpp.o] Error 1
+Indexing .pio/build/heltec/lib61f/libSPI.a
+In file included from /home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_rom/include/esp32s3/rom/ets_sys.h:19,
+                 from /home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/port/xtensa/include/freertos/FreeRTOSConfig_arch.h:51,
+                 from /home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/esp_additions/freertos/FreeRTOSConfig.h:16,
+                 from /home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/FreeRTOS.h:57,
+                 from /home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:29:
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp: In static member function 'static void fabgl::PS2Controller::begin(gpio_num_t, gpio_num_t, gpio_num_t, gpio_num_t)':
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:19: error: 'SENS_SAR_START_FORCE_REG' was not declared in this scope
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+                   ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:137:37: note: in definition of macro 'REG_WRITE'
+             (*(volatile uint32_t *)(_r)) = (_v);                                                                       \
+                                     ^~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:5: note: in expansion of macro 'REG_SET_FIELD'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+     ^~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:19: note: suggested alternative: 'SENS_MEAS2_START_FORCE_S'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+                   ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:137:37: note: in definition of macro 'REG_WRITE'
+             (*(volatile uint32_t *)(_r)) = (_v);                                                                       \
+                                     ^~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:5: note: in expansion of macro 'REG_SET_FIELD'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+     ^~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:45: error: 'SENS_PC_INIT_V' was not declared in this scope
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+                                             ^~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:137:45: note: in definition of macro 'REG_WRITE'
+             (*(volatile uint32_t *)(_r)) = (_v);                                                                       \
+                                             ^~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:5: note: in expansion of macro 'REG_SET_FIELD'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+     ^~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:45: note: suggested alternative: 'SENS_XPD_HALL_V'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+                                             ^~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:137:45: note: in definition of macro 'REG_WRITE'
+             (*(volatile uint32_t *)(_r)) = (_v);                                                                       \
+                                             ^~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:5: note: in expansion of macro 'REG_SET_FIELD'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+     ^~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:45: error: 'SENS_PC_INIT_S' was not declared in this scope
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+                                             ^~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:137:45: note: in definition of macro 'REG_WRITE'
+             (*(volatile uint32_t *)(_r)) = (_v);                                                                       \
+                                             ^~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:5: note: in expansion of macro 'REG_SET_FIELD'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+     ^~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:45: note: suggested alternative: 'SENS_XPD_HALL_S'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+                                             ^~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:137:45: note: in definition of macro 'REG_WRITE'
+             (*(volatile uint32_t *)(_r)) = (_v);                                                                       \
+                                             ^~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1154:5: note: in expansion of macro 'REG_SET_FIELD'
+     REG_SET_FIELD(SENS_SAR_START_FORCE_REG, SENS_PC_INIT, RTCMEM_PROG_START);   // set entry point
+     ^~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1155:23: error: 'SENS_SAR_START_FORCE_REG' was not declared in this scope
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_FORCE_START_TOP);   // enable FORCE START
+                       ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:130:34: note: in definition of macro 'ETS_UNCACHED_ADDR'
+ #define ETS_UNCACHED_ADDR(addr) (addr)
+                                  ^~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:210:13: note: in expansion of macro 'WRITE_PERI_REG'
+             WRITE_PERI_REG((reg), (READ_PERI_REG(reg)|(mask)));                                                        \
+             ^~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1155:5: note: in expansion of macro 'SET_PERI_REG_MASK'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_FORCE_START_TOP);   // enable FORCE START
+     ^~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1155:23: note: suggested alternative: 'SENS_MEAS2_START_FORCE_S'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_FORCE_START_TOP);   // enable FORCE START
+                       ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:130:34: note: in definition of macro 'ETS_UNCACHED_ADDR'
+ #define ETS_UNCACHED_ADDR(addr) (addr)
+                                  ^~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:210:13: note: in expansion of macro 'WRITE_PERI_REG'
+             WRITE_PERI_REG((reg), (READ_PERI_REG(reg)|(mask)));                                                        \
+             ^~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1155:5: note: in expansion of macro 'SET_PERI_REG_MASK'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_FORCE_START_TOP);   // enable FORCE START
+     ^~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1155:49: error: 'SENS_ULP_CP_FORCE_START_TOP' was not declared in this scope
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_FORCE_START_TOP);   // enable FORCE START
+                                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:200:76: note: in definition of macro 'WRITE_PERI_REG'
+             (*((volatile uint32_t *)ETS_UNCACHED_ADDR(addr))) = (uint32_t)(val);                                       \
+                                                                            ^~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1155:5: note: in expansion of macro 'SET_PERI_REG_MASK'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_FORCE_START_TOP);   // enable FORCE START
+     ^~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1155:49: note: suggested alternative: 'RTC_CNTL_ULP_CP_FORCE_START_TOP'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_FORCE_START_TOP);   // enable FORCE START
+                                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:200:76: note: in definition of macro 'WRITE_PERI_REG'
+             (*((volatile uint32_t *)ETS_UNCACHED_ADDR(addr))) = (uint32_t)(val);                                       \
+                                                                            ^~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1155:5: note: in expansion of macro 'SET_PERI_REG_MASK'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_FORCE_START_TOP);   // enable FORCE START
+     ^~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1170:23: error: 'SENS_SAR_START_FORCE_REG' was not declared in this scope
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_START_TOP);
+                       ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:130:34: note: in definition of macro 'ETS_UNCACHED_ADDR'
+ #define ETS_UNCACHED_ADDR(addr) (addr)
+                                  ^~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:210:13: note: in expansion of macro 'WRITE_PERI_REG'
+             WRITE_PERI_REG((reg), (READ_PERI_REG(reg)|(mask)));                                                        \
+             ^~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1170:5: note: in expansion of macro 'SET_PERI_REG_MASK'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_START_TOP);
+     ^~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1170:23: note: suggested alternative: 'SENS_MEAS2_START_FORCE_S'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_START_TOP);
+                       ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:130:34: note: in definition of macro 'ETS_UNCACHED_ADDR'
+ #define ETS_UNCACHED_ADDR(addr) (addr)
+                                  ^~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:210:13: note: in expansion of macro 'WRITE_PERI_REG'
+             WRITE_PERI_REG((reg), (READ_PERI_REG(reg)|(mask)));                                                        \
+             ^~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1170:5: note: in expansion of macro 'SET_PERI_REG_MASK'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_START_TOP);
+     ^~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1170:49: error: 'SENS_ULP_CP_START_TOP' was not declared in this scope
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_START_TOP);
+                                                 ^~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:200:76: note: in definition of macro 'WRITE_PERI_REG'
+             (*((volatile uint32_t *)ETS_UNCACHED_ADDR(addr))) = (uint32_t)(val);                                       \
+                                                                            ^~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1170:5: note: in expansion of macro 'SET_PERI_REG_MASK'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_START_TOP);
+     ^~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1170:49: note: suggested alternative: 'RTC_CNTL_ULP_CP_START_TOP'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_START_TOP);
+                                                 ^~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/soc.h:200:76: note: in definition of macro 'WRITE_PERI_REG'
+             (*((volatile uint32_t *)ETS_UNCACHED_ADDR(addr))) = (uint32_t)(val);                                       \
+                                                                            ^~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1170:5: note: in expansion of macro 'SET_PERI_REG_MASK'
+     SET_PERI_REG_MASK(SENS_SAR_START_FORCE_REG, SENS_ULP_CP_START_TOP);
+     ^~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1175:33: error: 'ETS_RTC_CORE_INTR_SOURCE' was not declared in this scope
+     esp_intr_alloc_pinnedToCore(ETS_RTC_CORE_INTR_SOURCE, ESP_INTR_FLAG_LEVEL2, ULPWakeISR, nullptr, &s_ULPWakeISRHandle, 1);
+                                 ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1175:33: note: suggested alternative: 'ETS_INTERNAL_SW0_INTR_SOURCE'
+     esp_intr_alloc_pinnedToCore(ETS_RTC_CORE_INTR_SOURCE, ESP_INTR_FLAG_LEVEL2, ULPWakeISR, nullptr, &s_ULPWakeISRHandle, 1);
+                                 ^~~~~~~~~~~~~~~~~~~~~~~~
+                                 ETS_INTERNAL_SW0_INTR_SOURCE
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp: In static member function 'static void fabgl::PS2Controller::ULPWakeISR(void*)':
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1350:18: error: 'RTC_CNTL_SAR_INT_ST' was not declared in this scope
+   if (rtc_intr & RTC_CNTL_SAR_INT_ST) {
+                  ^~~~~~~~~~~~~~~~~~~
+/home/astroboy/.platformio/lib/FabGL/src/comdrivers/ps2controller.cpp:1350:18: note: suggested alternative: 'RTC_CNTL_SWD_INT_ST'
+   if (rtc_intr & RTC_CNTL_SAR_INT_ST) {
+                  ^~~~~~~~~~~~~~~~~~~
+                  RTC_CNTL_SWD_INT_ST
+*** [.pio/build/heltec/lib9d7/FabGL/comdrivers/ps2controller.cpp.o] Error 1
+========================== [FAILED] Took 2.20 seconds ==========================

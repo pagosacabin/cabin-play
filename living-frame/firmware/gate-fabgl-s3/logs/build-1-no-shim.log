@@ -1,0 +1,44 @@
+********************************************************************************
+Obsolete PIO Core v6.1.19 is used (previous was 6.2.0)
+Please remove multiple PIO Cores from a system:
+https://docs.platformio.org/en/latest/core/installation/troubleshooting.html
+********************************************************************************
+Processing heltec (platform: espressif32@6.12.0; board: heltec_wifi_lora_32_V3; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/heltec_wifi_lora_32_V3.html
+PLATFORM: Espressif 32 (6.12.0) > Heltec WiFi LoRa 32 (V3)
+HARDWARE: ESP32S3 240MHz, 320KB RAM, 8MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-builtin, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 2.40900.250804 (4.9.0) 
+ - toolchain-riscv32-esp @ 8.4.0+2021r2-patch5 
+ - toolchain-xtensa-esp32s3 @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 34 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- FabGL @ 1.0.9
+Building in release mode
+Compiling .pio/build/heltec/src/main.cpp.o
+Building .pio/build/heltec/bootloader.bin
+Generating partitions .pio/build/heltec/partitions.bin
+Compiling .pio/build/heltec/lib61f/SPI/SPI.cpp.o
+esptool.py v4.9.0
+Creating esp32s3 image...
+Merged 1 ELF section
+Successfully created esp32s3 image.
+Compiling .pio/build/heltec/libe32/WiFi/WiFi.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiAP.cpp.o
+Compiling .pio/build/heltec/libe32/WiFi/WiFiClient.cpp.o
+In file included from /home/astroboy/.platformio/lib/FabGL/src/fabgl.h:312,
+                 from src/main.cpp:5:
+/home/astroboy/.platformio/lib/FabGL/src/fabutils.h:45:10: fatal error: soc/frc_timer_reg.h: No such file or directory
+ #include "soc/frc_timer_reg.h"
+          ^~~~~~~~~~~~~~~~~~~~~
+compilation terminated.
+Compiling .pio/build/heltec/libe32/WiFi/WiFiGeneric.cpp.o
+*** [.pio/build/heltec/src/main.cpp.o] Error 1
+========================== [FAILED] Took 1.74 seconds ==========================

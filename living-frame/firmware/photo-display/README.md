@@ -111,6 +111,20 @@ On-screen appearance is the last unproven step and needs a monitor: **Stephen's
 acceptance photo closes the rung**. Nothing here can photograph its own VGA
 output.
 
+## Reproducibility caveat
+
+A fresh `git clone` of `main` at the commit that added this project was checked
+out, and `pio run -e esp32dev` there ends `[SUCCESS] Took 4.87 seconds` — the
+project is self-contained (the vendored TJpgDec and the `lib_extra_dirs` reference
+into `vga-proof` both resolve from the clone).
+
+The resulting `.bin` is **not byte-identical** to the one flashed from the
+working tree: 389 168 vs 389 120 bytes, with the differences in the image header
+and in string tables. That is expected — the ESP-IDF app descriptor embeds a
+build timestamp and the build path, and the checkout path here is longer, which
+accounts for the 48-byte size difference. So the `sha256` quoted above identifies
+**the image that was flashed onto the board**, not a universal hash of the source.
+
 ## Wiring
 
 Unchanged from rung 0 — see [`../vga-proof/WIRING.md`](../vga-proof/WIRING.md)

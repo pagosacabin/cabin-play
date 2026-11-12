@@ -13,23 +13,45 @@
 //  evenly spaced, because the DAC is a plain resistor ladder, not a
 //  thermometer DAC: each channel has a 270 ohm path (heavy bit) and a 470 ohm
 //  path (weak bit) in parallel into the monitor's 75 ohm termination. The
-//  quarter-steps it produces are approx 0.00, 0.45, 0.71, 1.00 of full scale
-//  rather than 0.00, 0.33, 0.67, 1.00. The quantiser below therefore dithers
-//  between the *actual* ladder levels (DAC_LEVEL_FRACTION), so the average
-//  output voltage tracks the source pixel instead of being biased bright in
-//  the shadows, which is what an even-quarter quantiser would do.
+//  fractions of full scale it produces are approx 0.00, 0.45, 0.71, 1.00
+//  rather than 0.00, 0.33, 0.67, 1.00.
 //
-//  Dither: 8x8 ordered (Bayer) in the voltage domain. Four levels per channel
-//  with no dither bands a photo into 64 flat patches; with dither the 76,800
-//  pixels carry gradients the eye integrates. The census printed on the device
-//  (and by the host check) is the honest count of the 64 palette entries the
-//  frame actually uses.
+//  TWO QUANTISER MODES (round 2, 2026-11-12). Round 1 dithered in the VOLTAGE
+//  domain: a pixel wanted "s of full scale" and the dither mixed levels whose
+//  *voltages* average to s. A display is not linear in voltage -- an LCD or CRT
+//  fed VGA maps voltage to luminance as approx V^gamma -- so dithering to the
+//  average *voltage* displays the average *light* of s^gamma, i.e. everything
+//  comes out too bright, and shadows are the worst case: the ladder's first
+//  step is 0.452 of full scale, which is sRGB 115 once the panel's gamma is
+//  applied, so a dark pixel was rendered as a spray of mid-grey dots. That is
+//  the "speckled black background" Stephen saw.
+//
+//    PHOTO64_MODE_LEGACY      -- round 1's behaviour, voltage-domain dither.
+//                                Kept so the same build can A/B the change.
+//    PHOTO64_MODE_PERCEPTUAL  -- light-domain dither: the source byte is
+//                                gamma-decoded to luminance first, and the
+//                                dither mixes levels so the average *luminance*
+//                                matches. Same 4 levels, same hardware; shadow
+//                                dots become ~4x sparser and midtones stop
+//                                reading bright.
+//
+//  GAMMA 2.2 is the display model, not a measurement of Stephen's panel (the
+//  213T is an LCD driven by an analogue VGA input; sRGB-equivalent 2.2 is the
+//  standard assumption). It is one constant here, so the model is stated and
+//  reversible rather than buried.
+//
+//  Dither: 8x8 ordered (Bayer) in whichever domain the mode selects. Four
+//  levels per channel with no dither bands a photo into 64 flat patches; with
+//  dither the 76,800 pixels carry gradients the eye integrates. The census
+//  printed on the device (and by the host check) is the honest count of the 64
+//  palette entries the frame actually uses.
 // ---------------------------------------------------------------------------
 #pragma once
 
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include <math.h>
 #include <tjpgd.h>
 
 // --- the hardware ladder ----------------------------------------------------
@@ -41,13 +63,19 @@
 #define DAC_R_WEAK  470.0f
 #define DAC_R_TERM   75.0f
 
+// Display model: luminance = voltage^PHOTO64_GAMMA. Standard sRGB-ish 2.2.
+#define PHOTO64_GAMMA 2.2f
+
+// Quantiser modes.
+#define PHOTO64_MODE_LEGACY     0   // round 1: voltage-domain dither
+#define PHOTO64_MODE_PERCEPTUAL 1   // round 2: light-domain (gamma) dither
+
 // Where each channel samples the matrix. Giving all three channels the SAME
 // threshold correlates them: in a smooth region all three step up or down
 // together, so the frame collapses onto the grey diagonal and uses only a
-// fraction of the 64 entries (22 of 64 for this photo). Offsetting each
-// channel's sample point decorrelates them, which both widens the palette the
-// frame actually uses and stops the dither from pulling hue towards grey.
-// Values are arbitrary odd-ish offsets chosen to stay far apart in the matrix.
+// fraction of the 64 entries. Offsetting each channel's sample point
+// decorrelates them, which both widens the palette the frame actually uses and
+// stops the dither from pulling hue towards grey.
 static const uint8_t BAYER_DX[3] = {0, 3, 6};
 static const uint8_t BAYER_DY[3] = {0, 5, 2};
 
@@ -68,6 +96,7 @@ typedef struct {
     int screenW;
     int screenH;
     int scaleShift;     // TJpgDec descale: 0 = 1/1, 1 = 1/2, 2 = 1/4, 3 = 1/8
+    int mode;           // PHOTO64_MODE_LEGACY | PHOTO64_MODE_PERCEPTUAL
 } Photo64Config;
 
 // Pixel sink. q* are 0..3 (the level each channel's two bits select) and
@@ -106,33 +135,67 @@ static inline void photo64Ladder(float out[4])
     for (int i = 0; i < 4; i++) out[i] = v[i] / vmax;
 }
 
-// Table: source byte -> level position in 1/256ths (0 .. 3*256). Built once.
-static uint16_t s_qtab[256];
+// Position of target value t within the four levels, in 1/256ths of a level
+// step (0 .. 3*256). Shared by both domains; only `lev` changes.
+static inline float photo64Pos(float t, const float lev[4])
+{
+    float j;
+    if (t <= lev[1])      j = (t - lev[0]) / (lev[1] - lev[0]);
+    else if (t <= lev[2]) j = 1.0f + (t - lev[1]) / (lev[2] - lev[1]);
+    else                  j = 2.0f + (t - lev[2]) / (lev[3] - lev[2]);
+    if (j < 0.0f) j = 0.0f;
+    if (j > 3.0f) j = 3.0f;
+    return j;
+}
+
+// Tables: [mode][source byte] -> level position in 1/256ths (0 .. 3*256).
+static uint16_t s_qtab[2][256];
 
 static inline void photo64Init(void)
 {
-    float L[4];
-    photo64Ladder(L);
+    float V[4], L[4];
+    photo64Ladder(V);
+    for (int i = 0; i < 4; i++) L[i] = (i == 0) ? 0.0f : powf(V[i], PHOTO64_GAMMA);
+
     for (int i = 0; i < 256; i++) {
-        const float s = i / 255.0f;          // wanted fraction of full scale
-        float j;                             // continuous level position 0..3
-        if (s <= L[1])      j = (s - L[0]) / (L[1] - L[0]);
-        else if (s <= L[2]) j = 1.0f + (s - L[1]) / (L[2] - L[1]);
-        else                j = 2.0f + (s - L[2]) / (L[3] - L[2]);
-        if (j < 0.0f) j = 0.0f;
-        if (j > 3.0f) j = 3.0f;
-        s_qtab[i] = (uint16_t)(j * 256.0f + 0.5f);
+        const float s = i / 255.0f;                       // wanted fraction (sRGB code)
+        const float sLin = (i == 0) ? 0.0f : powf(s, PHOTO64_GAMMA);  // wanted luminance
+        s_qtab[PHOTO64_MODE_LEGACY][i]     = (uint16_t)(photo64Pos(s,    V) * 256.0f + 0.5f);
+        s_qtab[PHOTO64_MODE_PERCEPTUAL][i] = (uint16_t)(photo64Pos(sLin, L) * 256.0f + 0.5f);
     }
 }
 
 // Quantise one channel: continuous position + ordered threshold, then floor.
 // Threshold spans 0..252 in 1/256ths, i.e. effectively uniform over [0,1).
-static inline int photo64Quant(uint8_t src, uint8_t bayer)
+static inline int photo64Quant(uint8_t src, uint8_t bayer, int mode)
 {
-    int q = (s_qtab[src] + (int)bayer * 4) >> 8;
+    const uint16_t *tab = s_qtab[mode == PHOTO64_MODE_PERCEPTUAL
+                                 ? PHOTO64_MODE_PERCEPTUAL : PHOTO64_MODE_LEGACY];
+    int q = (tab[src] + (int)bayer * 4) >> 8;
     if (q > 3) q = 3;
     if (q < 0) q = 0;
     return q;
+}
+
+// sRGB code each level displays (0, 115, 182, 255 for this ladder) and the
+// luminance fraction behind it (0, 0.18, 0.48, 1.00). The first step of this
+// ladder is therefore *mid-grey*, not a dark grey -- the fact that explains
+// "speckled black": any shadow detail has to be drawn as an average of black
+// and mid-grey dots. Quoted by the ramp screen and the serial log so the claim
+// is checkable rather than asserted.
+static inline void photo64LevelBytes(uint8_t out[4])
+{
+    float V[4];
+    photo64Ladder(V);
+    for (int i = 0; i < 4; i++) out[i] = (uint8_t)(V[i] * 255.0f + 0.5f);
+}
+
+static inline void photo64LevelLuminance(uint8_t out[4])
+{
+    float V[4];
+    photo64Ladder(V);
+    for (int i = 0; i < 4; i++)
+        out[i] = (uint8_t)((i == 0 ? 0.0f : powf(V[i], PHOTO64_GAMMA)) * 255.0f + 0.5f);
 }
 
 static inline size_t photo64InFunc(JDEC *jd, uint8_t *buff, size_t nbyte)
@@ -152,6 +215,7 @@ static inline int photo64OutFunc(JDEC *jd, void *bitmap, JRECT *rect)
     const uint8_t  *src = (const uint8_t *)bitmap;
     const int w = rect->right  - rect->left + 1;
     const int h = rect->bottom - rect->top  + 1;
+    const int mode = t->cfg.mode;
 
     for (int j = 0; j < h; j++) {
         const int y = rect->top + j;
@@ -165,9 +229,9 @@ static inline int photo64OutFunc(JDEC *jd, void *bitmap, JRECT *rect)
             const uint8_t thg = BAYER8[(y + BAYER_DY[1]) & 7][(x + BAYER_DX[1]) & 7];
             const uint8_t thb = BAYER8[(y + BAYER_DY[2]) & 7][(x + BAYER_DX[2]) & 7];
             t->put(t->ctx, x, y,
-                   photo64Quant(r, thr),
-                   photo64Quant(g, thg),
-                   photo64Quant(b, thb),
+                   photo64Quant(r, thr, mode),
+                   photo64Quant(g, thg, mode),
+                   photo64Quant(b, thb, mode),
                    p);
         }
     }

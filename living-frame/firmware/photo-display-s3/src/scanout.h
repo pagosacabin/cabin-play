@@ -74,3 +74,65 @@ SCANOUT_FN void scanout_double_fill(uint8_t *out, const uint8_t *src,
         left -= n;
     }
 }
+
+
+// ---------------------------------------------------------------------------
+//  Rung 3b (task 0180): full-resolution 4-bit-per-pixel scanout.
+//
+//  The 640x480 frame is 153,600 B at 4 bpp, so it fits internal RAM with no
+//  doubling: every output pixel is a palette index and the raster is sent at
+//  its native size. Two pixels share a byte, EVEN column in the low nibble.
+//
+//  The ISR cannot look a palette entry up per pixel without costing ~8 loads
+//  per 4 pixels, so the palette is folded into a 256-entry table at init:
+//    expand[b] = pal[b & 15] | (pal[(b >> 4) & 15] << 8)
+//  i.e. one 16-bit load replaces two palette loads, and two source bytes become
+//  one aligned 32-bit store of four output pixels -- the same shape as the
+//  doubling path above. The table is rebuilt only at a phase switch, into a
+//  different table slot, so the ISR never sees a half-written entry.
+// ---------------------------------------------------------------------------
+#define SCANOUT_FULL_W 640
+#define SCANOUT_FULL_H 480
+#define SCANOUT_FULL_PX (SCANOUT_FULL_W * SCANOUT_FULL_H)
+
+// One entry of the index->DAC-byte expansion table.
+static inline uint16_t scanout_expand_entry(const uint8_t *pal, int b)
+{
+    return (uint16_t)((uint16_t)pal[b & 15] | ((uint16_t)pal[(b >> 4) & 15] << 8));
+}
+
+static inline void scanout_build_expand(uint16_t *tab, const uint8_t *pal)
+{
+    for (int b = 0; b < 256; b++)
+        tab[b] = scanout_expand_entry(pal, b);
+}
+
+// Fill `len_bytes` output pixels starting at output pixel `pos_px`, reading the
+// 4bpp source at half that position. Odd starting positions are handled by the
+// scalar path (the real DMA always starts on a 640-px line boundary).
+SCANOUT_FN void scanout_index4_fill(uint8_t *out, const uint8_t *src,
+                                    const uint16_t *expand, int pos_px, int len_bytes)
+{
+    if ((pos_px & 1) == 0) {
+        int i = 0;
+        for (; i + 4 <= len_bytes; i += 4) {
+            const uint8_t *s = src + ((pos_px + i) >> 1);
+            const uint32_t w = (uint32_t)expand[s[0]] | ((uint32_t)expand[s[1]] << 16);
+            *(uint32_t *)(out + i) = w;
+        }
+        // Tail: one pixel at a time, and the nibble rule still applies (a chunk
+        // length need not be even -- an odd tail puts the last pixel on the high
+        // nibble; taking the low byte there silently duplicates its neighbour).
+        for (; i < len_bytes; i++) {
+            const int px = pos_px + i;
+            const uint16_t e = expand[src[px >> 1]];
+            out[i] = (uint8_t)((px & 1) ? (e >> 8) : e);
+        }
+        return;
+    }
+    for (int i = 0; i < len_bytes; i++) {
+        const int px = pos_px + i;
+        const uint16_t e = expand[src[px >> 1]];
+        out[i] = (uint8_t)((px & 1) ? (e >> 8) : e);
+    }
+}

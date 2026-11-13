@@ -167,3 +167,145 @@ was clean and the scanout counters were perfect — only `tools/scanout_test.cpp
 (byte-comparing the ISR's output against a 2×2 nearest-neighbour reference with
 live negative controls) showed it. Fixed to `0x0101`, re-flashed, and the fix is
 what is on the board now.
+
+---
+
+# Rung 3b (task 0180): full 640×480 at 16 colours, portrait-native
+
+The rung above traded resolution for colours because 640×480×1 B = 307,200 B
+does not fit this part. Four bits per pixel changes that sum:
+
+```
+ 640 × 480 × 4 bits = 153,600 B  -- fits internal RAM with the driver's buffers
+```
+
+So this rung scans a **true 640×480 frame** with **no doubling**, at **16 colours
+per photo**, rendered **480×640 portrait** and rotated into the landscape raster
+on the host. The 0179 mode is kept and is still buildable and flashable.
+
+## Selecting the mode
+
+```bash
+pio run -e heltec-s3            # rung 3b (default): PHOTO_MODE=1, full-res 16-colour
+pio run -e heltec-s3 -t upload
+pio run -e heltec-s3-0179       # rung 3a: PHOTO_MODE=2, 320x240 doubled 64-colour
+```
+
+Both envs produce their own `firmware.elf`; `strings` on each shows its own
+banner (`0180 rung 3b` / `0179 rung 3a`), so the selected mode is verifiable in
+the artifact, not only in the source. Rung 3b uses 538,311 B of the 1 MB app
+partition (51.3 %); rung 3a 538,303 B.
+
+## The 4bpp path
+
+```
+ 640×480 frame, 4 bpp (153,600 B, internal RAM, address printed at boot)
+        │  scanout_index4_fill(): 2 pixels/byte -> 4 DAC bytes per 32-bit store
+        ▼
+ 2 × 10,240 B bounce buffers ──► LCD_CAM RGB, 8-bit bus, 25 MHz pclk, 30 fills/frame
+```
+
+Two pixels share a byte, **even column in the low nibble**. The palette is folded
+into a 256-entry table at init
+(`expand[b] = pal[b & 15] | (pal[b >> 4] & 15) << 8`), so the ISR does two table
+loads and one aligned 32-bit store per four output pixels — the same shape as the
+doubling path, and it costs the same 30 fills per frame. There are **three**
+expand tables (ramp, lorikeet, blue marble) built once at init; a phase switch
+flips a pointer, so the ISR never reads a half-written table.
+
+## Palette and dither (`tools/convert_images16.py`)
+
+Per photo, never a fixed system palette:
+
+1. **Portrait**: scale to *cover* 480×640 and centre-crop.
+2. **Linear light**: sRGB bytes gamma-decoded at 2.2 — the same exponent the
+   ladder model uses. Palette selection and dithering are done there (the 0177
+   round-2 finding: voltage-domain dither speckles shadows).
+3. **Median cut** in linear light into 16 boxes; each box's weighted mean is the
+   candidate colour.
+4. **Snap to the ladder, distinctly**: each mean is replaced by one of the 64
+   colours the DAC can actually make, with a greedy one-to-one assignment on
+   `n·‖mean − colour‖²` (luminance-weighted). Snapping each mean independently
+   collapsed 16 boxes onto **8** distinct colours on the first run; the
+   assignment fixes that and guarantees 16 usable slots.
+5. **Lloyd refinement**: re-assign every pixel to its nearest palette entry and
+   re-snap, up to 8 rounds. It converged to the median-cut palette on both
+   photos (a fixed point), which is why the two error figures in the log match.
+6. **Floyd–Steinberg in linear light** against that palette — error diffusion,
+   not an ordered threshold, because the palette is irregular and the error a
+   pixel leaves behind has to be carried to its neighbours.
+
+Placed on the ladder, the 16 entries are e.g. `00 01 04 05 06 0a 10 11 14 15 16
+1a 1b 25 2a 2b` (lorikeet) and `00 05 0a 10 14 15 1a 25 26 29 2a 2f 39 3a 3b 3f`
+(blue marble) — printed by the board at boot as well.
+
+## Portrait → scanout rotation
+
+The frame stored for scanout is 640×480; the content is 480×640. The converter
+rotates it **90° clockwise** (`raster(x,y) = canvas(x_c = y, y_c = PH-1-x)`), so
+the picture reads upright on a monitor pivoted **90° counter-clockwise
+(rotate-left)**. Nothing rotates on the device.
+
+That direction is asserted, not assumed: `rotate_into_scanout` asserts the
+mapping on markers (portrait top-left → raster top-right), and
+`tools/render16.cpp` reads the finished raster back at every patch centre and
+checks the palette index found there against the index the layout calls for.
+A transposed or mirrored mapping fails that probe.
+
+If Stephen pivots the other way, two lines flip it: `np.rot90(..., k=-1)` in
+`tools/convert_images16.py` and `rpMapX`/`rpMapY` in `src/ramp_portrait.h`. Then
+re-run the converter and re-flash.
+
+## The ramp, portrait
+
+Same diagnostic content as rung 3a, laid out on the 480×640 canvas: four patch
+rows (R, G, B, then W = all three channels together, where a per-channel fault
+shows as a tint), each patch labelled 0/1/2/3, and a dithered black→white
+gradient band at the bottom using the same light-domain quantiser and 8×8 Bayer
+matrix. A pixel is a 4-bit index into the ramp's own palette (`src/ramp_palette.h`):
+black is repeated at indices 0/4/8 so each channel's level 0 is black in every
+row without a branch, and indices 12–14 are the three greys (14 = white).
+`tools/ramp-portrait.png` is the portrait view, `tools/ramp-portrait-raster.png`
+the raster as scanned out.
+
+## Measured on the bench
+
+`bench/console-16colour.txt` (100 s capture, `/dev/ttyUSB1`, CP2102,
+`bench/capture.py`, booted with the DTR/RTS ladder):
+
+```
+frame buffer: 0x3fc9a000, 153600 B (4 bpp, internal RAM) = 640x480 pixels, 16 colours
+palettes    : 16-entry set per phase -> 256-entry index->DAC-byte table (3 x 512 B)
+heap        : free after init = 209524 B internal (largest block 167936 B)
+[   5.230 s] scanout:  302 vsync (+60.17/s),   9074 bounce fills (+30.0/frame)
+[  25.250 s] scanout: 1494 vsync (+59.60/s),  44823 bounce fills (+30.0/frame)
+[  50.316 s] scanout: 2986 vsync (+59.65/s),  89584 bounce fills (+29.9/frame)
+[  95.377 s] scanout: 5668 vsync (+59.60/s), 170050 bounce fills (+30.0/frame)
+```
+
+Uptime runs monotonically to 95 s through two full cycles (ramp → lorikeet →
+blue-marble → ramp) with no reset, no panic and no `E (`/`W (` lines: VSYNC
+59.36–60.17/s (mean ≈ 59.5) and **exactly 30 bounce fills per frame throughout**,
+i.e. the DMA never starved at full resolution.
+
+## Host checks
+
+| Check | Result |
+|---|---|
+| `tools/scanout_test4.cpp` (4bpp fill vs naive per-pixel reference, chunks 10240 / whole-frame / 1000 / 999 / 2) | `RESULT: PASS`, 0 differing bytes of 307,200 in every shape |
+| negative controls (nibbles swapped / palette entries swapped) | both differ — the comparison is live |
+| `tools/scanout_test.cpp` (rung 3a doubling) | still `RESULT: PASS` — that path is untouched |
+| `tools/render16.cpp` patch probe | 16/16 patch centres return the index the layout calls for; gradient band 0 → 14; 15 distinct indices used |
+| `tools/compare_modes.py` | MAE 29.34 vs 29.70 (lorikeet), 29.21 vs 36.14 (blue marble), full16 vs doubled |
+
+Nothing above is a picture. The acceptance gate is **Stephen's photographs plus
+his verdict** on whether 16 colours holds up against the doubled mode's 64.
+
+### One defect this process caught
+
+`scanout_index4_fill`'s tail loop took the low nibble unconditionally, so any
+chunk whose length was odd (or a chunk smaller than 4 pixels) duplicated the
+neighbouring even pixel — invisible at the device's 10,240-byte chunks, and
+invisible in the picture's timing. `tools/scanout_test4.cpp`'s 999-byte and
+2-byte chunk cases caught it (143 and 144,102 differing bytes). Fixed to apply
+the nibble rule to the tail, and the test now passes at every chunk shape.

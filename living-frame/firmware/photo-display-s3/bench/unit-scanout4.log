@@ -1,0 +1,11 @@
+# g++ -O2 -DPHOTO_S3_HOST -Isrc tools/scanout_test4.cpp  (2026-11-13T00:37:33Z)
+expand table: 0 bad entries of 256  PASS
+chunk  10240 B: differing bytes 0 of 307200  PASS
+chunk 307200 B: differing bytes 0 of 307200  PASS
+chunk   1000 B: differing bytes 0 of 307200  PASS
+chunk    999 B: differing bytes 0 of 307200  PASS
+chunk      2 B: differing bytes 0 of 307200  PASS
+negative control (nibble order swapped): differing bytes 288204 OK (comparison is live)
+negative control (palette 0<->1 swapped): differing bytes 38362 OK
+RESULT: PASS
+rc=0

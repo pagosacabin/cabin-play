@@ -1,0 +1,13 @@
+# g++ -O2 -Isrc tools/render16.cpp; ./render16 tools  (2026-11-13T00:37:33Z)
+level sRGB codes: 0 115 182 255
+patch centres read back from the raster (index expected -> found):
+  row R: [117x74]  0-> 0 [217x74]  1-> 1 [317x74]  2-> 2 [417x74]  3-> 3
+  row G: [117x194]  4-> 4 [217x194]  5-> 5 [317x194]  6-> 6 [417x194]  7-> 7
+  row B: [117x314]  8-> 8 [217x314]  9-> 9 [317x314] 10->10 [417x314] 11->11
+  row W: [117x434]  0-> 0 [217x434] 12->12 [317x434] 13->13 [417x434] 14->14
+gradient band ends: index 0 (left) .. 14 (right)  OK
+indices used: 0(139239) 1(9000) 2(9000) 3(9000) 4(9000) 5(9000) 6(9000) 7(9000) 8(9000) 9(9000) 10(9000) 11(9000) 12(25260) 13(24675) 14(19026)  = 15 distinct of 16
+wrote tools/ramp-portrait-raster.ppm (640x480, landscape raster as scanned out)
+wrote tools/ramp-portrait.ppm (480x640, portrait view: monitor pivoted counter-clockwise)
+RESULT: PASS
+rc=0

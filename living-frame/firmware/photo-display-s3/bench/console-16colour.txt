@@ -1,0 +1,101 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x159c
+load:0x403c8700,len:0xd24
+load:0x403cb700,len:0x2f48
+entry 0x403c891c
+I (21) boot: ESP-IDF 5.5.0 2nd stage bootloader
+I (21) boot: compile time Nov 12 2026 17:34:42
+I (22) boot: Multicore bootloader
+I (22) boot: chip revision: v0.2
+I (24) boot: efuse block revision: v1.3
+I (28) boot.esp32s3: Boot SPI Speed : 80MHz
+I (32) boot.esp32s3: SPI Mode       : DIO
+I (36) boot.esp32s3: SPI Flash Size : 8MB
+I (39) boot: Enabling RNG early entropy source...
+I (44) boot: Partition Table:
+I (46) boot: ## Label            Usage          Type ST Offset   Length
+I (53) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (59) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (66) boot:  2 factory          factory app      00 00 00010000 00100000
+I (72) boot: End of partition table
+I (76) esp_image: segment 0: paddr=00010020 vaddr=3c020020 size=56a54h (354900) map
+I (146) esp_image: segment 1: paddr=00066a7c vaddr=3fc92500 size=02c60h ( 11360) load
+I (148) esp_image: segment 2: paddr=000696e4 vaddr=40374000 size=06934h ( 26932) load
+I (155) esp_image: segment 3: paddr=00070020 vaddr=42000020 size=1bc4ch (113740) map
+I (177) esp_image: segment 4: paddr=0008bc74 vaddr=4037a934 size=07b94h ( 31636) load
+I (184) esp_image: segment 5: paddr=00093810 vaddr=600fe000 size=00020h (    32) load
+I (190) boot: Loaded app from partition at offset 0x10000
+I (191) boot: Disabling RNG early entropy source...
+I (202) cpu_start: Multicore app
+I (211) cpu_start: Pro cpu start user code
+I (211) cpu_start: cpu freq: 240000000 Hz
+I (211) app_init: Application information:
+I (212) app_init: Project name:     photo-display-s3
+I (216) app_init: App version:      0316130-dirty
+I (221) app_init: Compile time:     Nov 12 2026 17:34:19
+I (226) app_init: ELF file SHA256:  bbae9fc3a...
+I (230) app_init: ESP-IDF:          5.5.0
+I (234) efuse_init: Min chip rev:     v0.0
+I (238) efuse_init: Max chip rev:     v0.99 
+I (242) efuse_init: Chip rev:         v0.2
+I (245) heap_init: Initializing. RAM available for dynamic allocation:
+I (252) heap_init: At 3FC96430 len 000532E0 (332 KiB): RAM
+I (257) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (262) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (267) heap_init: At 600FE020 len 00001FC8 (7 KiB): RTCRAM
+I (273) spi_flash: detected chip: gd
+I (276) spi_flash: flash io: dio
+I (279) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (285) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (292) main_task: Started on CPU0
+I (295) main_task: Calling app_main()
+
+=== photo-display-s3 (0180 rung 3b, full-res 16-colour, PORTRAIT) ===
+mode        : 640x480@~60 Hz VGA (LCD_CAM RGB), TRUE 640x480 frame at 4 bpp = 153600 B, 16 colours per photo
+content     : 480x640 portrait, rotated 90 deg clockwise into the landscape raster (monitor pivoted counter-clockwise)
+target      : ESP32-S3, SOC_LCDCAM_RGB_LCD_SUPPORTED=1
+timing      : pclk 25000000 Hz, h 96+48+640+16, v 2+33+480+10 -> 59.52 Hz
+sync        : hsync GPIO38, vsync GPIO39, both active-low (VGA negative polarity)
+data        : 8-bit bus, 6 lines used: bit0=R_LSB/5 bit1=R_MSB/4 bit2=G_LSB/7 bit3=G_MSB/6 bit4=B_LSB/20 bit5=B_MSB/19
+unrouted    : pclk, de (VGA has no clock/DE wire), data bits 6-7
+ladder: level -> frac of full scale -> sRGB code -> luminance code
+  0 (.) 0.000    0    0
+  1 (MSB) 0.452  115   45
+  2 (.+LSB) 0.714  182  122
+  3 (MSB+LSB) 1.000  255  255
+frame buffer: 0x3fc9a000, 153600 B (4 bpp, internal RAM) = 640x480 pixels, 16 colours
+palettes    : one 16-entry set per phase, expanded to a 256-entry index->DAC-byte table in RAM (3 x 512 B)
+ramp palette   16 entries: 00 01 02 03 00 04 08 0c 00 10 20 30 15 2a 3f 00
+lorikeet       16 entries: 00 01 04 05 06 0a 10 11 14 15 16 1a 1b 25 2a 2b
+blue-marble    16 entries: 00 05 0a 10 14 15 1a 25 26 29 2a 2f 39 3a 3b 3f
+palette sizes: ramp 16, lorikeet 16, blue-marble 16 distinct ladder colours (of the 64 reachable)
+panel      : streaming started (no_fb, 10240-px bounce buffers x2 = 10240 B each)
+heap       : free after init = 209524 B internal (largest block 167936 B)
+cycle      : ramp 30 s, lorikeet 20 s, blue-marble 20 s, repeat
+[   0.000 s] phase 0: ramp
+[   5.230 s] scanout: 302 vsync (+60.17/s), 9074 bounce fills (+30.0/frame)
+[  10.230 s] scanout: 600 vsync (+59.60/s), 18002 bounce fills (+30.0/frame)
+[  15.230 s] scanout: 897 vsync (+59.40/s), 26932 bounce fills (+30.1/frame)
+[  20.250 s] scanout: 1196 vsync (+59.56/s), 35895 bounce fills (+30.0/frame)
+[  25.250 s] scanout: 1494 vsync (+59.60/s), 44823 bounce fills (+30.0/frame)
+[  30.170 s] phase 1: lorikeet
+[  30.263 s] scanout: 1792 vsync (+59.45/s), 53776 bounce fills (+30.0/frame)
+[  35.283 s] scanout: 2091 vsync (+59.56/s), 62740 bounce fills (+30.0/frame)
+[  40.303 s] scanout: 2390 vsync (+59.56/s), 71703 bounce fills (+30.0/frame)
+[  45.303 s] scanout: 2687 vsync (+59.40/s), 80634 bounce fills (+30.1/frame)
+[  50.183 s] phase 2: blue-marble
+[  50.316 s] scanout: 2986 vsync (+59.65/s), 89584 bounce fills (+29.9/frame)
+[  55.336 s] scanout: 3284 vsync (+59.36/s), 98550 bounce fills (+30.1/frame)
+[  60.336 s] scanout: 3582 vsync (+59.60/s), 107478 bounce fills (+30.0/frame)
+[  65.356 s] scanout: 3881 vsync (+59.56/s), 116441 bounce fills (+30.0/frame)
+[  70.196 s] phase 0: ramp
+[  70.357 s] scanout: 4179 vsync (+59.59/s), 125372 bounce fills (+30.0/frame)
+[  75.357 s] scanout: 4476 vsync (+59.40/s), 134301 bounce fills (+30.1/frame)
+[  80.357 s] scanout: 4774 vsync (+59.60/s), 143229 bounce fills (+30.0/frame)
+[  85.377 s] scanout: 5073 vsync (+59.56/s), 152193 bounce fills (+30.0/frame)
+[  90.377 s] scanout: 5370 vsync (+59.40/s), 161123 bounce fills (+30.1/frame)
+[  95.377 s] scanout: 5668 vsync (+59.60/s), 170050 bounce fills (+30.0/frame)

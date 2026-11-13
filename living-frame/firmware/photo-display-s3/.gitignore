@@ -5,3 +5,5 @@ tools/*.ppm
 # deleted. Keeping it out of the tree means a fresh clone always regenerates it
 # from the committed defaults.
 sdkconfig.heltec-s3
+sdkconfig.heltec-s3-0179
+__pycache__/

@@ -4,13 +4,16 @@ A personal, local writing-exercise and peer-review tool. Deal a creative writing
 
 ## One-Command Start
 
-The application runs using the existing local virtual environment (it creates nothing):
-
 ```bash
 ./run.sh
 ```
 
-This starts the application on `http://127.0.0.1:8765`:
+On a fresh clone the script creates `.venv/` and installs `requirements.txt` (first run only,
+needs network); afterwards it starts instantly from the existing venv. Put your DeepSeek key in a
+`.env` next to `run.sh` first (`DEEPSEEK_API_KEY=...`, mode 600) — without it the app still runs
+and reviews fall back to the clearly-marked `STUB` provider.
+
+It serves `http://127.0.0.1:8765` (override the port with `WPR_PORT`):
 ```bash
 ./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```

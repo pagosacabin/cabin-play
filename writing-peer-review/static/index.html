@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Writing Peer Review</title>
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+  <meta name="theme-color" content="#24201d">
+  <meta name="description" content="A personal writing-exercise and peer-review tool">
+</head>
+<body>
+  <!-- Header with Brand and Peak Status Strip -->
+  <header>
+    <div class="header-container">
+      <div class="brand-section">
+        <img src="/static/icon.svg" alt="Quill Logo" class="logo-mark">
+        <span class="brand-title">Writing Peer Review</span>
+      </div>
+      <div id="status-strip" class="status-strip" title="DeepSeek API status and pricing indicator">
+        <span id="status-dot" class="status-dot offpeak"></span>
+        <span id="status-label" class="status-label">Off-peak</span>
+        <span id="status-time" class="status-time">· Initializing...</span>
+      </div>
+    </div>
+    <nav class="main-nav" aria-label="Main Navigation">
+      <button class="nav-btn active" data-view="deal">Deal Exercise</button>
+      <button class="nav-btn" data-view="write">Write</button>
+      <button class="nav-btn" data-view="history">History</button>
+      <button class="nav-btn" data-view="portfolio">Portfolio</button>
+      <button class="nav-btn" data-view="settings">Settings</button>
+    </nav>
+  </header>
+
+  <!-- Main Content Container with Client Views -->
+  <main>
+    <!-- 1. DEAL VIEW -->
+    <section id="view-deal" class="view-panel active">
+      <div class="deal-hero">
+        <h2>Practice Your Craft Today</h2>
+        <p>Receive a targeted writing exercise, write without distraction, and receive thoughtful peer feedback.</p>
+        <div class="deal-actions">
+          <button id="deal-btn" class="btn btn-primary btn-lg">Deal me one</button>
+          <button id="free-write-btn" class="btn btn-lg">Free write (no prompt)</button>
+        </div>
+      </div>
+
+      <div id="dealt-container"></div>
+
+      <div class="browse-section">
+        <div class="browse-heading">
+          <span>Exercise Library</span>
+          <button id="browse-toggle-btn" class="btn btn-subtle">Browse all exercises</button>
+        </div>
+        <div id="browse-container" style="display: none;">
+          <div id="browse-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. WRITE VIEW -->
+    <section id="view-write" class="view-panel">
+      <!-- Attached Exercise Banner (optional) -->
+      <div id="prompt-banner" class="prompt-banner" style="display: none;">
+        <div class="prompt-banner-content">
+          <h4 id="prompt-banner-title">Exercise Title</h4>
+          <p id="prompt-banner-text">Prompt description...</p>
+        </div>
+        <button id="close-prompt-banner-btn" class="btn-subtle" title="Dismiss prompt banner">&times;</button>
+      </div>
+
+      <div class="write-toolbar">
+        <div class="save-indicator">
+          <span id="save-indicator">Not yet saved</span>
+        </div>
+        <div id="word-count">0 words</div>
+      </div>
+
+      <input type="text" id="piece-title" class="title-input" placeholder="Title your piece..." autocomplete="off">
+      <textarea id="piece-body" class="editor-textarea" placeholder="Start writing your scene, dialogue, or draft here..."></textarea>
+
+      <div class="editor-footer">
+        <div class="editor-actions">
+          <button id="submit-review-btn" class="btn btn-primary">Submit for review</button>
+          <button id="new-piece-btn" class="btn">New piece</button>
+        </div>
+        <div class="editor-actions">
+          <button id="export-piece-md-btn" class="btn btn-subtle" disabled title="Export as Markdown">Export .md</button>
+          <button id="export-piece-pdf-btn" class="btn btn-subtle" disabled title="Export as PDF">Export .pdf</button>
+        </div>
+      </div>
+
+      <!-- Reviews Section -->
+      <section id="reviews-section" class="review-container" style="display: none;">
+        <div class="review-header">
+          <h2>Peer Reviews</h2>
+        </div>
+        <div id="reviews-container"></div>
+      </section>
+    </section>
+
+    <!-- 3. HISTORY VIEW -->
+    <section id="view-history" class="view-panel">
+      <h2 class="history-heading">Writing Archive</h2>
+      <div id="history-list" class="pieces-list"></div>
+    </section>
+
+    <!-- 4. PORTFOLIO VIEW -->
+    <section id="view-portfolio" class="view-panel">
+      <div class="portfolio-card">
+        <h2 style="font-family: var(--font-serif); margin-bottom: 0.5rem;">Generate Portfolio</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">
+          Select pieces to include, reorder them as desired, and export your writing collection as a single document with a title page.
+        </p>
+
+        <div class="portfolio-options">
+          <label class="checkbox-label">
+            <input type="checkbox" id="portfolio-include-reviews" checked>
+            <span>Include peer reviews</span>
+          </label>
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Format:</span>
+            <label class="radio-label">
+              <input type="radio" name="portfolio-format" value="pdf" checked>
+              <span>PDF (.pdf)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="portfolio-format" value="md">
+              <span>Markdown (.md)</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="portfolio-list" class="portfolio-list"></div>
+
+        <div>
+          <button id="generate-portfolio-btn" class="btn btn-primary">Generate portfolio</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. SETTINGS VIEW -->
+    <section id="view-settings" class="view-panel">
+      <div class="settings-card">
+        <h2 style="font-family: var(--font-serif); margin-bottom: 0.5rem;">Settings</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+          Configure your personal preferences for exports and feedback.
+        </p>
+
+        <div class="form-group">
+          <label for="settings-display-name" class="form-label">Display Name (for portfolio exports)</label>
+          <input type="text" id="settings-display-name" class="form-input" value="Bethany">
+          <div class="form-hint">Appears on the portfolio title page and heading block.</div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+          <span id="settings-feedback" style="font-size: 0.85rem; color: var(--accent); font-weight: 500;"></span>
+        </div>
+
+        <div class="settings-notice">
+          <strong>Note on Rung 1:</strong> This is a local single-user app. Authentication arrives with the VPS rung. Peak/off-peak indicators follow standard DeepSeek discount windows (01:00-04:00 and 06:00-10:00 UTC, Mon-Fri); Chinese-holiday exceptions are not implemented in rung 1.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

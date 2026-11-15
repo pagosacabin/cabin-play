@@ -1,0 +1,17 @@
+{
+  "name": "Writing Peer Review",
+  "short_name": "PeerReview",
+  "description": "Personal writing exercise and AI peer review companion",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfaf8",
+  "theme_color": "#24201d",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

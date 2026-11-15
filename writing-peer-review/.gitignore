@@ -1,0 +1,9 @@
+.venv/
+.env
+*.db
+*.sqlite3
+__pycache__/
+.pytest_cache/
+*.pyc
+exports/
+data/

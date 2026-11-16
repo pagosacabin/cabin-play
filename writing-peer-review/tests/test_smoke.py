@@ -631,6 +631,144 @@ def test_13_concurrent_posts_do_not_interleave(client: TestClient, monkeypatch):
 # 14. The service worker cache is versioned, so an installed PWA adopts the new shell
 def test_14_service_worker_cache_version_bumped(client: TestClient):
     sw = client.get("/sw.js").text
-    assert "writing-peer-review-v2" in sw
-    assert "writing-peer-review-v1" not in sw
+    assert "writing-peer-review-v3" in sw
+    assert "writing-peer-review-v2" not in sw
     assert "/static/app.js" in sw
+
+
+# 15. DELETE /api/pieces/{piece_id} cascades to reviews and discussion messages,
+# leaves unrelated pieces untouched, and 404s on missing ids.
+def test_15_delete_piece_cascades_and_preserves_others(client: TestClient, monkeypatch):
+    from app.db import get_connection
+
+    # Ensure stub review provider is used so we don't need real network
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+
+    # Create piece 1 with a review and discussion message
+    p1_resp = client.post(
+        "/api/pieces",
+        json={"title": "Piece One To Delete", "body": "First piece body text for deletion."},
+    )
+    assert p1_resp.status_code == 200
+    p1_id = p1_resp.json()["piece"]["id"]
+
+    r1_resp = client.post(f"/api/pieces/{p1_id}/review")
+    assert r1_resp.status_code == 200
+    r1_id = r1_resp.json()["review"]["id"]
+
+    m1_resp = client.post(f"/api/reviews/{r1_id}/messages", json={"text": "Question about piece 1"})
+    assert m1_resp.status_code == 200
+
+    # Create piece 2 with a review
+    p2_resp = client.post(
+        "/api/pieces",
+        json={"title": "Piece Two To Keep", "body": "Second piece body text to stay safe."},
+    )
+    assert p2_resp.status_code == 200
+    p2_id = p2_resp.json()["piece"]["id"]
+
+    r2_resp = client.post(f"/api/pieces/{p2_id}/review")
+    assert r2_resp.status_code == 200
+    r2_id = r2_resp.json()["review"]["id"]
+
+    # Verify rows exist in DB before delete
+    db_path = client.app.state.db_path
+    conn = get_connection(db_path)
+    try:
+        assert conn.execute("SELECT id FROM pieces WHERE id = ?;", (p1_id,)).fetchone() is not None
+        assert conn.execute("SELECT id FROM reviews WHERE id = ?;", (r1_id,)).fetchone() is not None
+        assert len(conn.execute("SELECT id FROM messages WHERE review_id = ?;", (r1_id,)).fetchall()) >= 1
+        assert conn.execute("SELECT id FROM pieces WHERE id = ?;", (p2_id,)).fetchone() is not None
+        assert conn.execute("SELECT id FROM reviews WHERE id = ?;", (r2_id,)).fetchone() is not None
+    finally:
+        conn.close()
+
+    # (b) DELETE on non-existent id is 404
+    non_existent_id = 987654321
+    not_found_resp = client.delete(f"/api/pieces/{non_existent_id}")
+    assert not_found_resp.status_code == 404
+    assert not_found_resp.json() == {"detail": "Piece not found"}
+
+    # (a) Delete piece 1 via endpoint
+    del_resp = client.delete(f"/api/pieces/{p1_id}")
+    assert del_resp.status_code == 200
+    assert del_resp.json() == {"deleted": True, "piece_id": p1_id}
+
+    # Verify endpoint GET returns 404 for piece 1 and its review messages
+    assert client.get(f"/api/pieces/{p1_id}").status_code == 404
+    assert client.get(f"/api/reviews/{r1_id}/messages").status_code == 404
+
+    # Verify in DB: piece 1, review 1, and its messages are all gone via ON DELETE CASCADE
+    conn = get_connection(db_path)
+    try:
+        assert conn.execute("SELECT id FROM pieces WHERE id = ?;", (p1_id,)).fetchone() is None
+        assert conn.execute("SELECT id FROM reviews WHERE piece_id = ?;", (p1_id,)).fetchall() == []
+        assert conn.execute("SELECT id FROM reviews WHERE id = ?;", (r1_id,)).fetchone() is None
+        assert conn.execute("SELECT id FROM messages WHERE review_id = ?;", (r1_id,)).fetchall() == []
+
+        # Piece 2 and its review are untouched
+        p2_row = conn.execute("SELECT id, title FROM pieces WHERE id = ?;", (p2_id,)).fetchone()
+        assert p2_row is not None
+        assert p2_row["title"] == "Piece Two To Keep"
+        r2_row = conn.execute("SELECT id, piece_id FROM reviews WHERE id = ?;", (r2_id,)).fetchone()
+        assert r2_row is not None
+        assert r2_row["piece_id"] == p2_id
+    finally:
+        conn.close()
+
+    # Second piece and its review are accessible via HTTP
+    get_p2 = client.get(f"/api/pieces/{p2_id}")
+    assert get_p2.status_code == 200
+    assert len(get_p2.json()["reviews"]) == 1
+    assert get_p2.json()["reviews"][0]["id"] == r2_id
+
+    # Deleting already-deleted piece 1 now 404s
+    assert client.delete(f"/api/pieces/{p1_id}").status_code == 404
+
+
+# 16. Portfolio export skips deleted / missing / stale piece ids without error
+def test_16_portfolio_export_skips_stale_or_deleted_piece_ids(client: TestClient):
+    # Ensure display name
+    client.put("/api/settings", json={"display_name": "Bethany"})
+
+    # Create two pieces
+    p1 = client.post("/api/pieces", json={"title": "Ephemeral Draft", "body": "To be deleted soon."}).json()["piece"]
+    p2 = client.post("/api/pieces", json={"title": "Permanent Draft", "body": "To be kept and exported."}).json()["piece"]
+
+    # Delete piece 1
+    del_resp = client.delete(f"/api/pieces/{p1['id']}")
+    assert del_resp.status_code == 200
+
+    # Request portfolio export containing stale deleted id and non-existent id along with valid id
+    stale_order = [p1["id"], 9999999, p2["id"]]
+
+    # Markdown export
+    md_resp = client.post(
+        "/api/export/portfolio",
+        json={"piece_ids": stale_order, "format": "md", "include_reviews": False},
+    )
+    assert md_resp.status_code == 200
+    assert "text/markdown" in md_resp.headers.get("content-type", "")
+    assert "Permanent Draft" in md_resp.text
+    assert "Ephemeral Draft" not in md_resp.text
+    assert "**Total Pieces:** 1" in md_resp.text
+
+    # PDF export
+    pdf_resp = client.post(
+        "/api/export/portfolio",
+        json={"piece_ids": stale_order, "format": "pdf", "include_reviews": False},
+    )
+    assert pdf_resp.status_code == 200
+    assert "application/pdf" in pdf_resp.headers.get("content-type", "")
+    pdf_text = pdf_resp.content.decode("latin-1")
+    assert "Permanent Draft" in pdf_text
+    assert "Ephemeral Draft" not in pdf_text
+    assert "Total Pieces: 1" in pdf_text
+
+    # Completely empty or only stale ids still returns valid export (0 pieces) without 500 error
+    md_empty = client.post(
+        "/api/export/portfolio",
+        json={"piece_ids": [p1["id"], 888888], "format": "md", "include_reviews": False},
+    )
+    assert md_empty.status_code == 200
+    assert "**Total Pieces:** 0" in md_empty.text

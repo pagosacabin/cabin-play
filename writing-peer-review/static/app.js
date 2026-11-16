@@ -637,10 +637,13 @@
               <span>${p.word_count} words</span>
             </div>
           </div>
-          <div>
+          <div class="piece-card-actions">
             <span class="badge ${p.review_count > 0 ? 'badge-accent' : ''}">
               ${p.review_count} ${p.review_count === 1 ? 'review' : 'reviews'}
             </span>
+            <button class="btn btn-subtle piece-delete-btn" data-id="${p.id}" title="Delete piece" aria-label="Delete piece">
+              Delete
+            </button>
           </div>
         </div>
       `;
@@ -653,6 +656,55 @@
         openPieceInEditor(id);
       });
     });
+
+    el.historyList.querySelectorAll('.piece-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id, 10);
+        handleDeletePiece(id);
+      });
+    });
+  }
+
+  async function handleDeletePiece(pieceId) {
+    const piece = state.pieces.find((p) => p.id === pieceId);
+    const title = piece ? (piece.title || 'Untitled Piece') : 'Untitled Piece';
+    const msg = `Delete '${title}'? Its reviews and discussions go too — this can't be undone.`;
+    if (!window.confirm(msg)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/pieces/${pieceId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        state.pieces = state.pieces.filter((p) => p.id !== pieceId);
+        state.portfolioPieces = state.portfolioPieces.filter((p) => p.id !== pieceId);
+        if (state.currentPiece && state.currentPiece.id === pieceId) {
+          state.currentPiece = null;
+          state.currentExercise = null;
+          state.reviews = [];
+          state.lastSavedContent = { title: '', body: '' };
+          if (state.autosaveTimer) clearTimeout(state.autosaveTimer);
+          el.titleInput.value = '';
+          el.bodyTextarea.value = '';
+          updateWordCount();
+          el.saveIndicatorSpan.textContent = 'Not yet saved';
+          el.exportPieceMdBtn.disabled = true;
+          el.exportPiecePdfBtn.disabled = true;
+          el.reviewsContainer.innerHTML = '';
+          el.reviewsSection.style.display = 'none';
+          el.promptBanner.style.display = 'none';
+        }
+        renderHistory();
+      } else {
+        alert('Failed to delete piece.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error deleting piece.');
+    }
   }
 
   async function openPieceInEditor(pieceId) {

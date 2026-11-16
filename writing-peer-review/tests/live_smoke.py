@@ -247,8 +247,18 @@ def main():
         check("C2v Voice check quotes at least one passage from the machine-flavoured piece",
               len(mquotes) >= 1,
               f"{len(mquotes)} verified quote(s); band={mband!r}; section={norm(vsection)[:200]}")
-        check("C2v Voice check quotes at most three passages (prompt contract)",
-              len(mquotes) <= 3, f"{len(mquotes)} verified quote(s)")
+        # A "flagged passage" is a bullet that opens with a quotation from her piece; a short
+        # phrase echoed inside an explanation is not a fourth flag.
+        flagged = []
+        for line in vsection.splitlines():
+            s = line.strip().lstrip("-*").strip()
+            if s[:1] in ("\"", "“"):
+                q = re.findall(r"[\"“]([^\"”]{15,})[\"”]", s)
+                if q and norm(q[0]) in norm(MACHINE_PIECE):
+                    flagged.append(q[0])
+        check("C2v Voice check flags at most three passages (prompt contract)",
+              len(flagged) <= 3,
+              f"{len(flagged)} flagged passage(s) of {len(mquotes)} quote(s)")
         print(f"\n--- Voice check on machine-flavoured fixture ({time.time()-t_v:.1f}s) ---")
         print(vsection.strip()[:600])
         print("----------------------------------------------------------\n")

@@ -39,6 +39,39 @@ STUB_DISCUSSION_TEMPLATE = """**STUB DISCUSSION** (DeepSeek API key missing or r
 Thank you for discussing this review with me. As your writing-group peer, I've re-read your piece alongside my earlier notes. While operating in offline fallback mode without an active API connection, I cannot generate dynamic answers to your specific craft questions, but I stand by our discussion on pacing, sensory details, and narrative tension. Configure a live key to discuss specific lines directly.
 """
 
+VOICE_BANDS = ("Reads human.", "Mixed.", "Reads machine-made.")
+VOICE_HEADING = "## Voice check"
+
+
+def normalize_voice_check(text: str) -> str:
+    """Put the voice-check band on its own line.
+
+    The prompt asks for the band as the first line of the section, but a live model
+    occasionally continues the explanation on the same line ("Reads machine-made. A few
+    passages carry ..."). Split that case so the band is always a standalone line; leave
+    well-formed text completely untouched.
+    """
+    idx = text.find(VOICE_HEADING)
+    if idx < 0:
+        return text
+    start = idx + len(VOICE_HEADING)
+    lines = text[start:].split("\n")
+    # First non-empty line after the heading
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for band in VOICE_BANDS:
+            if stripped == band:
+                return text
+            if stripped.startswith(band) and stripped[len(band):len(band) + 1] in (" ", "*", "_"):
+                rest = stripped[len(band):].lstrip(" *_").strip()
+                new_lines = lines[:i] + [band, "", rest] + lines[i + 1:]
+                return text[:start] + "\n".join(new_lines)
+        return text
+    return text
+
+
 
 def load_system_prompt(exercise_prompt: str | None = None) -> str:
     """Read review_prompt.md at call time and append exercise prompt if present."""
@@ -96,7 +129,7 @@ def review_piece(piece_text: str, exercise_prompt: str | None = None) -> tuple[s
             if choices and len(choices) > 0:
                 review_content = choices[0].get("message", {}).get("content", "").strip()
                 if review_content:
-                    return (review_content, "deepseek")
+                    return (normalize_voice_check(review_content), "deepseek")
             # If empty choice
             return (STUB_REVIEW_TEMPLATE.strip(), "stub")
     except Exception as exc:

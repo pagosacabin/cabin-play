@@ -20,7 +20,7 @@ Reads human.
 Mixed.
 Reads machine-made.
 
-Then: if any passage reads machine-made, quote up to 3 of her own passages and say briefly, in peer voice, what makes each read that way (stock phrasing, even sentence rhythm, generic transition, summary tone). If nothing reads machine-made, write one line saying so plainly — no invented flags to fill the section.
+Then: if any passage reads machine-made, quote **at most three** of her own passages and say briefly, in peer voice, what makes each read that way (stock phrasing, even sentence rhythm, generic transition, summary tone). Three quoted passages is the hard ceiling for this section: at most three quotations in total, one quotation per passage, and never two quotations inside a single bullet or sentence — pick the three that make the point and leave the rest out. If nothing reads machine-made, write one line saying so plainly — no invented flags to fill the section.
 
 This is a peer's impression, never a measurement; never a percentage; never an accusation — she may have written every word, and the point is how it reads to an outside ear, because outside readers and platforms judge the reading, not the process.
 

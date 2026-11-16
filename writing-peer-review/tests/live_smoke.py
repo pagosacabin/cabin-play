@@ -238,25 +238,34 @@ def main():
               f"positions {midx}")
         mband = band_of(mbody)
         check("C1v machine-flavoured review band is valid", mband in BANDS, f"band={mband!r}")
+        check("C1v machine-flavoured review is flagged, not passed as human",
+              mband in ("Mixed.", "Reads machine-made."),
+              f"band={mband!r} — a stock-phrased fixture must not read as human")
         vsection = voice_section(mbody)
         mquotes = [q for q in re.findall(r"[\"“]([^\"”]{15,})[\"”]", vsection)
                    if norm(q) in norm(MACHINE_PIECE)]
         check("C2v Voice check quotes at least one passage from the machine-flavoured piece",
               len(mquotes) >= 1,
               f"{len(mquotes)} verified quote(s); band={mband!r}; section={norm(vsection)[:200]}")
+        check("C2v Voice check quotes at most three passages (prompt contract)",
+              len(mquotes) <= 3, f"{len(mquotes)} verified quote(s)")
         print(f"\n--- Voice check on machine-flavoured fixture ({time.time()-t_v:.1f}s) ---")
         print(vsection.strip()[:600])
         print("----------------------------------------------------------\n")
 
         # ---- C3: no percentage / numeric AI score in any review output -------
         pct = re.compile(r"\b\d{1,3}\s?%")
+        spelled = re.compile(r"\bpercent(?:age)?\b", re.IGNORECASE)
         scored = re.compile(r"\bAI\s*(?:score|detector|percentage)\b", re.IGNORECASE)
         offenders = []
         for name, text in (("human fixture", body), ("machine fixture", mbody)):
             m_pct = pct.search(text)
+            m_spelled = spelled.search(text)
             m_score = scored.search(text)
             if m_pct:
                 offenders.append(f"{name}: {m_pct.group(0)!r}")
+            if m_spelled:
+                offenders.append(f"{name}: {m_spelled.group(0)!r}")
             if m_score:
                 offenders.append(f"{name}: {m_score.group(0)!r}")
         check("C3 no percentage or numeric AI score in the review outputs", not offenders,

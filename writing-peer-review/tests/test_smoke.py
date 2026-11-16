@@ -173,6 +173,8 @@ def test_4b_stub_review_carries_voice_check(client: TestClient, monkeypatch):
     assert band_lines and band_lines[0] in ("Reads human.", "Mixed.", "Reads machine-made."), band_lines[:1]
     # The stub must never present itself as a live read
     assert "stub" in rev_body.lower()
+    assert "not a live read" in rev_body.lower()
+    assert "placeholder" in rev_body.lower()
 
 
 # 5. Single Piece Export (md and pdf)

@@ -28,7 +28,10 @@ Write a 100-word follow-up scene set five minutes later in the same space, focus
 
 ## Voice check
 Reads human.
-This is an automated fallback review stub. In live mode, your peer reviewer provides an ear for whether passages read human or machine-made without metrics or scores.
+This is an automated fallback stub, not a live read: the band line above is a placeholder
+for the section's shape, not a verdict on your piece. With an API key configured, your peer
+reviewer gives a real ear for whether passages read human or machine-made, without metrics
+or scores.
 """
 
 STUB_DISCUSSION_TEMPLATE = """**STUB DISCUSSION** (DeepSeek API key missing or request could not complete)

@@ -508,9 +508,17 @@
     const lines = text.split('\n');
     let out = '';
     let inList = false;
+    let currentSection = '';
+    let voiceSectionFirstPara = true;
+    let inQuote = false;
 
     lines.forEach((line) => {
       const trimmed = line.trim();
+      const isQuoteLine = trimmed.startsWith('> ');
+      if (inQuote && !isQuoteLine) {
+        out += '</blockquote>';
+        inQuote = false;
+      }
       if (!trimmed) {
         if (inList) {
           out += '</ul>';
@@ -523,7 +531,10 @@
           out += '</ul>';
           inList = false;
         }
-        out += `<h2>${escapeHtml(trimmed.slice(3))}</h2>`;
+        const headingText = trimmed.slice(3);
+        currentSection = headingText.toLowerCase();
+        voiceSectionFirstPara = true;
+        out += `<h2>${escapeHtml(headingText)}</h2>`;
       } else if (trimmed.startsWith('### ')) {
         if (inList) {
           out += '</ul>';
@@ -543,16 +554,41 @@
         }
         const match = trimmed.match(/^\d+\.\s(.*)$/);
         out += `<p><strong>${escapeHtml(trimmed.split('.')[0])}.</strong> ${formatInlineMarkdown(match ? match[1] : trimmed)}</p>`;
+      } else if (isQuoteLine) {
+        if (inList) {
+          out += '</ul>';
+          inList = false;
+        }
+        if (!inQuote) {
+          out += '<blockquote>';
+          inQuote = true;
+        }
+        out += `<p>${formatInlineMarkdown(trimmed.slice(2))}</p>`;
       } else {
         if (inList) {
           out += '</ul>';
           inList = false;
         }
-        out += `<p>${formatInlineMarkdown(trimmed)}</p>`;
+        // Voice check: tag the first paragraph under the voice check section as a verdict band
+        if (currentSection.includes('voice') && voiceSectionFirstPara) {
+          voiceSectionFirstPara = false;
+          const verdictText = trimmed;
+          let verdictMod = 'voice-verdict--mixed';
+          if (/reads human/i.test(verdictText)) {
+            verdictMod = 'voice-verdict--human';
+          } else if (/reads machine/i.test(verdictText)) {
+            verdictMod = 'voice-verdict--machine';
+          }
+          out += `<p class="voice-verdict ${verdictMod}">${formatInlineMarkdown(verdictText)}</p>`;
+        } else {
+          if (currentSection.includes('voice')) voiceSectionFirstPara = false;
+          out += `<p>${formatInlineMarkdown(trimmed)}</p>`;
+        }
       }
     });
 
     if (inList) out += '</ul>';
+    if (inQuote) out += '</blockquote>';
     return out;
   }
 
@@ -604,7 +640,7 @@
 
   // --- HISTORY VIEW LOGIC ---
   async function loadHistory() {
-    el.historyList.innerHTML = '<p style="color:var(--text-muted)">Loading your writing pieces...</p>';
+    el.historyList.innerHTML = '<p style="color:var(--color-ink-mid)">Loading your writing pieces...</p>';
     try {
       const res = await fetch('/api/pieces');
       if (res.ok) {
@@ -620,7 +656,7 @@
 
   function renderHistory() {
     if (state.pieces.length === 0) {
-      el.historyList.innerHTML = '<p style="color:var(--text-muted)">No pieces written yet. Go deal yourself a prompt to get started!</p>';
+      el.historyList.innerHTML = '<p style="color:var(--color-ink-mid)">No pieces written yet. Go deal yourself a prompt to get started!</p>';
       return;
     }
 
@@ -790,7 +826,7 @@
 
   function renderPortfolioList() {
     if (state.portfolioPieces.length === 0) {
-      el.portfolioList.innerHTML = '<p style="color:var(--text-muted)">No pieces to include in a portfolio yet.</p>';
+      el.portfolioList.innerHTML = '<p style="color:var(--color-ink-mid)">No pieces to include in a portfolio yet.</p>';
       return;
     }
 
@@ -801,7 +837,7 @@
           <div class="portfolio-item-left">
             <input type="checkbox" class="portfolio-check" data-id="${p.id}" ${p.selected ? 'checked' : ''}>
             <span style="font-weight:600">${escapeHtml(p.title || 'Untitled')}</span>
-            <span style="font-size:0.8rem; color:var(--text-muted)">(${p.word_count} words)</span>
+            <span style="font-size:0.8rem; color:var(--color-ink-mid)">(${p.word_count} words)</span>
           </div>
           <div class="portfolio-item-reorder">
             <button class="btn btn-subtle move-up-btn" data-index="${index}" ${index === 0 ? 'disabled' : ''}>&uarr;</button>

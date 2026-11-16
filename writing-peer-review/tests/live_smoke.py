@@ -259,6 +259,9 @@ def main():
         check("C2v Voice check flags at most three passages (prompt contract)",
               len(flagged) <= 3,
               f"{len(flagged)} flagged passage(s) of {len(mquotes)} quote(s)")
+        check("C2v Voice check flags at least one passage as a bullet opening with the quote",
+              len(flagged) >= 1,
+              f"{len(flagged)} bullet(s) opening with a verified quote")
         print(f"\n--- Voice check on machine-flavoured fixture ({time.time()-t_v:.1f}s) ---")
         print(vsection.strip()[:600])
         print("----------------------------------------------------------\n")

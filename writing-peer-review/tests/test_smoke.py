@@ -207,6 +207,19 @@ def test_4c_band_is_normalised_to_its_own_line():
     no_section = "## What worked\nFine piece.\n"
     assert normalize_voice_check(no_section) == no_section
 
+    # Markdown emphasis on the explanation must survive intact (no dangling closer).
+    emph = "## Voice check\nReads machine-made. **Generic** phrasing runs through it."
+    out = normalize_voice_check(emph)
+    assert out.split("## Voice check", 1)[1].strip().splitlines()[2] == \
+        "**Generic** phrasing runs through it.", out
+
+    # A quoted *mention* of the heading must not be mistaken for the heading.
+    mention = (
+        "## Craft points\nYou may wonder why I added a \"## Voice check\" section at all.\n\n"
+        "## Voice check\nReads human.\nNothing reads machine-made here.\n"
+    )
+    assert normalize_voice_check(mention) == mention
+
 
 # 5. Single Piece Export (md and pdf)
 def test_5_single_piece_export(client: TestClient):

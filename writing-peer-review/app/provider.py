@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 import httpx
 
@@ -40,7 +41,10 @@ Thank you for discussing this review with me. As your writing-group peer, I've r
 """
 
 VOICE_BANDS = ("Reads human.", "Mixed.", "Reads machine-made.")
-VOICE_HEADING = "## Voice check"
+
+# The heading is only a heading when it stands alone on its line — a review may mention
+# "## Voice check" inside a sentence, and the normaliser must not act on that mention.
+_VOICE_HEADING_RE = re.compile(r"(?m)^[ \t]*##[ \t]*Voice check[ \t]*$")
 
 
 def normalize_voice_check(text: str) -> str:
@@ -51,10 +55,10 @@ def normalize_voice_check(text: str) -> str:
     passages carry ..."). Split that case so the band is always a standalone line; leave
     well-formed text completely untouched.
     """
-    idx = text.find(VOICE_HEADING)
-    if idx < 0:
+    match = _VOICE_HEADING_RE.search(text)
+    if not match:
         return text
-    start = idx + len(VOICE_HEADING)
+    start = match.end()
     lines = text[start:].split("\n")
     # First non-empty line after the heading
     for i, line in enumerate(lines):
@@ -65,7 +69,10 @@ def normalize_voice_check(text: str) -> str:
             if stripped == band:
                 return text
             if stripped.startswith(band) and stripped[len(band):len(band) + 1] in (" ", "*", "_"):
-                rest = stripped[len(band):].lstrip(" *_").strip()
+                rest = stripped[len(band):].strip()
+                # Drop a list marker if the band opened a bullet; keep real markdown emphasis.
+                if rest.startswith("* ") or rest.startswith("- "):
+                    rest = rest[2:].strip()
                 new_lines = lines[:i] + [band, "", rest] + lines[i + 1:]
                 return text[:start] + "\n".join(new_lines)
         return text

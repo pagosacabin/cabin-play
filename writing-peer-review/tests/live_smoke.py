@@ -89,6 +89,30 @@ def norm(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
+SECTIONS = (
+    "## What worked",
+    "## Craft points",
+    "## A question for you",
+    "## Follow-up exercise",
+    "## Voice check",
+)
+BANDS = ("Reads human.", "Mixed.", "Reads machine-made.")
+
+
+def voice_section(body):
+    """Text after the '## Voice check' heading (empty string if absent)."""
+    i = body.find("## Voice check")
+    return "" if i < 0 else body[i + len("## Voice check"):]
+
+
+def band_of(body):
+    """First non-empty line of the Voice check section, stripped."""
+    for line in voice_section(body).splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
 PIECE = (
     "The kettle had been singing for four minutes before she noticed it. "
     "Mara lifted it off the burner with the sleeve of her sweater and set it on the "
@@ -98,6 +122,16 @@ PIECE = (
     "watched the tea darken and did not tell him that she had already packed. "
     "Outside, the light went the colour of old paper. He asked whether she wanted company "
     "and she said the drive was long and he said he knew and neither of them moved."
+)
+
+# Deliberately machine-flavoured fixture: stock connectives, generic summary tone, uniform rhythm.
+MACHINE_PIECE = (
+    "In today's fast-paced world, it is important to note that change is a constant companion. "
+    "The protagonist embarks on a journey of self-discovery that serves as a testament to the "
+    "resilience of the human spirit. Throughout the narrative, the author delves into themes of "
+    "loss, hope, and transformation. Moreover, the setting plays a crucial role in shaping the "
+    "character's emotional landscape. At the end of the day, the story reminds us that every "
+    "challenge is an opportunity for growth, and that the journey itself is the destination."
 )
 
 
@@ -172,9 +206,8 @@ def main():
         st, _, rev_raw = req("POST", f"/api/pieces/{pid}/review")
         review = json.loads(rev_raw)["review"]
         body = review["body"]
-        idx = [body.find(h) for h in ("## What worked", "## Craft points",
-                                      "## A question for you", "## Follow-up exercise")]
-        check("C4 review stored with 4 sections in order",
+        idx = [body.find(h) for h in SECTIONS]
+        check("C4 review stored with 5 sections in order",
               st == 200 and all(i >= 0 for i in idx) and idx == sorted(idx),
               f"positions {idx}")
         quotes = [q for q in re.findall(r"[\"“]([^\"”]{15,})[\"”]", body) if norm(q) in norm(PIECE)]
@@ -183,10 +216,51 @@ def main():
         check("C4 provider is live DeepSeek (not stub)",
               review["provider"] == "deepseek" and "STUB" not in body,
               f"provider={review['provider']} in {time.time()-t0:.1f}s")
+        check("C4 Voice check band is one of the three verbatim lines",
+              band_of(body) in BANDS, f"band={band_of(body)!r}")
         st, _, piece_raw = req("GET", f"/api/pieces/{pid}")
         stored = json.loads(piece_raw)
         check("C4 review persisted on the piece", len(stored["reviews"]) == 1
               and stored["reviews"][0]["provider"] == review["provider"])
+
+        # ---- C1v/C2v: voice check on a deliberately machine-flavoured piece ----
+        st, _, mv_raw = req("POST", "/api/pieces",
+                            {"title": "Machine Flavour Fixture", "body": MACHINE_PIECE,
+                             "exercise_id": None})
+        mpid = json.loads(mv_raw)["piece"]["id"]
+        t_v = time.time()
+        st, _, mrev_raw = req("POST", f"/api/pieces/{mpid}/review")
+        mreview = json.loads(mrev_raw)["review"]
+        mbody = mreview["body"]
+        midx = [mbody.find(h) for h in SECTIONS]
+        check("C1v machine-flavoured review has 5 sections in order",
+              st == 200 and all(i >= 0 for i in midx) and midx == sorted(midx),
+              f"positions {midx}")
+        mband = band_of(mbody)
+        check("C1v machine-flavoured review band is valid", mband in BANDS, f"band={mband!r}")
+        vsection = voice_section(mbody)
+        mquotes = [q for q in re.findall(r"[\"“]([^\"”]{15,})[\"”]", vsection)
+                   if norm(q) in norm(MACHINE_PIECE)]
+        check("C2v Voice check quotes at least one passage from the machine-flavoured piece",
+              len(mquotes) >= 1,
+              f"{len(mquotes)} verified quote(s); band={mband!r}; section={norm(vsection)[:200]}")
+        print(f"\n--- Voice check on machine-flavoured fixture ({time.time()-t_v:.1f}s) ---")
+        print(vsection.strip()[:600])
+        print("----------------------------------------------------------\n")
+
+        # ---- C3: no percentage / numeric AI score in any review output -------
+        pct = re.compile(r"\b\d{1,3}\s?%")
+        scored = re.compile(r"\bAI\s*(?:score|detector|percentage)\b", re.IGNORECASE)
+        offenders = []
+        for name, text in (("human fixture", body), ("machine fixture", mbody)):
+            m_pct = pct.search(text)
+            m_score = scored.search(text)
+            if m_pct:
+                offenders.append(f"{name}: {m_pct.group(0)!r}")
+            if m_score:
+                offenders.append(f"{name}: {m_score.group(0)!r}")
+        check("C3 no percentage or numeric AI score in the review outputs", not offenders,
+              "; ".join(offenders) or "no percent-sign figures, no AI-score phrasing")
 
         # ---- Discussion flow end-to-end ----------------------------------
         rid = review["id"]
@@ -214,18 +288,46 @@ def main():
               and thread_messages[1]["role"] == "assistant",
               f"{len(thread_messages)} messages in thread")
 
+        # ---- C4v: a discussion message asking about the voice check -------
+        mrid = mreview["id"]
+        v_query = ("You said this reads machine-made. Which lines made you hear it that way, "
+                   "and would you still say so if I told you I wrote it quickly and plainly?")
+        t_vd = time.time()
+        st, _, vd_raw = req("POST", f"/api/reviews/{mrid}/messages", {"text": v_query})
+        vd = json.loads(vd_raw)
+        vreply = (vd.get("reply") or vd["messages"][1])["text"]
+        is_v_stub = vreply.startswith("**STUB")
+        # live: must engage the flagged material — quote a flagged line, or name the voice check
+        flagged_tokens = []
+        for q in re.findall(r"[\"“]([^\"”]{15,})[\"”]", vsection):
+            flagged_tokens += [w.lower().strip(".,;:") for w in q.split() if len(w) > 5]
+        engaged = ("voice" in vreply.lower()
+                   or any(tok in vreply.lower() for tok in flagged_tokens))
+        check("C4v asking about the voice check gets an engaging live reply (or a STUB-marked one)",
+              st == 200 and len(vreply) > 0 and (is_v_stub or engaged),
+              f"provider={'stub' if is_v_stub else 'live'} in {time.time()-t_vd:.1f}s "
+              f"engaged={engaged}")
+        print(f"\n--- Voice-check discussion reply ---\n{vreply.strip()[:400]}\n"
+              "----------------------------------------------------------\n")
+
         # ---- C5: single-piece export -------------------------------------
         st, hdrs, md = req("POST", f"/api/export/piece/{pid}",
                            {"format": "md", "include_reviews": True})
         check("C5 md export contains full text + review",
               st == 200 and norm(PIECE) in norm(md) and "## What worked" in md,
               f"{len(md)} bytes")
+        check("C5 md export carries the Voice check section",
+              "## Voice check" in md and band_of(md) in BANDS,
+              f"band in export={band_of(md)!r}")
         st, hdrs, pdf = req("POST", f"/api/export/piece/{pid}",
                             {"format": "pdf", "include_reviews": True}, raw=True)
         txt = pdf_text(pdf, "single.pdf")
         check("C5 pdf export contains full text (pdftotext)",
               st == 200 and hdrs.get("content-type", "").startswith("application/pdf")
               and norm(PIECE) in norm(txt), f"{len(pdf)} bytes -> {len(txt)} chars")
+        check("C5 pdf export carries the Voice check section (pdftotext)",
+              "Voice check" in txt and any(b in txt for b in BANDS),
+              f"band found={[b for b in BANDS if b in txt]}")
         st, _, md2 = req("POST", f"/api/export/piece/{pid}",
                          {"format": "md", "include_reviews": False})
         check("C5.1 piece-only toggle excludes reviews", "## What worked" not in md2)

@@ -30,11 +30,22 @@ The `data/` directory is created automatically on startup if missing. To overrid
 
 The peer review system prompt lives in plain Markdown at `review_prompt.md` at the repository root. It is re-read from disk on every review request, allowing you to edit the tone, constraints, and instructions without restarting the server.
 
-The prompt requires the LLM to respond using four exact markdown headers:
+The prompt requires the LLM to respond using five exact markdown headers:
 - `## What worked`
 - `## Craft points`
 - `## A question for you`
 - `## Follow-up exercise`
+- `## Voice check`
+
+### The voice check
+
+The fifth section is a craft read, not a metric. Its first line is exactly one of
+`Reads human.` / `Mixed.` / `Reads machine-made.`; if any passage reads machine-made the
+review quotes up to three of her own passages and says, in peer voice, what makes each read
+that way (stock phrasing, even rhythm, generic transition, summary tone). No passage is
+invented to fill the section, and there is deliberately **no percentage or AI-detector score
+anywhere** — detector scores are statistical guesses with well-documented false positives on
+human writing, so the app never pretends to measure authorship.
 
 ## Discussing a Review
 

@@ -818,9 +818,20 @@ def test_17_delete_relies_on_fk_cascade_not_manual_child_deletes(client: TestCli
         c.execute("PRAGMA foreign_keys = OFF;")
         return c
 
-    monkeypatch.setattr("app.main.get_connection", fk_off)
-    assert client.delete(f"/api/pieces/{pid}").status_code == 200
-    monkeypatch.undo()
+    # Patch only the connection factory, and restore just that one: monkeypatch.undo() here
+    # would also undo the no-live-API stub set above and let the positive case hit DeepSeek.
+    import app.main as main_module
+
+    original = main_module.get_connection
+    main_module.get_connection = fk_off
+    try:
+        assert client.delete(f"/api/pieces/{pid}").status_code == 200
+    finally:
+        main_module.get_connection = original
+
+    from app import provider as provider_module
+
+    assert provider_module.get_deepseek_api_key() == "", "stub must still be in force for the positive case"
 
     raw = sqlite3.connect(str(db_path))
     try:

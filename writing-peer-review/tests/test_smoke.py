@@ -772,3 +772,75 @@ def test_16_portfolio_export_skips_stale_or_deleted_piece_ids(client: TestClient
     )
     assert md_empty.status_code == 200
     assert "**Total Pieces:** 0" in md_empty.text
+
+
+# 17. The delete endpoint's cascade is the mechanism, not hand-rolled child deletes
+#     (Copilot review finding on PR #4: test 15 alone cannot tell the two apart).
+def test_17_delete_relies_on_fk_cascade_not_manual_child_deletes(client: TestClient, monkeypatch):
+    import sqlite3
+
+    from app.db import get_connection
+
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+    db_path = client.app.state.db_path
+
+    # The app's own connection must enforce foreign keys, or the cascade never fires.
+    conn = get_connection(db_path)
+    try:
+        assert conn.execute("PRAGMA foreign_keys;").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+    def seed(title):
+        pid = client.post(
+            "/api/pieces", json={"title": title, "body": f"{title} body text."}
+        ).json()["piece"]["id"]
+        rid = client.post(f"/api/pieces/{pid}/review").json()["review"]["id"]
+        client.post(f"/api/reviews/{rid}/messages", json={"text": f"talk about {title}"})
+        return pid, rid
+
+    def child_rows(conn, pid):
+        reviews = [r[0] for r in conn.execute("SELECT id FROM reviews WHERE piece_id = ?;", (pid,))]
+        msgs = 0
+        for rid in reviews:
+            msgs += conn.execute("SELECT COUNT(*) FROM messages WHERE review_id = ?;", (rid,)).fetchone()[0]
+        return reviews, msgs
+
+    # Decisive discriminator: run the SAME endpoint over a connection with foreign_keys OFF.
+    # A hand-rolled "delete the children too" implementation would still clear them; a single
+    # `DELETE FROM pieces` relying on the FK cascade leaves them as orphans. So seeing the
+    # children survive proves the endpoint does not touch the child tables itself.
+    pid, rid = seed("Pragma Off Piece")
+    real_get_connection = get_connection
+
+    def fk_off(path=None):
+        c = real_get_connection(path)
+        c.execute("PRAGMA foreign_keys = OFF;")
+        return c
+
+    monkeypatch.setattr("app.main.get_connection", fk_off)
+    assert client.delete(f"/api/pieces/{pid}").status_code == 200
+    monkeypatch.undo()
+
+    raw = sqlite3.connect(str(db_path))
+    try:
+        assert raw.execute("SELECT COUNT(*) FROM pieces WHERE id = ?;", (pid,)).fetchone()[0] == 0
+        reviews, msgs = child_rows(raw, pid)
+        assert reviews == [rid], "endpoint deleted the reviews itself -- cascade is not the mechanism"
+        assert msgs >= 1, "endpoint deleted the discussion messages itself"
+        # clean the orphans so the session-scoped DB does not carry them into later work
+        raw.execute("DELETE FROM messages WHERE review_id = ?;", (rid,))
+        raw.execute("DELETE FROM reviews WHERE id = ?;", (rid,))
+        raw.commit()
+    finally:
+        raw.close()
+
+    # Positive case through the real (FK-enforcing) path: the same single delete clears all three.
+    cascade_pid, cascade_rid = seed("Cascade Piece")
+    assert client.delete(f"/api/pieces/{cascade_pid}").status_code == 200
+    check = sqlite3.connect(str(db_path))
+    try:
+        assert child_rows(check, cascade_pid) == ([], 0)
+        assert check.execute("SELECT COUNT(*) FROM messages WHERE review_id = ?;", (cascade_rid,)).fetchone()[0] == 0
+    finally:
+        check.close()

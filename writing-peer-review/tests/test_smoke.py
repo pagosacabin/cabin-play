@@ -88,7 +88,7 @@ def test_4_review_submission_monkeypatched(client: TestClient, monkeypatch):
     assert create_resp.status_code == 200
     piece_id = create_resp.json()["piece"]["id"]
 
-    # Deterministic monkeypatched provider returning exact 4 headings + >=2 quoted lines from input
+    # Deterministic monkeypatched provider returning exact 5 headings + >=2 quoted lines from input
     def fake_review_piece(piece_text: str, exercise_prompt: str | None) -> tuple[str, str]:
         assert "yellow kettle hissed loudly" in piece_text
         fake_content = (
@@ -102,7 +102,11 @@ def test_4_review_submission_monkeypatched(client: TestClient, monkeypatch):
             "## A question for you\n"
             "What memory did the sound of the steam bring up for her in this stillness?\n\n"
             "## Follow-up exercise\n"
-            "Write a 75-word micro-scene in which an object in the kitchen stops working abruptly."
+            "Write a 75-word micro-scene in which an object in the kitchen stops working abruptly.\n\n"
+            "## Voice check\n"
+            "Reads human.\n"
+            "The rhythm here is uneven in a way that sounds like a person listening for the next "
+            "sentence rather than filling a shape."
         )
         return (fake_content, "deepseek-mock")
 
@@ -113,18 +117,64 @@ def test_4_review_submission_monkeypatched(client: TestClient, monkeypatch):
     review_data = review_resp.json()["review"]
     rev_body = review_data["body"]
 
-    # Assert four headings in exact order
+    # Assert five headings in exact order
     h1 = rev_body.find("## What worked")
     h2 = rev_body.find("## Craft points")
     h3 = rev_body.find("## A question for you")
     h4 = rev_body.find("## Follow-up exercise")
-    assert -1 < h1 < h2 < h3 < h4
+    h5 = rev_body.find("## Voice check")
+    assert -1 < h1 < h2 < h3 < h4 < h5
+
+    # Assert the Voice check's first non-empty line is exactly one of the three bands
+    band_lines = [
+        ln.strip()
+        for ln in rev_body[h5 + len("## Voice check"):].splitlines()
+        if ln.strip()
+    ]
+    assert band_lines and band_lines[0] in ("Reads human.", "Mixed.", "Reads machine-made."), band_lines[:1]
 
     # Assert >= 2 quoted lines from piece text
     quote1 = '"The yellow kettle hissed loudly on the iron stove."'
     quote2 = '"She turned the brass valve and watched the white steam vanish into the rafters."'
     assert quote1 in rev_body
     assert quote2 in rev_body
+
+
+def test_4b_stub_review_carries_voice_check(client: TestClient, monkeypatch):
+    """With no API key the stub review still carries the five-section shape and a valid band."""
+    piece_body = "The lantern guttered once on the sill and then held steady."
+    create_resp = client.post(
+        "/api/pieces",
+        json={"title": "Lantern", "body": piece_body, "exercise_id": None},
+    )
+    assert create_resp.status_code == 200
+    piece_id = create_resp.json()["piece"]["id"]
+
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+
+    review_resp = client.post(f"/api/pieces/{piece_id}/review")
+    assert review_resp.status_code == 200
+    review_data = review_resp.json()["review"]
+    rev_body = review_data["body"]
+
+    assert review_data["provider"] == "stub"
+    assert rev_body.startswith("**STUB REVIEW**")
+
+    idx = [rev_body.find(h) for h in ("## What worked", "## Craft points",
+                                      "## A question for you", "## Follow-up exercise",
+                                      "## Voice check")]
+    assert all(i >= 0 for i in idx) and idx == sorted(idx), idx
+
+    band_lines = [
+        ln.strip()
+        for ln in rev_body[idx[-1] + len("## Voice check"):].splitlines()
+        if ln.strip()
+    ]
+    assert band_lines and band_lines[0] in ("Reads human.", "Mixed.", "Reads machine-made."), band_lines[:1]
+    # The stub must never present itself as a live read
+    assert "stub" in rev_body.lower()
+    assert "not a live read" in rev_body.lower()
+    assert "placeholder" in rev_body.lower()
 
 
 # 5. Single Piece Export (md and pdf)

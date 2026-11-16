@@ -25,6 +25,13 @@ What is the unspoken risk or consequence your protagonist is trying hardest to a
 
 ## Follow-up exercise
 Write a 100-word follow-up scene set five minutes later in the same space, focusing entirely on silence and physical objects without introducing any dialogue.
+
+## Voice check
+Reads human.
+This is an automated fallback stub, not a live read: the band line above is a placeholder
+for the section's shape, not a verdict on your piece. With an API key configured, your peer
+reviewer gives a real ear for whether passages read human or machine-made, without metrics
+or scores.
 """
 
 STUB_DISCUSSION_TEMPLATE = """**STUB DISCUSSION** (DeepSeek API key missing or request could not complete)
@@ -40,8 +47,9 @@ def load_system_prompt(exercise_prompt: str | None = None) -> str:
     except Exception:
         base_prompt = (
             "You are a thoughtful, observant writing-group peer reviewing a creative writing piece.\n\n"
-            "Return feedback using EXACTLY these four markdown headings:\n"
-            "## What worked\n## Craft points\n## A question for you\n## Follow-up exercise\n"
+            "Return feedback using EXACTLY these five markdown headings:\n"
+            "## What worked\n## Craft points\n## A question for you\n## Follow-up exercise\n## Voice check\n\n"
+            "The first line of ## Voice check must be exactly one of: Reads human. / Mixed. / Reads machine-made.\n"
         )
 
     if exercise_prompt and exercise_prompt.strip():
@@ -111,7 +119,8 @@ def load_discussion_prompt(exercise_prompt: str | None = None) -> str:
             "You are the peer who wrote this review. Discuss this piece and this review — nothing generic.\n"
             "Answer her questions, explain your reasoning, point at her own lines when you make a claim.\n"
             "You may illustrate a point with a short example (a sentence, a paragraph) when she asks or when it genuinely clarifies — never rewrite the whole piece uninvited.\n"
-            "Peer, not teacher: honest, specific, no empty praise. If she convinces you a point was wrong, concede it plainly — a peer can change their mind."
+            "Peer, not teacher: honest, specific, no empty praise. If she convinces you a point was wrong, concede it plainly — a peer can change their mind.\n"
+            "If she asks about the voice check, discuss it the same way — point at her lines, and concede plainly if she convinces you a passage reads human after all."
         )
 
     if exercise_prompt and exercise_prompt.strip():

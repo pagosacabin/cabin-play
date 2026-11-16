@@ -177,6 +177,50 @@ def test_4b_stub_review_carries_voice_check(client: TestClient, monkeypatch):
     assert "placeholder" in rev_body.lower()
 
 
+def test_4c_band_is_normalised_to_its_own_line():
+    """A live model sometimes continues on the band's line; the provider splits it."""
+    from app.provider import normalize_voice_check
+
+    merged = (
+        "## Follow-up exercise\nDo the thing.\n\n"
+        "## Voice check\n"
+        'Reads machine-made. A few passages carry that generic quality: "in today\'s '
+        'fast-paced world" is stock opener phrasing.'
+    )
+    fixed = normalize_voice_check(merged)
+    lines = [ln for ln in fixed.split("## Voice check", 1)[1].splitlines() if ln.strip()]
+    assert lines[0] == "Reads machine-made.", lines[:2]
+    assert lines[1].startswith("A few passages carry"), lines[:2]
+
+    head = merged.split("## Voice check")[0]
+    for band in ("Reads human.", "Mixed.", "Reads machine-made."):
+        out = normalize_voice_check(f"{head}## Voice check\n{band} Extra.")
+        tail = [ln for ln in out.split("## Voice check", 1)[1].splitlines() if ln.strip()]
+        assert tail == [band, "Extra."], (band, tail)
+
+    well_formed = (
+        "## Follow-up exercise\nDo the thing.\n\n"
+        "## Voice check\nReads human.\nNothing here reads machine-made.\n"
+    )
+    assert normalize_voice_check(well_formed) == well_formed
+
+    no_section = "## What worked\nFine piece.\n"
+    assert normalize_voice_check(no_section) == no_section
+
+    # Markdown emphasis on the explanation must survive intact (no dangling closer).
+    emph = "## Voice check\nReads machine-made. **Generic** phrasing runs through it."
+    out = normalize_voice_check(emph)
+    assert out.split("## Voice check", 1)[1].strip().splitlines()[2] == \
+        "**Generic** phrasing runs through it.", out
+
+    # A quoted *mention* of the heading must not be mistaken for the heading.
+    mention = (
+        "## Craft points\nYou may wonder why I added a \"## Voice check\" section at all.\n\n"
+        "## Voice check\nReads human.\nNothing reads machine-made here.\n"
+    )
+    assert normalize_voice_check(mention) == mention
+
+
 # 5. Single Piece Export (md and pdf)
 def test_5_single_piece_export(client: TestClient):
     body_text = "The cedar floorboards creaked softly under her boots as she crossed the threshold."

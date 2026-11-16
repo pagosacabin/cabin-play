@@ -261,6 +261,21 @@ def create_app() -> FastAPI:
         finally:
             conn.close()
 
+    @app.delete("/api/pieces/{piece_id}")
+    def delete_piece(piece_id: int, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            with conn:
+                cur = conn.execute(
+                    "DELETE FROM pieces WHERE id = ?;",
+                    (piece_id,),
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Piece not found")
+            return {"deleted": True, "piece_id": piece_id}
+        finally:
+            conn.close()
+
     @app.post("/api/pieces/{piece_id}/review")
     def review_piece_endpoint(piece_id: int, request: Request):
         conn = get_connection(request.app.state.db_path)

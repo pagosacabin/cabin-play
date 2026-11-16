@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import signal
+import sqlite3
 import subprocess
 import sys
 import time
@@ -44,9 +45,13 @@ def req(method, path, payload=None, raw=False):
         data = json.dumps(payload).encode()
         headers["Content-Type"] = "application/json"
     r = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(r, timeout=180) as resp:
-        body = resp.read()
-        return resp.status, dict(resp.headers), (body if raw else body.decode("utf-8"))
+    try:
+        with urllib.request.urlopen(r, timeout=180) as resp:
+            body = resp.read()
+            return resp.status, dict(resp.headers), (body if raw else body.decode("utf-8"))
+    except urllib.error.HTTPError as err:
+        body = err.read()
+        return err.code, dict(err.headers), (body if raw else body.decode("utf-8"))
 
 
 def start_server():
@@ -403,6 +408,76 @@ def main():
         check("C3 discussion thread survives a server restart (SQLite)",
               st == 200 and len(bt) >= 2 and bt[0]["text"] == disc_query,
               f"{len(bt)} message(s) kept")
+
+        # ---- Delete a piece (end to end + cascade proof) -----------------
+        # 1. Non-existent id returns 404
+        st, _, nf_body = req("DELETE", "/api/pieces/999999")
+        check("DELETE non-existent piece returns 404",
+              st == 404 and json.loads(nf_body).get("detail") == "Piece not found",
+              f"st={st}")
+
+        # 2. Create ephemeral piece + review + discussion message
+        st, _, d_created = req("POST", "/api/pieces", {
+            "title": "Ephemeral Live Piece",
+            "body": "This piece and its cascade children will be deleted.",
+            "exercise_id": None,
+        })
+        del_pid = json.loads(d_created)["piece"]["id"]
+        st, _, d_rev = req("POST", f"/api/pieces/{del_pid}/review")
+        del_rid = json.loads(d_rev)["review"]["id"]
+        st, _, d_msg = req("POST", f"/api/reviews/{del_rid}/messages", {
+            "text": "Temporary question for cascade test."
+        })
+        check("Created ephemeral piece, review, and discussion message",
+              st == 200 and del_pid > 0 and del_rid > 0)
+
+        # 3. Direct DB check before deletion
+        db_conn = sqlite3.connect(str(DB))
+        pre_p = db_conn.execute("SELECT COUNT(*) FROM pieces WHERE id = ?", (del_pid,)).fetchone()[0]
+        pre_r = db_conn.execute("SELECT COUNT(*) FROM reviews WHERE id = ?", (del_rid,)).fetchone()[0]
+        pre_m = db_conn.execute("SELECT COUNT(*) FROM messages WHERE review_id = ?", (del_rid,)).fetchone()[0]
+        check("Direct DB: ephemeral rows exist before delete",
+              pre_p == 1 and pre_r == 1 and pre_m >= 1,
+              f"pieces={pre_p} reviews={pre_r} messages={pre_m}")
+
+        # 4. Delete the piece via endpoint
+        st, _, del_resp = req("DELETE", f"/api/pieces/{del_pid}")
+        del_data = json.loads(del_resp)
+        check("DELETE endpoint returns 200 with deleted=True",
+              st == 200 and del_data.get("deleted") is True and del_data.get("piece_id") == del_pid,
+              f"st={st} data={del_data}")
+
+        # 5. GET endpoints return 404
+        st_p, _, _ = req("GET", f"/api/pieces/{del_pid}")
+        st_m, _, _ = req("GET", f"/api/reviews/{del_rid}/messages")
+        check("GET piece and GET review messages return 404 after delete",
+              st_p == 404 and st_m == 404,
+              f"piece_st={st_p} messages_st={st_m}")
+
+        # 6. Direct DB check proving cascade
+        post_p = db_conn.execute("SELECT COUNT(*) FROM pieces WHERE id = ?", (del_pid,)).fetchone()[0]
+        post_r = db_conn.execute("SELECT COUNT(*) FROM reviews WHERE id = ?", (del_rid,)).fetchone()[0]
+        post_m = db_conn.execute("SELECT COUNT(*) FROM messages WHERE review_id = ?", (del_rid,)).fetchone()[0]
+        check("Direct DB: cascade deleted piece, review, and discussion messages",
+              post_p == 0 and post_r == 0 and post_m == 0,
+              f"pieces={post_p} reviews={post_r} messages={post_m}")
+
+        # 7. Unrelated piece remains untouched in DB and API
+        st_main, _, main_data = req("GET", f"/api/pieces/{pid}")
+        post_main_p = db_conn.execute("SELECT COUNT(*) FROM pieces WHERE id = ?", (pid,)).fetchone()[0]
+        check("Direct DB & API: unrelated piece remains untouched",
+              st_main == 200 and post_main_p == 1 and json.loads(main_data)["piece"]["id"] == pid)
+        db_conn.close()
+
+        # 8. Portfolio export skips deleted piece gracefully without error
+        st_port, _, port_md = req("POST", "/api/export/portfolio", {
+            "piece_ids": [del_pid, pid],
+            "format": "md",
+            "include_reviews": False,
+        })
+        check("Portfolio export skips deleted piece id and succeeds",
+              st_port == 200 and "The Long White Road" in port_md and "Ephemeral Live Piece" not in port_md,
+              f"st={st_port}")
     finally:
         stop_server(proc)
 

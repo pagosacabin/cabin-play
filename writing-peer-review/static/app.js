@@ -47,6 +47,7 @@
     newPieceBtn: document.getElementById('new-piece-btn'),
     exportPieceMdBtn: document.getElementById('export-piece-md-btn'),
     exportPiecePdfBtn: document.getElementById('export-piece-pdf-btn'),
+    exportPieceScope: document.getElementById('export-piece-scope'),
     reviewsSection: document.getElementById('reviews-section'),
     reviewsContainer: document.getElementById('reviews-container'),
     // History View
@@ -382,9 +383,10 @@
       const prov = escapeHtml(rev.provider || 'peer');
       const dateStr = new Date(rev.created_at).toLocaleString();
       const bodyFormatted = formatReviewMarkdown(rev.body);
+      const messagesHtml = renderDiscussionMessages(rev.messages || []);
 
       html += `
-        <div class="review-card ${isLatest ? 'latest' : ''}">
+        <div class="review-card ${isLatest ? 'latest' : ''}" data-review-id="${rev.id}">
           <div class="review-card-meta">
             <span class="badge ${prov === 'deepseek' ? 'badge-accent' : ''}">${prov}</span>
             <span>Reviewed on ${dateStr}</span>
@@ -392,10 +394,113 @@
           <div class="review-content">
             ${bodyFormatted}
           </div>
+          <div class="discussion-panel">
+            <div class="discussion-header">
+              <span class="discussion-title">Discuss this review</span>
+              <span class="discussion-hint">Talk back to your peer reviewer about their notes</span>
+            </div>
+            <div class="discussion-thread" id="discussion-thread-${rev.id}">
+              ${messagesHtml}
+            </div>
+            <div class="discussion-composer">
+              <textarea class="discussion-input" id="discussion-input-${rev.id}" placeholder="Ask your peer about this review..." rows="2"></textarea>
+              <button class="btn btn-primary discussion-send-btn" data-review-id="${rev.id}">Send</button>
+            </div>
+          </div>
         </div>
       `;
     });
     el.reviewsContainer.innerHTML = html;
+
+    // Attach discussion send handlers
+    el.reviewsContainer.querySelectorAll('.discussion-send-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const revId = parseInt(btn.dataset.reviewId, 10);
+        handleSendDiscussion(revId);
+      });
+    });
+
+    // Attach Ctrl/Cmd+Enter on inputs
+    el.reviewsContainer.querySelectorAll('.discussion-input').forEach((input) => {
+      input.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          const revId = parseInt(input.id.replace('discussion-input-', ''), 10);
+          handleSendDiscussion(revId);
+        }
+      });
+    });
+  }
+
+  function renderDiscussionMessages(messages) {
+    if (!messages || messages.length === 0) {
+      return '<div class="discussion-empty">No discussion messages yet. Ask your peer reviewer a question about this feedback below.</div>';
+    }
+    return messages.map((m) => {
+      const isUser = (m.role || '').toLowerCase() === 'user';
+      const roleName = isUser ? (state.displayName || 'You') : 'Peer Reviewer';
+      const timeStr = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      return `
+        <div class="message-bubble ${isUser ? 'user-message' : 'assistant-message'}">
+          <div class="message-header">
+            <span class="message-sender">${escapeHtml(roleName)}</span>
+            ${timeStr ? `<span class="message-time">${escapeHtml(timeStr)}</span>` : ''}
+          </div>
+          <div class="message-body">${escapeHtml(m.text || '')}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function handleSendDiscussion(reviewId) {
+    const inputEl = document.getElementById(`discussion-input-${reviewId}`);
+    const sendBtn = el.reviewsContainer.querySelector(`.discussion-send-btn[data-review-id="${reviewId}"]`);
+    const threadEl = document.getElementById(`discussion-thread-${reviewId}`);
+    if (!inputEl || !sendBtn) return;
+
+    const text = inputEl.value.trim();
+    if (!text) return;
+
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+    const origBtnText = sendBtn.textContent;
+    sendBtn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch(`/api/reviews/${reviewId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const rev = state.reviews.find((r) => r.id === reviewId);
+        if (rev) {
+          if (!rev.messages) rev.messages = [];
+          if (data.user_message && data.assistant_message) {
+            rev.messages.push(data.user_message);
+            rev.messages.push(data.assistant_message);
+          } else if (data.messages && data.messages.length >= 2) {
+            rev.messages.push(...data.messages);
+          }
+          if (threadEl) {
+            threadEl.innerHTML = renderDiscussionMessages(rev.messages);
+            threadEl.scrollTop = threadEl.scrollHeight;
+          }
+        }
+        inputEl.value = '';
+      } else {
+        alert('Failed to send message.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error sending message.');
+    } finally {
+      inputEl.disabled = false;
+      sendBtn.disabled = false;
+      sendBtn.textContent = origBtnText;
+      inputEl.focus();
+    }
   }
 
   function formatReviewMarkdown(text) {
@@ -471,11 +576,19 @@
     if (!state.currentPiece) return;
     await performAutosave();
 
+    const scope = el.exportPieceScope ? el.exportPieceScope.value : 'all';
+    const includeReviews = scope !== 'piece';
+    const includeDiscussions = scope === 'all';
+
     try {
       const res = await fetch(`/api/export/piece/${state.currentPiece.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format, include_reviews: true }),
+        body: JSON.stringify({
+          format,
+          include_reviews: includeReviews,
+          include_discussions: includeDiscussions,
+        }),
       });
       if (res.ok) {
         const blob = await res.blob();

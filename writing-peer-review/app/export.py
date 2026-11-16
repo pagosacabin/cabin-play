@@ -13,7 +13,12 @@ from reportlab.platypus import HRFlowable, PageBreak, Paragraph, SimpleDocTempla
 rl_config.pageCompression = 0
 
 
-def render_piece_markdown(piece: dict[str, Any], reviews: list[dict[str, Any]], include_reviews: bool) -> str:
+def render_piece_markdown(
+    piece: dict[str, Any],
+    reviews: list[dict[str, Any]],
+    include_reviews: bool,
+    include_discussions: bool = False,
+) -> str:
     """Render a single piece as markdown."""
     title = piece.get("title", "Untitled")
     body = piece.get("body", "")
@@ -47,6 +52,19 @@ def render_piece_markdown(piece: dict[str, Any], reviews: list[dict[str, Any]], 
                 r_body,
                 "",
             ])
+            if include_discussions and rev.get("messages"):
+                lines.extend([
+                    "#### Discussion",
+                    "",
+                ])
+                for msg in rev["messages"]:
+                    role = msg.get("role", "user")
+                    role_display = "User" if role.lower() == "user" else "Assistant"
+                    msg_text = msg.get("text", "")
+                    lines.extend([
+                        f"**{role_display}:** {msg_text}",
+                        "",
+                    ])
 
     return "\n".join(lines).strip() + "\n"
 
@@ -146,7 +164,12 @@ def _build_pdf_styles():
     }
 
 
-def render_piece_pdf(piece: dict[str, Any], reviews: list[dict[str, Any]], include_reviews: bool) -> bytes:
+def render_piece_pdf(
+    piece: dict[str, Any],
+    reviews: list[dict[str, Any]],
+    include_reviews: bool,
+    include_discussions: bool = False,
+) -> bytes:
     """Render a single piece as a PDF and return the raw bytes."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -193,6 +216,15 @@ def render_piece_pdf(piece: dict[str, Any], reviews: list[dict[str, Any]], inclu
                     else:
                         story.append(Paragraph(html.escape(rp_clean), styles["review"]))
                     story.append(Spacer(1, 3))
+
+            if include_discussions and rev.get("messages"):
+                story.append(Spacer(1, 4))
+                story.append(Paragraph("Discussion", styles["section"]))
+                for msg in rev["messages"]:
+                    role_str = html.escape("User" if msg.get("role", "user").lower() == "user" else "Assistant")
+                    msg_text = html.escape(msg.get("text", ""))
+                    story.append(Paragraph(f"<b>{role_str}:</b> {msg_text}", styles["body"]))
+                    story.append(Spacer(1, 2))
 
     doc.build(story)
     return buf.getvalue()

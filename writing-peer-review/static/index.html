@@ -86,6 +86,11 @@
           <button id="new-piece-btn" class="btn">New piece</button>
         </div>
         <div class="editor-actions">
+          <select id="export-piece-scope" class="export-scope-select" title="Export scope">
+            <option value="all" selected>Piece + reviews + discussions</option>
+            <option value="reviews">Piece + reviews</option>
+            <option value="piece">Piece only</option>
+          </select>
           <button id="export-piece-md-btn" class="btn btn-subtle" disabled title="Export as Markdown">Export .md</button>
           <button id="export-piece-pdf-btn" class="btn btn-subtle" disabled title="Export as PDF">Export .pdf</button>
         </div>

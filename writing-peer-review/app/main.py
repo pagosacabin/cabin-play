@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -16,7 +17,7 @@ from app.export import (
     render_portfolio_pdf,
 )
 from app.peak import peak_status
-from app.provider import review_piece
+from app.provider import discuss_review, review_piece
 
 
 class CreatePieceRequest(BaseModel):
@@ -30,6 +31,21 @@ class UpdatePieceRequest(BaseModel):
     body: str = ""
 
 
+class CreateMessageRequest(BaseModel):
+    text: str
+
+
+# One lock per review thread: two concurrent posts to the same review must not
+# interleave their user message / assistant reply pairs (see 0192 review).
+_discussion_locks: dict[int, threading.Lock] = {}
+_discussion_locks_guard = threading.Lock()
+
+
+def _discussion_lock(review_id: int) -> threading.Lock:
+    with _discussion_locks_guard:
+        return _discussion_locks.setdefault(review_id, threading.Lock())
+
+
 class SettingsRequest(BaseModel):
     display_name: str
 
@@ -37,6 +53,7 @@ class SettingsRequest(BaseModel):
 class ExportPieceRequest(BaseModel):
     format: Literal["md", "pdf"]
     include_reviews: bool = True
+    include_discussions: bool = False
 
 
 class ExportPortfolioRequest(BaseModel):
@@ -197,6 +214,17 @@ def create_app() -> FastAPI:
                 (piece_id,),
             )
             reviews = [dict(row) for row in r_cur.fetchall()]
+            for rev in reviews:
+                m_cur = conn.execute(
+                    """
+                    SELECT id, review_id, role, text, created_at
+                    FROM messages
+                    WHERE review_id = ?
+                    ORDER BY id ASC;
+                    """,
+                    (rev["id"],),
+                )
+                rev["messages"] = [dict(m) for m in m_cur.fetchall()]
             return {"piece": piece, "reviews": reviews}
         finally:
             conn.close()
@@ -272,7 +300,139 @@ def create_app() -> FastAPI:
                     "body": review_text,
                     "created_at": now_str,
                     "provider": provider_name,
+                    "messages": [],
                 }
+            }
+        finally:
+            conn.close()
+
+    @app.get("/api/reviews/{review_id}/messages")
+    def get_review_messages(review_id: int, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            r_cur = conn.execute("SELECT id FROM reviews WHERE id = ?;", (review_id,))
+            if not r_cur.fetchone():
+                raise HTTPException(status_code=404, detail="Review not found")
+
+            m_cur = conn.execute(
+                """
+                SELECT id, review_id, role, text, created_at
+                FROM messages
+                WHERE review_id = ?
+                ORDER BY id ASC;
+                """,
+                (review_id,),
+            )
+            messages = [dict(row) for row in m_cur.fetchall()]
+            return {"messages": messages}
+        finally:
+            conn.close()
+
+    @app.post("/api/reviews/{review_id}/messages")
+    def create_review_message(
+        review_id: int, payload: CreateMessageRequest, request: Request
+    ):
+        # Serialize posts to the same thread so a reply is never paired with the
+        # wrong user message when two requests overlap.
+        with _discussion_lock(review_id):
+            return _post_review_message(review_id, payload, request)
+
+    def _post_review_message(
+        review_id: int, payload: CreateMessageRequest, request: Request
+    ):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            r_cur = conn.execute(
+                """
+                SELECT r.id, r.piece_id, r.body AS review_body,
+                       p.body AS piece_body, p.exercise_id,
+                       e.prompt AS exercise_prompt
+                FROM reviews r
+                JOIN pieces p ON p.id = r.piece_id
+                LEFT JOIN exercises e ON e.id = p.exercise_id
+                WHERE r.id = ?;
+                """,
+                (review_id,),
+            )
+            r_row = r_cur.fetchone()
+            if not r_row:
+                raise HTTPException(status_code=404, detail="Review not found")
+
+            user_text = payload.text.strip()
+            if not user_text:
+                raise HTTPException(status_code=400, detail="Message text cannot be empty")
+
+            now_str = datetime.now(timezone.utc).isoformat()
+
+            # Existing thread
+            m_cur = conn.execute(
+                """
+                SELECT id, review_id, role, text, created_at
+                FROM messages
+                WHERE review_id = ?
+                ORDER BY id ASC;
+                """,
+                (review_id,),
+            )
+            thread_so_far = [dict(m) for m in m_cur.fetchall()]
+
+            # Store user message
+            with conn:
+                u_cur = conn.execute(
+                    """
+                    INSERT INTO messages (review_id, role, text, created_at)
+                    VALUES (?, 'user', ?, ?);
+                    """,
+                    (review_id, user_text, now_str),
+                )
+                user_msg_id = u_cur.lastrowid
+
+            user_msg = {
+                "id": user_msg_id,
+                "review_id": review_id,
+                "role": "user",
+                "text": user_text,
+                "created_at": now_str,
+            }
+
+            full_thread = thread_so_far + [user_msg]
+
+            # Call provider
+            reply_text, provider_name = discuss_review(
+                piece_text=r_row["piece_body"],
+                review_text=r_row["review_body"],
+                thread=full_thread,
+                exercise_prompt=r_row["exercise_prompt"],
+            )
+
+            asst_now_str = datetime.now(timezone.utc).isoformat()
+
+            # Store assistant reply
+            with conn:
+                a_cur = conn.execute(
+                    """
+                    INSERT INTO messages (review_id, role, text, created_at)
+                    VALUES (?, 'assistant', ?, ?);
+                    """,
+                    (review_id, reply_text, asst_now_str),
+                )
+                asst_msg_id = a_cur.lastrowid
+
+            assistant_msg = {
+                "id": asst_msg_id,
+                "review_id": review_id,
+                "role": "assistant",
+                "text": reply_text,
+                "created_at": asst_now_str,
+                "provider": provider_name,
+            }
+
+            return {
+                "messages": [user_msg, assistant_msg],
+                "user_message": user_msg,
+                "assistant_message": assistant_msg,
+                "reply": assistant_msg,
+                "provider": provider_name,
             }
         finally:
             conn.close()
@@ -309,18 +469,29 @@ def create_app() -> FastAPI:
                     (piece_id,),
                 )
                 reviews = [dict(r) for r in r_cur.fetchall()]
+                if payload.include_discussions:
+                    for rev in reviews:
+                        m_cur = conn.execute(
+                            "SELECT * FROM messages WHERE review_id = ? ORDER BY id ASC;",
+                            (rev["id"],),
+                        )
+                        rev["messages"] = [dict(m) for m in m_cur.fetchall()]
 
             safe_title = "".join(c for c in piece["title"] if c.isalnum() or c in ("-", "_")).strip() or f"piece-{piece_id}"
 
             if payload.format == "md":
-                content = render_piece_markdown(piece, reviews, payload.include_reviews)
+                content = render_piece_markdown(
+                    piece, reviews, payload.include_reviews, payload.include_discussions
+                )
                 return Response(
                     content=content,
                     media_type="text/markdown; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{safe_title}.md"'},
                 )
             elif payload.format == "pdf":
-                pdf_bytes = render_piece_pdf(piece, reviews, payload.include_reviews)
+                pdf_bytes = render_piece_pdf(
+                    piece, reviews, payload.include_reviews, payload.include_discussions
+                )
                 return Response(
                     content=pdf_bytes,
                     media_type="application/pdf",

@@ -4,6 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 REVIEW_PROMPT_PATH = BASE_DIR / "review_prompt.md"
+DISCUSSION_PROMPT_PATH = BASE_DIR / "discussion_prompt.md"
 
 DEFAULT_DISPLAY_NAME = "Bethany"
 

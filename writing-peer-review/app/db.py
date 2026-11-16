@@ -53,6 +53,15 @@ def init_db(db_path: Path | str | None = None) -> None:
                     FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    review_id INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL

@@ -240,3 +240,303 @@ def test_8_peak_function_cases():
         assert ":" in res["next_flip_local"]
         assert ("AM" in res["next_flip_local"]) or ("PM" in res["next_flip_local"])
         assert "detail" in res
+
+
+# 9. Discussion Stub Response and Persistence across App Re-opens
+def test_9_discussion_stub_and_persistence(client: TestClient, monkeypatch):
+    # Ensure no API key is set
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+
+    # Create a piece
+    create_resp = client.post(
+        "/api/pieces",
+        json={"title": "Stub Discussion Piece", "body": "Rain tapped against the pane."},
+    )
+    assert create_resp.status_code == 200
+    piece_id = create_resp.json()["piece"]["id"]
+
+    # Create a review
+    review_resp = client.post(f"/api/pieces/{piece_id}/review")
+    assert review_resp.status_code == 200
+    review_id = review_resp.json()["review"]["id"]
+
+    # 404 tests for unknown review id
+    assert client.get("/api/reviews/99999/messages").status_code == 404
+    assert client.post("/api/reviews/99999/messages", json={"text": "Hello?"}).status_code == 404
+
+    # Post a message to the review
+    user_msg_text = "Can you elaborate on the second craft point?"
+    msg_resp = client.post(
+        f"/api/reviews/{review_id}/messages",
+        json={"text": user_msg_text},
+    )
+    assert msg_resp.status_code == 200
+    data = msg_resp.json()
+
+    # Reply must be stub-marked starting with **STUB
+    reply = data.get("reply") or data["messages"][1]
+    assert reply["role"] == "assistant"
+    assert reply["text"].startswith("**STUB")
+    assert data["user_message"]["text"] == user_msg_text
+
+    # Thread returned by GET in order
+    get_resp = client.get(f"/api/reviews/{review_id}/messages")
+    assert get_resp.status_code == 200
+    thread = get_resp.json()["messages"]
+    assert len(thread) == 2
+    assert thread[0]["role"] == "user"
+    assert thread[0]["text"] == user_msg_text
+    assert thread[1]["role"] == "assistant"
+    assert thread[1]["text"].startswith("**STUB")
+
+    # Thread survives an app/DB re-open (simulate restart)
+    fresh_app = create_app()
+    with TestClient(fresh_app) as fresh_client:
+        reopened_resp = fresh_client.get(f"/api/reviews/{review_id}/messages")
+        assert reopened_resp.status_code == 200
+        reopened_thread = reopened_resp.json()["messages"]
+        assert len(reopened_thread) == 2
+        assert reopened_thread[0]["text"] == user_msg_text
+        assert reopened_thread[1]["text"].startswith("**STUB")
+
+
+# 10. Separate Threads for Multiple Reviews on the Same Piece
+def test_10_discussion_separate_threads(client: TestClient, monkeypatch):
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+
+    # Create a single piece
+    p_resp = client.post(
+        "/api/pieces",
+        json={"title": "Dual Reviews", "body": "Two cups on the wooden counter."},
+    )
+    piece_id = p_resp.json()["piece"]["id"]
+
+    # Create two distinct reviews on this piece
+    rev1_id = client.post(f"/api/pieces/{piece_id}/review").json()["review"]["id"]
+    rev2_id = client.post(f"/api/pieces/{piece_id}/review").json()["review"]["id"]
+    assert rev1_id != rev2_id
+
+    # Post unique message to review 1
+    msg1_text = "Message exclusively for review alpha"
+    r1_post = client.post(f"/api/reviews/{rev1_id}/messages", json={"text": msg1_text})
+    assert r1_post.status_code == 200
+
+    # Post unique message to review 2
+    msg2_text = "Message exclusively for review beta"
+    r2_post = client.post(f"/api/reviews/{rev2_id}/messages", json={"text": msg2_text})
+    assert r2_post.status_code == 200
+
+    # Thread 1 contains msg1 and never msg2
+    t1 = client.get(f"/api/reviews/{rev1_id}/messages").json()["messages"]
+    t1_texts = [m["text"] for m in t1]
+    assert any(msg1_text in t for t in t1_texts)
+    assert not any(msg2_text in t for t in t1_texts)
+
+    # Thread 2 contains msg2 and never msg1
+    t2 = client.get(f"/api/reviews/{rev2_id}/messages").json()["messages"]
+    t2_texts = [m["text"] for m in t2]
+    assert any(msg2_text in t for t in t2_texts)
+    assert not any(msg1_text in t for t in t2_texts)
+
+
+# 11. Single-Piece Export with and without Discussions (.md and .pdf)
+def test_11_export_with_and_without_discussions(client: TestClient, monkeypatch):
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+
+    piece_text = "The silver kettle began to hum at dawn across the quiet kitchen."
+    p_resp = client.post(
+        "/api/pieces",
+        json={"title": "Kettle Song", "body": piece_text},
+    )
+    piece_id = p_resp.json()["piece"]["id"]
+
+    rev_id = client.post(f"/api/pieces/{piece_id}/review").json()["review"]["id"]
+
+    discussion_query = "Why did you suggest adding a tactile beat here?"
+    msg_resp = client.post(
+        f"/api/reviews/{rev_id}/messages",
+        json={"text": discussion_query},
+    )
+    assert msg_resp.status_code == 200
+    reply_text = msg_resp.json()["reply"]["text"]
+    assert reply_text.startswith("**STUB")
+
+    # (a) Export with include_discussions = True: thread text in both .md and .pdf
+    md_with = client.post(
+        f"/api/export/piece/{piece_id}",
+        json={"format": "md", "include_reviews": True, "include_discussions": True},
+    )
+    assert md_with.status_code == 200
+    assert discussion_query in md_with.text
+    assert "STUB DISCUSSION" in md_with.text
+
+    pdf_with = client.post(
+        f"/api/export/piece/{piece_id}",
+        json={"format": "pdf", "include_reviews": True, "include_discussions": True},
+    )
+    assert pdf_with.status_code == 200
+    pdf_with_text = pdf_with.content.decode("latin-1")
+    assert discussion_query in pdf_with_text
+    assert "STUB DISCUSSION" in pdf_with_text
+
+    # (b) Export with include_discussions = False: none of the thread text in .md or .pdf
+    md_without = client.post(
+        f"/api/export/piece/{piece_id}",
+        json={"format": "md", "include_reviews": True, "include_discussions": False},
+    )
+    assert md_without.status_code == 200
+    assert discussion_query not in md_without.text
+    assert "STUB DISCUSSION" not in md_without.text
+    assert "## Peer Reviews" in md_without.text
+
+    pdf_without = client.post(
+        f"/api/export/piece/{piece_id}",
+        json={"format": "pdf", "include_reviews": True, "include_discussions": False},
+    )
+    assert pdf_without.status_code == 200
+    pdf_without_text = pdf_without.content.decode("latin-1")
+    assert discussion_query not in pdf_without_text
+    assert "STUB DISCUSSION" not in pdf_without_text
+
+    # (c) Export with include_reviews = False: neither reviews nor discussions present
+    md_no_rev = client.post(
+        f"/api/export/piece/{piece_id}",
+        json={"format": "md", "include_reviews": False, "include_discussions": True},
+    )
+    assert md_no_rev.status_code == 200
+    assert discussion_query not in md_no_rev.text
+    assert "## Peer Reviews" not in md_no_rev.text
+
+    pdf_no_rev = client.post(
+        f"/api/export/piece/{piece_id}",
+        json={"format": "pdf", "include_reviews": False, "include_discussions": True},
+    )
+    assert pdf_no_rev.status_code == 200
+    pdf_no_rev_text = pdf_no_rev.content.decode("latin-1")
+    assert discussion_query not in pdf_no_rev_text
+
+    # (d) Backward compatibility: omit include_discussions completely
+    md_compat = client.post(
+        f"/api/export/piece/{piece_id}",
+        json={"format": "md", "include_reviews": True},
+    )
+    assert md_compat.status_code == 200
+    assert discussion_query not in md_compat.text
+    assert "## Peer Reviews" in md_compat.text
+
+
+# 12. discussion_prompt.md is re-read from disk on every request (not cached at import)
+def test_12_discussion_prompt_reloaded_per_request(client: TestClient, monkeypatch):
+    from app import provider as provider_mod
+    from app.config import DISCUSSION_PROMPT_PATH
+
+    captured: list[str] = []
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "acknowledged"}}]}
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, url, headers=None, json=None):  # noqa: A002 - mirror httpx API
+            captured.append(json["messages"][0]["content"])
+            return _FakeResponse()
+
+    original_prompt = DISCUSSION_PROMPT_PATH.read_text(encoding="utf-8")
+    monkeypatch.setattr(provider_mod, "get_deepseek_api_key", lambda: "test-key-not-used")
+    monkeypatch.setattr(provider_mod.httpx, "Client", _FakeClient)
+    try:
+        p_resp = client.post(
+            "/api/pieces",
+            json={"title": "Prompt Reload", "body": "The lamp buzzed above the table."},
+        )
+        piece_id = p_resp.json()["piece"]["id"]
+        rev_id = client.post(f"/api/pieces/{piece_id}/review").json()["review"]["id"]
+        # the review call itself also goes through the patched httpx client; only the
+        # two discussion requests below are under test
+        captured.clear()
+
+        marker_one = "PROMPT-MARKER-ALPHA-7f31"
+        DISCUSSION_PROMPT_PATH.write_text(marker_one + "\n" + original_prompt, encoding="utf-8")
+        r1 = client.post(f"/api/reviews/{rev_id}/messages", json={"text": "First question."})
+        assert r1.status_code == 200
+        assert r1.json()["provider"] == "deepseek"
+
+        marker_two = "PROMPT-MARKER-BETA-9c02"
+        DISCUSSION_PROMPT_PATH.write_text(marker_two + "\n" + original_prompt, encoding="utf-8")
+        r2 = client.post(f"/api/reviews/{rev_id}/messages", json={"text": "Second question."})
+        assert r2.status_code == 200
+        assert r2.json()["provider"] == "deepseek"
+    finally:
+        DISCUSSION_PROMPT_PATH.write_text(original_prompt, encoding="utf-8")
+
+    assert len(captured) == 2, captured
+    assert "PROMPT-MARKER-ALPHA-7f31" in captured[0]
+    assert "PROMPT-MARKER-BETA-9c02" not in captured[0]
+    assert "PROMPT-MARKER-BETA-9c02" in captured[1]
+    assert "PROMPT-MARKER-ALPHA-7f31" not in captured[1]
+    # context order: prompt, then piece, then review, then thread
+    assert captured[1].index("PROMPT-MARKER-BETA-9c02") < captured[1].index("The lamp buzzed")
+    assert captured[1].index("The lamp buzzed") < captured[1].index("## Peer Review Under Discussion")
+
+
+# 13. Two concurrent posts to the same review keep each reply paired with its own question
+def test_13_concurrent_posts_do_not_interleave(client: TestClient, monkeypatch):
+    import threading
+    import time as _time
+
+    from app import main as main_mod
+
+    def fake_discuss(piece_text, review_text, thread, exercise_prompt=None):
+        # slow enough that an unserialized implementation would overlap
+        _time.sleep(0.25)
+        return (f"reply to: {thread[-1]['text']}", "deepseek")
+
+    monkeypatch.setattr(main_mod, "discuss_review", fake_discuss)
+
+    p_resp = client.post("/api/pieces", json={"title": "Concurrency", "body": "Two lamps."})
+    piece_id = p_resp.json()["piece"]["id"]
+    rev_id = client.post(f"/api/pieces/{piece_id}/review").json()["review"]["id"]
+
+    errors: list[BaseException] = []
+
+    def post(text):
+        try:
+            client.post(f"/api/reviews/{rev_id}/messages", json={"text": text})
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=post, args=(t,)) for t in ("question-one", "question-two")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert not errors, errors
+
+    thread = client.get(f"/api/reviews/{rev_id}/messages").json()["messages"]
+    roles = [m["role"] for m in thread]
+    assert roles == ["user", "assistant", "user", "assistant"], roles
+    # each assistant reply must belong to the question immediately before it
+    for i in range(0, len(thread), 2):
+        assert thread[i]["role"] == "user"
+        assert thread[i + 1]["role"] == "assistant"
+        assert thread[i + 1]["text"] == f"reply to: {thread[i]['text']}"
+
+
+# 14. The service worker cache is versioned, so an installed PWA adopts the new shell
+def test_14_service_worker_cache_version_bumped(client: TestClient):
+    sw = client.get("/sw.js").text
+    assert "writing-peer-review-v2" in sw
+    assert "writing-peer-review-v1" not in sw
+    assert "/static/app.js" in sw

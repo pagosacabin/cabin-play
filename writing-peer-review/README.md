@@ -36,6 +36,37 @@ The prompt requires the LLM to respond using four exact markdown headers:
 - `## A question for you`
 - `## Follow-up exercise`
 
+## Discussing a Review
+
+Every review carries its own discussion thread, so the review is a conversation rather than a
+one-way verdict. Under each review in the Write view there is a "Discuss this review" panel: type
+a question and the peer answers it with the piece and that review in front of it.
+
+- Threads are stored in the same SQLite database (`messages`, keyed by `review_id`), so they
+  survive a server restart. Two reviews on the same piece have completely separate threads.
+- The discussion system prompt lives in `discussion_prompt.md` at the repository root, re-read
+  from disk on every request (same pattern as `review_prompt.md`).
+- The model receives, in order: the discussion prompt, the piece text, the review text, then the
+  thread so far.
+- Endpoints: `GET /api/reviews/{id}/messages` and `POST /api/reviews/{id}/messages` with body
+  `{"text": "..."}`.
+- With no API key (or a failed call) the reply is clearly marked `**STUB DISCUSSION**`, exactly
+  the way reviews fall back to `**STUB REVIEW**`.
+
+## Exporting
+
+Single-piece export has three scopes, selectable next to the export buttons:
+
+| Scope | Contains |
+|---|---|
+| Piece + reviews + discussions | the piece, each review, and that review's discussion thread |
+| Piece + reviews | the piece and the reviews |
+| Piece only | the piece |
+
+Both `.md` and `.pdf` honour the scope. The API equivalent is
+`POST /api/export/piece/{id}` with `{"format": "md"|"pdf", "include_reviews": bool,
+"include_discussions": bool}`. Portfolio export is unchanged and does not include discussions.
+
 ## Provider and API Key Notes
 
 The application uses DeepSeek (`deepseek-chat` model by default) as its LLM review provider via the chat completions API (`https://api.deepseek.com/chat/completions`).

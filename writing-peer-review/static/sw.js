@@ -1,4 +1,4 @@
-const CACHE_NAME = 'writing-peer-review-v1';
+const CACHE_NAME = 'writing-peer-review-v2';
 const APP_SHELL = [
   '/',
   '/static/styles.css',

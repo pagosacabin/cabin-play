@@ -188,6 +188,32 @@ def main():
         check("C4 review persisted on the piece", len(stored["reviews"]) == 1
               and stored["reviews"][0]["provider"] == review["provider"])
 
+        # ---- Discussion flow end-to-end ----------------------------------
+        rid = review["id"]
+        disc_query = "Could you suggest how to make the kettle moment feel more immediate?"
+        t_disc = time.time()
+        st, _, disc_raw = req("POST", f"/api/reviews/{rid}/messages", {"text": disc_query})
+        disc_data = json.loads(disc_raw)
+        reply = disc_data.get("reply") or disc_data["messages"][1]
+        reply_text = reply["text"]
+        is_disc_stub = reply_text.startswith("**STUB")
+        disc_provider = "stub" if is_disc_stub else "live DeepSeek"
+        print(f"\n--- Discussion Reply ({disc_provider} in {time.time()-t_disc:.1f}s) ---")
+        print(reply_text.strip()[:300] + ("..." if len(reply_text) > 300 else ""))
+        print("----------------------------------------------------------\n")
+        check("Discussion message posted and reply returned",
+              st == 200 and len(reply_text) > 0,
+              f"provider={disc_provider}")
+
+        st, _, thread_raw = req("GET", f"/api/reviews/{rid}/messages")
+        thread_messages = json.loads(thread_raw)["messages"]
+        check("Discussion thread returned in order",
+              st == 200 and len(thread_messages) >= 2
+              and thread_messages[0]["role"] == "user"
+              and thread_messages[0]["text"] == disc_query
+              and thread_messages[1]["role"] == "assistant",
+              f"{len(thread_messages)} messages in thread")
+
         # ---- C5: single-piece export -------------------------------------
         st, hdrs, md = req("POST", f"/api/export/piece/{pid}",
                            {"format": "md", "include_reviews": True})
@@ -203,6 +229,10 @@ def main():
         st, _, md2 = req("POST", f"/api/export/piece/{pid}",
                          {"format": "md", "include_reviews": False})
         check("C5.1 piece-only toggle excludes reviews", "## What worked" not in md2)
+        st, _, md3 = req("POST", f"/api/export/piece/{pid}",
+                         {"format": "md", "include_reviews": True, "include_discussions": True})
+        check("C5.2 export with include_discussions includes discussion thread",
+              st == 200 and disc_query in md3 and "Discussion" in md3)
 
         # ---- C6: portfolio ------------------------------------------------
         req("PUT", "/api/settings", {"display_name": "Bethany"})
@@ -244,6 +274,11 @@ def main():
         check("C3 piece survives a server restart (SQLite)",
               st == 200 and pj["piece"]["title"] == "The Long White Road"
               and len(pj["reviews"]) == 1, f"{len(pj['reviews'])} review(s) kept")
+        st, _, back_thread = req("GET", f"/api/reviews/{rid}/messages")
+        bt = json.loads(back_thread)["messages"]
+        check("C3 discussion thread survives a server restart (SQLite)",
+              st == 200 and len(bt) >= 2 and bt[0]["text"] == disc_query,
+              f"{len(bt)} message(s) kept")
     finally:
         stop_server(proc)
 

@@ -489,3 +489,54 @@ def test_12_discussion_prompt_reloaded_per_request(client: TestClient, monkeypat
     # context order: prompt, then piece, then review, then thread
     assert captured[1].index("PROMPT-MARKER-BETA-9c02") < captured[1].index("The lamp buzzed")
     assert captured[1].index("The lamp buzzed") < captured[1].index("## Peer Review Under Discussion")
+
+
+# 13. Two concurrent posts to the same review keep each reply paired with its own question
+def test_13_concurrent_posts_do_not_interleave(client: TestClient, monkeypatch):
+    import threading
+    import time as _time
+
+    from app import main as main_mod
+
+    def fake_discuss(piece_text, review_text, thread, exercise_prompt=None):
+        # slow enough that an unserialized implementation would overlap
+        _time.sleep(0.25)
+        return (f"reply to: {thread[-1]['text']}", "deepseek")
+
+    monkeypatch.setattr(main_mod, "discuss_review", fake_discuss)
+
+    p_resp = client.post("/api/pieces", json={"title": "Concurrency", "body": "Two lamps."})
+    piece_id = p_resp.json()["piece"]["id"]
+    rev_id = client.post(f"/api/pieces/{piece_id}/review").json()["review"]["id"]
+
+    errors: list[BaseException] = []
+
+    def post(text):
+        try:
+            client.post(f"/api/reviews/{rev_id}/messages", json={"text": text})
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=post, args=(t,)) for t in ("question-one", "question-two")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert not errors, errors
+
+    thread = client.get(f"/api/reviews/{rev_id}/messages").json()["messages"]
+    roles = [m["role"] for m in thread]
+    assert roles == ["user", "assistant", "user", "assistant"], roles
+    # each assistant reply must belong to the question immediately before it
+    for i in range(0, len(thread), 2):
+        assert thread[i]["role"] == "user"
+        assert thread[i + 1]["role"] == "assistant"
+        assert thread[i + 1]["text"] == f"reply to: {thread[i]['text']}"
+
+
+# 14. The service worker cache is versioned, so an installed PWA adopts the new shell
+def test_14_service_worker_cache_version_bumped(client: TestClient):
+    sw = client.get("/sw.js").text
+    assert "writing-peer-review-v2" in sw
+    assert "writing-peer-review-v1" not in sw
+    assert "/static/app.js" in sw

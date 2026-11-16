@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -32,6 +33,17 @@ class UpdatePieceRequest(BaseModel):
 
 class CreateMessageRequest(BaseModel):
     text: str
+
+
+# One lock per review thread: two concurrent posts to the same review must not
+# interleave their user message / assistant reply pairs (see 0192 review).
+_discussion_locks: dict[int, threading.Lock] = {}
+_discussion_locks_guard = threading.Lock()
+
+
+def _discussion_lock(review_id: int) -> threading.Lock:
+    with _discussion_locks_guard:
+        return _discussion_locks.setdefault(review_id, threading.Lock())
 
 
 class SettingsRequest(BaseModel):
@@ -318,6 +330,14 @@ def create_app() -> FastAPI:
 
     @app.post("/api/reviews/{review_id}/messages")
     def create_review_message(
+        review_id: int, payload: CreateMessageRequest, request: Request
+    ):
+        # Serialize posts to the same thread so a reply is never paired with the
+        # wrong user message when two requests overlap.
+        with _discussion_lock(review_id):
+            return _post_review_message(review_id, payload, request)
+
+    def _post_review_message(
         review_id: int, payload: CreateMessageRequest, request: Request
     ):
         conn = get_connection(request.app.state.db_path)

@@ -631,8 +631,8 @@ def test_13_concurrent_posts_do_not_interleave(client: TestClient, monkeypatch):
 # 14. The service worker cache is versioned, so an installed PWA adopts the new shell
 def test_14_service_worker_cache_version_bumped(client: TestClient):
     sw = client.get("/sw.js").text
-    assert "writing-peer-review-v3" in sw
-    assert "writing-peer-review-v2" not in sw
+    assert "writing-peer-review-v4" in sw
+    assert "writing-peer-review-v3" not in sw
     assert "/static/app.js" in sw
 
 

@@ -7,6 +7,22 @@
   <link rel="manifest" href="/static/manifest.webmanifest">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
+  <script>
+    (function() {
+      try {
+        var VALID_THEMES = { warm: 1, clean: 1, night: 1 };
+        var VALID_ACCENTS = { green: 1, terracotta: 1, amber: 1, slate: 1, plum: 1 };
+        var VALID_SIZES = { small: 1, medium: 1, large: 1 };
+        var t = localStorage.getItem('wpr-theme');
+        var a = localStorage.getItem('wpr-accent');
+        var s = localStorage.getItem('wpr-textsize');
+        if (t && VALID_THEMES[t]) document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.setAttribute('data-theme', 'warm');
+        if (a && VALID_ACCENTS[a]) document.documentElement.setAttribute('data-accent', a);
+        if (s && VALID_SIZES[s]) document.documentElement.setAttribute('data-textsize', s);
+      } catch(e) {}
+    })();
+  </script>
   <meta name="theme-color" content="#24201d">
   <meta name="description" content="A personal writing-exercise and peer-review tool">
 </head>
@@ -152,6 +168,35 @@
         <p style="color: var(--color-ink-mid); font-size: 0.9rem; margin-bottom: 1.5rem;">
           Configure your personal preferences for exports and feedback.
         </p>
+
+        <div class="form-group">
+          <span class="settings-section-heading" id="theme-label">Theme</span>
+          <div class="theme-segmented" role="group" aria-labelledby="theme-label">
+            <button class="theme-option" data-theme="warm" aria-pressed="false">Warm</button>
+            <button class="theme-option" data-theme="clean" aria-pressed="false">Clean</button>
+            <button class="theme-option" data-theme="night" aria-pressed="false">Night</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <span class="settings-section-heading" id="accent-label">Accent colour</span>
+          <div class="accent-swatches" role="group" aria-labelledby="accent-label">
+            <button class="accent-swatch" data-accent="green"      aria-pressed="false" aria-label="Accent: green"      style="background:#2c5e50;" title="Green"></button>
+            <button class="accent-swatch" data-accent="terracotta" aria-pressed="false" aria-label="Accent: terracotta" style="background:#a04030;" title="Terracotta"></button>
+            <button class="accent-swatch" data-accent="amber"      aria-pressed="false" aria-label="Accent: amber"      style="background:#8a6000;" title="Amber"></button>
+            <button class="accent-swatch" data-accent="slate"      aria-pressed="false" aria-label="Accent: slate"      style="background:#3d5468;" title="Slate"></button>
+            <button class="accent-swatch" data-accent="plum"       aria-pressed="false" aria-label="Accent: plum"       style="background:#6b3570;" title="Plum"></button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <span class="settings-section-heading" id="textsize-label">Text size</span>
+          <div class="textsize-segmented" role="group" aria-labelledby="textsize-label">
+            <button class="textsize-option" data-textsize="small"  aria-pressed="false">Small</button>
+            <button class="textsize-option" data-textsize="medium" aria-pressed="false">Medium</button>
+            <button class="textsize-option" data-textsize="large"  aria-pressed="false">Large</button>
+          </div>
+        </div>
 
         <div class="form-group">
           <label for="settings-display-name" class="form-label">Display Name (for portfolio exports)</label>

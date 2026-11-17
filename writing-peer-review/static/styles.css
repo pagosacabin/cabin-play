@@ -64,6 +64,212 @@
   --editor-measure: 60ch;   /* prose line-length target (~66 avg chars) */
 }
 
+/* ── 1b. THEME TOKEN OVERRIDES ───────────────────────────────── */
+
+/* Warm (default) — cream paper ground, visibly warm and coloured */
+html[data-theme="warm"],
+:root {
+  --color-bg:          #f6efdf;
+  --color-surface:     #fdf8ef;
+  --color-surface-alt: #ede4cf;
+  --color-border:      #d4c9b0;
+  --color-border-soft: #e2d8c3;
+  --color-ink:         #25201a;
+  --color-ink-mid:     #5f5546;
+  --color-ink-dim:     #6b6152;
+  --color-on-accent:   #ffffff;
+  --color-accent:      #2c5e50;
+  --color-accent-hover:#1f4238;
+  --color-accent-soft: #dff0ea;
+  --color-accent-rule: #9ecfbe;
+  --color-peak:        #b93728;
+  --color-offpeak:     #1f9d55;
+  --color-danger:      #b91c1c;
+  --color-danger-bg:   #fef2f2;
+  --color-danger-rule: #fca5a5;
+  --shadow-sm: 0 1px 3px rgba(60,40,10,0.08), 0 1px 2px rgba(60,40,10,0.05);
+  --shadow-md: 0 4px 14px rgba(60,40,10,0.10), 0 1px 4px rgba(60,40,10,0.06);
+}
+
+/* Clean — cool near-white, crisp, flatter */
+html[data-theme="clean"] {
+  --color-bg:          #f5f7f9;
+  --color-surface:     #ffffff;
+  --color-surface-alt: #eef1f4;
+  --color-border:      #d1d9e0;
+  --color-border-soft: #e4eaef;
+  --color-ink:         #1a1f26;
+  --color-ink-mid:     #4a5766;
+  --color-ink-dim:     #5d6b79;
+  --color-on-accent:   #ffffff;
+  --color-accent:      #2b5aad;
+  --color-accent-hover:#1e4190;
+  --color-accent-soft: #e8eef8;
+  --color-accent-rule: #a8bedf;
+  --color-peak:        #b93728;
+  --color-offpeak:     #1f9d55;
+  --color-danger:      #b91c1c;
+  --color-danger-bg:   #fef2f2;
+  --color-danger-rule: #fca5a5;
+  --r-sm:  2px;
+  --r-md:  4px;
+  --r-lg:  7px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 3px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
+}
+
+/* Night — dark warm-neutral ground */
+html[data-theme="night"] {
+  --color-bg:          #1e1c1a;
+  --color-surface:     #272421;
+  --color-surface-alt: #312e2b;
+  --color-border:      #3e3a36;
+  --color-border-soft: #332f2c;
+  --color-ink:         #ede7dd;
+  --color-ink-mid:     #a89f94;
+  --color-ink-dim:     #948b82;
+  --color-on-accent:   #101a16;
+  --color-accent:      #5ca88a;
+  --color-accent-hover:#73c0a0;
+  --color-accent-soft: #1e3530;
+  --color-accent-rule: #3a6b5a;
+  --color-peak:        #e06050;
+  --color-offpeak:     #40c070;
+  --color-danger:      #f07070;
+  --color-danger-bg:   #2a1a1a;
+  --color-danger-rule: #6e3030;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.25);
+}
+
+/* ── 1c. ACCENT COLOUR OVERRIDES ─────────────────────────────── */
+/* Each accent overrides the four accent tokens; values tuned per theme via
+   descendant specificity: [data-theme][data-accent] beats [data-theme] alone */
+
+/* green — explicit for every theme, so choosing it always yields green even when
+   the theme's own default accent is a different hue (Clean's default is blue) */
+html[data-theme="warm"][data-accent="green"],
+html:not([data-theme])[data-accent="green"] {
+  --color-accent:      #2c5e50;
+  --color-accent-hover:#1f4238;
+  --color-accent-soft: #dff0ea;
+  --color-accent-rule: #9ecfbe;
+}
+html[data-theme="clean"][data-accent="green"] {
+  --color-accent:      #1f5c4a;
+  --color-accent-hover:#164536;
+  --color-accent-soft: #e2f0ea;
+  --color-accent-rule: #97c2b2;
+}
+html[data-theme="night"][data-accent="green"] {
+  --color-accent:      #5ca88a;
+  --color-accent-hover:#73c0a0;
+  --color-accent-soft: #1e3530;
+  --color-accent-rule: #3a6b5a;
+}
+
+/* terracotta */
+html[data-theme="warm"][data-accent="terracotta"],
+html:not([data-theme])[data-accent="terracotta"] {
+  --color-accent:      #a04030;
+  --color-accent-hover:#7e3025;
+  --color-accent-soft: #f5e8e5;
+  --color-accent-rule: #d4a89e;
+}
+html[data-theme="clean"][data-accent="terracotta"] {
+  --color-accent:      #993828;
+  --color-accent-hover:#7a2b1e;
+  --color-accent-soft: #f4e4e0;
+  --color-accent-rule: #d09888;
+}
+html[data-theme="night"][data-accent="terracotta"] {
+  --color-accent:      #d07060;
+  --color-accent-hover:#e08878;
+  --color-accent-soft: #2e1e1a;
+  --color-accent-rule: #5e3028;
+}
+
+/* amber */
+html[data-theme="warm"][data-accent="amber"],
+html:not([data-theme])[data-accent="amber"] {
+  --color-accent:      #8a6000;
+  --color-accent-hover:#6a4a00;
+  --color-accent-soft: #faf0d0;
+  --color-accent-rule: #d4b870;
+}
+html[data-theme="clean"][data-accent="amber"] {
+  --color-accent:      #7a5500;
+  --color-accent-hover:#5c3f00;
+  --color-accent-soft: #faefd0;
+  --color-accent-rule: #ccb060;
+}
+html[data-theme="night"][data-accent="amber"] {
+  --color-accent:      #d4a040;
+  --color-accent-hover:#e8b850;
+  --color-accent-soft: #2c2410;
+  --color-accent-rule: #5a4820;
+}
+
+/* slate */
+html[data-theme="warm"][data-accent="slate"],
+html:not([data-theme])[data-accent="slate"] {
+  --color-accent:      #3d5468;
+  --color-accent-hover:#2d3f50;
+  --color-accent-soft: #e4edf4;
+  --color-accent-rule: #9ab4c8;
+}
+html[data-theme="clean"][data-accent="slate"] {
+  --color-accent:      #354d60;
+  --color-accent-hover:#263848;
+  --color-accent-soft: #e2ecf4;
+  --color-accent-rule: #90acc0;
+}
+html[data-theme="night"][data-accent="slate"] {
+  --color-accent:      #7aaac8;
+  --color-accent-hover:#90bcd8;
+  --color-accent-soft: #18263a;
+  --color-accent-rule: #304860;
+}
+
+/* plum */
+html[data-theme="warm"][data-accent="plum"],
+html:not([data-theme])[data-accent="plum"] {
+  --color-accent:      #6b3570;
+  --color-accent-hover:#542858;
+  --color-accent-soft: #f0e4f4;
+  --color-accent-rule: #c8a0d0;
+}
+html[data-theme="clean"][data-accent="plum"] {
+  --color-accent:      #602e68;
+  --color-accent-hover:#4a2250;
+  --color-accent-soft: #ede0f2;
+  --color-accent-rule: #be98c8;
+}
+html[data-theme="night"][data-accent="plum"] {
+  --color-accent:      #c080d0;
+  --color-accent-hover:#d498e0;
+  --color-accent-soft: #281a30;
+  --color-accent-rule: #503860;
+}
+
+/* ── 1d. TEXT SIZE OVERRIDES ─────────────────────────────────── */
+:root {
+  --reading-size:    1.15rem;
+  --reading-leading: 1.8;
+}
+[data-textsize="small"] {
+  --reading-size:    1rem;
+  --reading-leading: 1.7;
+}
+[data-textsize="medium"] {
+  --reading-size:    1.15rem;
+  --reading-leading: 1.8;
+}
+[data-textsize="large"] {
+  --reading-size:    1.3rem;
+  --reading-leading: 1.9;
+}
+
 /* ── 2. RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -283,7 +489,7 @@ main {
 /* Primary */
 .btn-primary {
   background-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-on-accent);
   border-color: var(--color-accent);
 }
 .btn-primary:hover {
@@ -623,7 +829,7 @@ select:focus,
   background: transparent;
   padding: var(--sp-2) 0 var(--sp-3);
   font-family: var(--font-serif);
-  font-size: 2rem;
+  font-size: clamp(1.5rem, calc(var(--reading-size) * 1.6), 2.5rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--color-ink);
@@ -653,8 +859,8 @@ select:focus,
   background-color: var(--color-surface);
   padding: var(--sp-6);
   font-family: var(--font-serif);
-  font-size: 1.15rem;
-  line-height: 1.8;
+  font-size: var(--reading-size);
+  line-height: var(--reading-leading);
   color: var(--color-ink);
   resize: vertical;
   outline: none;
@@ -756,7 +962,7 @@ select:focus,
 /* Body paragraphs */
 .review-content p {
   font-family: var(--font-serif);
-  font-size: var(--text-lg);
+  font-size: var(--reading-size);
   line-height: 1.75;
   color: var(--color-ink);
   margin-bottom: var(--sp-3);
@@ -789,8 +995,8 @@ select:focus,
   padding-left: var(--sp-6);
   margin-bottom: var(--sp-3);
   font-family: var(--font-serif);
-  font-size: var(--text-lg);
-  line-height: 1.75;
+  font-size: var(--reading-size);
+  line-height: var(--reading-leading);
   color: var(--color-ink);
 }
 
@@ -1224,7 +1430,7 @@ select:focus,
   }
 
   .title-input {
-    font-size: 1.5rem;
+    font-size: clamp(1.25rem, calc(var(--reading-size) * 1.3), 1.75rem);
   }
 
   .review-card {
@@ -1255,3 +1461,165 @@ select:focus,
 
 /* Prevent any element from blowing out the viewport width */
 img, video, table { max-width: 100%; }
+
+
+/* ── 18. THEME / APPEARANCE PICKER (Settings view) ───────────── */
+.settings-section-heading {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+  margin-bottom: var(--sp-2);
+  display: block;
+}
+
+/* Theme segmented control */
+.theme-segmented {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.theme-option {
+  flex: 1 1 auto;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding: 0.5rem 1.1rem;
+  background: var(--color-surface);
+  color: var(--color-ink-mid);
+  border: none;
+  border-right: 1px solid var(--color-border);
+  cursor: pointer;
+  min-height: 40px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+.theme-option:last-child {
+  border-right: none;
+}
+.theme-option:hover {
+  background-color: var(--color-surface-alt);
+  color: var(--color-ink);
+}
+.theme-option.active,
+.theme-option[aria-pressed="true"] {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 600;
+}
+
+/* Accent swatches */
+.accent-swatches {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.accent-swatch {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  position: relative;
+  flex-shrink: 0;
+}
+.accent-swatch:hover {
+  transform: scale(1.15);
+}
+.accent-swatch:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.accent-swatch.active,
+.accent-swatch[aria-pressed="true"] {
+  border-color: var(--color-ink);
+  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-ink);
+}
+
+/* Text size segmented control */
+.textsize-segmented {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.textsize-option {
+  flex: 1 1 auto;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding: 0.5rem 1.1rem;
+  background: var(--color-surface);
+  color: var(--color-ink-mid);
+  border: none;
+  border-right: 1px solid var(--color-border);
+  cursor: pointer;
+  min-height: 40px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+.textsize-option:last-child {
+  border-right: none;
+}
+.textsize-option:hover {
+  background-color: var(--color-surface-alt);
+  color: var(--color-ink);
+}
+.textsize-option.active,
+.textsize-option[aria-pressed="true"] {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 600;
+}
+
+/* Night theme: form-input focus rings need accent-aware alpha */
+html[data-theme="night"] .form-input:focus,
+html[data-theme="night"] .discussion-input:focus,
+html[data-theme="night"] select:focus,
+html[data-theme="night"] .export-scope-select:focus {
+  box-shadow: 0 0 0 3px rgba(92,168,138,0.25);
+}
+
+/* Clean theme: form-input focus */
+html[data-theme="clean"] .form-input:focus,
+html[data-theme="clean"] .discussion-input:focus,
+html[data-theme="clean"] select:focus,
+html[data-theme="clean"] .export-scope-select:focus {
+  box-shadow: 0 0 0 3px rgba(43,90,173,0.15);
+}
+
+/* Night: voice verdicts must stay legible */
+html[data-theme="night"] .voice-verdict--human {
+  background-color: #152a20;
+  border-color: #3a6a50;
+  color: #80d0a0;
+}
+html[data-theme="night"] .voice-verdict--mixed {
+  background-color: #272010;
+  border-color: #6a5820;
+  color: #d4aa50;
+}
+html[data-theme="night"] .voice-verdict--machine {
+  background-color: #2a1515;
+  border-color: #6e3030;
+  color: #f07070;
+}
+
+/* Night: message sender colour for user message */
+html[data-theme="night"] .user-message .message-sender { color: #5ca88a; }
+
+/* Night: timestamps sit on the darker bubble surface, so ink-dim loses contrast there */
+html[data-theme="night"] .message-time { color: var(--color-ink-mid); }

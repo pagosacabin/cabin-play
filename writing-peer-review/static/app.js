@@ -2,6 +2,77 @@
 (function () {
   'use strict';
 
+  // --- THEME / APPEARANCE MANAGEMENT ---
+  var THEME_COLOR_MAP = { warm: '#f3e9d6', clean: '#eef2f6', night: '#1e1c1a' };
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('wpr-theme', theme); } catch(e) {}
+    var metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) metaTheme.setAttribute('content', THEME_COLOR_MAP[theme] || '#f3e9d6');
+    updatePickerState();
+  }
+
+  function applyAccent(accent) {
+    document.documentElement.setAttribute('data-accent', accent);
+    try { localStorage.setItem('wpr-accent', accent); } catch(e) {}
+    updatePickerState();
+  }
+
+  function applyTextSize(size) {
+    document.documentElement.setAttribute('data-textsize', size);
+    try { localStorage.setItem('wpr-textsize', size); } catch(e) {}
+    updatePickerState();
+  }
+
+  function updatePickerState() {
+    var theme = document.documentElement.getAttribute('data-theme') || 'warm';
+    var accent = document.documentElement.getAttribute('data-accent') || 'green';
+    var size = document.documentElement.getAttribute('data-textsize') || 'medium';
+
+    document.querySelectorAll('.theme-option').forEach(function(btn) {
+      var active = btn.dataset.theme === theme;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('.accent-swatch').forEach(function(btn) {
+      var active = btn.dataset.accent === accent;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('.textsize-option').forEach(function(btn) {
+      var active = btn.dataset.textsize === size;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  // Wire up picker buttons
+  document.querySelectorAll('.theme-option').forEach(function(btn) {
+    btn.addEventListener('click', function() { applyTheme(btn.dataset.theme); });
+  });
+  document.querySelectorAll('.accent-swatch').forEach(function(btn) {
+    btn.addEventListener('click', function() { applyAccent(btn.dataset.accent); });
+  });
+  document.querySelectorAll('.textsize-option').forEach(function(btn) {
+    btn.addEventListener('click', function() { applyTextSize(btn.dataset.textsize); });
+  });
+
+  // Set initial theme-color meta + sync picker on load
+  (function initTheme() {
+    var theme = document.documentElement.getAttribute('data-theme') || 'warm';
+    var metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) metaTheme.setAttribute('content', THEME_COLOR_MAP[theme] || '#f3e9d6');
+    // Ensure data-theme is always set
+    if (!document.documentElement.hasAttribute('data-theme')) {
+      document.documentElement.setAttribute('data-theme', 'warm');
+    }
+    if (!document.documentElement.hasAttribute('data-textsize')) {
+      document.documentElement.setAttribute('data-textsize', 'medium');
+    }
+    updatePickerState();
+  })();
+
   // --- STATE ---
   const state = {
     currentView: 'deal',
@@ -939,6 +1010,7 @@
     } catch (e) {
       console.error(e);
     }
+    updatePickerState();
   }
 
   el.saveSettingsBtn.addEventListener('click', async () => {

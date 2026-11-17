@@ -102,10 +102,10 @@ html[data-theme="clean"] {
   --color-ink-mid:     #4a5766;
   --color-ink-dim:     #5d6b79;
   --color-on-accent:   #ffffff;
-  --color-accent:      #2b5aad;
-  --color-accent-hover:#1e4190;
-  --color-accent-soft: #e8eef8;
-  --color-accent-rule: #a8bedf;
+  --color-accent:      #1f5c4a;
+  --color-accent-hover:#164536;
+  --color-accent-soft: #e2f0ea;
+  --color-accent-rule: #97c2b2;
   --color-peak:        #b93728;
   --color-offpeak:     #1f9d55;
   --color-danger:      #b91c1c;

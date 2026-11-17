@@ -19,6 +19,7 @@
         if (t && VALID_THEMES[t]) document.documentElement.setAttribute('data-theme', t);
         else document.documentElement.setAttribute('data-theme', 'warm');
         if (a && VALID_ACCENTS[a]) document.documentElement.setAttribute('data-accent', a);
+        else document.documentElement.setAttribute('data-accent', 'green');
         if (s && VALID_SIZES[s]) document.documentElement.setAttribute('data-textsize', s);
       } catch(e) {}
     })();

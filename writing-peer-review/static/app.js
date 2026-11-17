@@ -63,9 +63,13 @@
     var theme = document.documentElement.getAttribute('data-theme') || 'warm';
     var metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) metaTheme.setAttribute('content', THEME_COLOR_MAP[theme] || '#f3e9d6');
-    // Ensure data-theme is always set
+    // Ensure the three attributes are always explicit, so the picker's pressed
+    // state can never disagree with the theme tokens in force.
     if (!document.documentElement.hasAttribute('data-theme')) {
       document.documentElement.setAttribute('data-theme', 'warm');
+    }
+    if (!document.documentElement.hasAttribute('data-accent')) {
+      document.documentElement.setAttribute('data-accent', 'green');
     }
     if (!document.documentElement.hasAttribute('data-textsize')) {
       document.documentElement.setAttribute('data-textsize', 'medium');

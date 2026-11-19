@@ -520,8 +520,10 @@ def draft_merge(
         "Draft what this conversation would add to the manuscript. Reply with STRICT JSON and "
         "nothing else, no markdown fences:\n"
         '{"bible_entries":[{"kind":"character|timeline|world|decision","name":"...","detail":"..."}],"passage":"..."}\n'
-        f"The passage (120 words max, may be the empty string \"\") must be drafted to sit {position_desc}. "
-        "bible_entries should capture settled facts from the conversation (may be an empty list). "
+        f"The passage is 60 to 120 words of finished prose, drafted to sit {position_desc}. It must "
+        "embody the decision or development the conversation actually reached \u2014 return an empty "
+        "passage only if the conversation reached no decision and changed nothing in the story. "
+        "bible_entries captures the settled facts behind it (may be an empty list). "
         "Reply with only the JSON object."
     )
 
@@ -539,7 +541,7 @@ def draft_merge(
     payload = {
         "model": model,
         "messages": messages,
-        "temperature": 0.7,
+        "temperature": 0.4,
         "max_tokens": 700,
     }
 

@@ -1039,6 +1039,737 @@
     }
   });
 
+  // --- DEVELOP MODE ---
+
+  const devState = {
+    pieceId: null,
+    threads: [],
+    activeThreadId: null,
+    messages: [],
+    bible: [],
+    // Pending merge data
+    pendingMerge: null,
+    pendingMergeInsertAt: 'end',
+  };
+
+  const devEl = {
+    room: document.getElementById('develop-room'),
+    toggleBtn: document.getElementById('develop-toggle-btn'),
+    newThreadBtn: document.getElementById('develop-new-thread-btn'),
+    threadTabs: document.getElementById('develop-thread-tabs'),
+    transcript: document.getElementById('develop-thread-transcript'),
+    threadActions: document.getElementById('develop-thread-actions'),
+    saveBibleBtn: document.getElementById('develop-save-bible-btn'),
+    addBookBtn: document.getElementById('develop-add-book-btn'),
+    proposeCard: document.getElementById('develop-propose-card'),
+    proposeEntries: document.getElementById('develop-propose-entries'),
+    proposeConfirmBtn: document.getElementById('develop-propose-confirm-btn'),
+    proposeCancelBtn: document.getElementById('develop-propose-cancel-btn'),
+    mergeCard: document.getElementById('develop-merge-card'),
+    mergeBiblePreview: document.getElementById('develop-merge-bible-preview'),
+    mergePassagePreview: document.getElementById('develop-merge-passage-preview'),
+    mergeWhere: document.getElementById('develop-merge-where'),
+    mergePositionSelect: document.getElementById('develop-merge-position-select'),
+    mergeApplyBtn: document.getElementById('develop-merge-apply-btn'),
+    mergeCancelBtn: document.getElementById('develop-merge-cancel-btn'),
+    composer: document.getElementById('develop-composer'),
+    input: document.getElementById('develop-input'),
+    sendBtn: document.getElementById('develop-send-btn'),
+    addBibleBtn: document.getElementById('develop-add-bible-btn'),
+    bibleAddForm: document.getElementById('develop-bible-add-form'),
+    bibleKindSelect: document.getElementById('develop-bible-kind-select'),
+    bibleNameInput: document.getElementById('develop-bible-name-input'),
+    bibleDetailInput: document.getElementById('develop-bible-detail-input'),
+    bibleSaveBtn: document.getElementById('develop-bible-save-btn'),
+    bibleCancelBtn: document.getElementById('develop-bible-cancel-btn'),
+    bibleList: document.getElementById('develop-bible-list'),
+  };
+
+  let developVisible = false;
+
+  function updateDevelopToggleState() {
+    if (devEl.toggleBtn) {
+      devEl.toggleBtn.disabled = !state.currentPiece;
+    }
+    if (el.stuckBtn) {
+      el.stuckBtn.disabled = !state.currentPiece;
+    }
+  }
+
+  // Open/close develop room
+  if (devEl.toggleBtn) {
+    devEl.toggleBtn.addEventListener('click', () => {
+      if (!state.currentPiece) return;
+      developVisible = !developVisible;
+      devEl.room.style.display = developVisible ? 'block' : 'none';
+      devEl.toggleBtn.textContent = developVisible ? 'Close Develop' : 'Develop';
+      if (developVisible) {
+        devState.pieceId = state.currentPiece.id;
+        loadDevelopRoom();
+      }
+    });
+  }
+
+  async function loadDevelopRoom() {
+    await Promise.all([loadDevelopThreads(), loadBible()]);
+    renderBiblePanel();
+    if (devState.threads.length === 0) {
+      await createDevelopThread('New conversation');
+    } else {
+      await selectThread(devState.threads[0].id);
+    }
+  }
+
+  async function loadDevelopThreads() {
+    try {
+      const res = await fetch(`/api/pieces/${devState.pieceId}/develop/threads`);
+      if (res.ok) {
+        const data = await res.json();
+        devState.threads = data.threads || [];
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  async function loadBible() {
+    try {
+      const res = await fetch(`/api/pieces/${devState.pieceId}/bible`);
+      if (res.ok) {
+        const data = await res.json();
+        devState.bible = data.entries || [];
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  async function createDevelopThread(title) {
+    try {
+      const res = await fetch(`/api/pieces/${devState.pieceId}/develop/threads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title || 'New conversation' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        devState.threads.unshift(data.thread);
+        renderThreadTabs();
+        await selectThread(data.thread.id);
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  if (devEl.newThreadBtn) {
+    devEl.newThreadBtn.addEventListener('click', () => createDevelopThread('New conversation'));
+  }
+
+  function renderThreadTabs() {
+    if (!devEl.threadTabs) return;
+    if (devState.threads.length === 0) {
+      devEl.threadTabs.innerHTML = '';
+      return;
+    }
+    let html = '';
+    devState.threads.forEach((t) => {
+      const isActive = t.id === devState.activeThreadId;
+      html += `
+        <div class="develop-thread-tab ${isActive ? 'active' : ''}" data-thread-id="${t.id}">
+          <span>${escapeHtml(t.title)}</span>
+          <button class="develop-thread-tab-delete" data-thread-id="${t.id}" title="Delete conversation">×</button>
+        </div>
+      `;
+    });
+    devEl.threadTabs.innerHTML = html;
+
+    devEl.threadTabs.querySelectorAll('.develop-thread-tab').forEach((tab) => {
+      tab.addEventListener('click', (e) => {
+        if (e.target.classList.contains('develop-thread-tab-delete')) return;
+        const tid = parseInt(tab.dataset.threadId, 10);
+        selectThread(tid);
+      });
+    });
+
+    devEl.threadTabs.querySelectorAll('.develop-thread-tab-delete').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const tid = parseInt(btn.dataset.threadId, 10);
+        if (!confirm('Delete this conversation?')) return;
+        try {
+          const res = await fetch(`/api/develop/threads/${tid}`, { method: 'DELETE' });
+          if (res.ok) {
+            devState.threads = devState.threads.filter((t) => t.id !== tid);
+            if (devState.activeThreadId === tid) {
+              devState.activeThreadId = null;
+              devState.messages = [];
+            }
+            renderThreadTabs();
+            renderTranscript();
+            hideActionCards();
+            if (devState.threads.length === 0) {
+              devEl.composer.style.display = 'none';
+              devEl.threadActions.style.display = 'none';
+            } else if (devState.activeThreadId === null) {
+              selectThread(devState.threads[0].id);
+            }
+          }
+        } catch (e) { console.error(e); }
+      });
+    });
+  }
+
+  async function selectThread(threadId) {
+    devState.activeThreadId = threadId;
+    renderThreadTabs();
+    hideActionCards();
+    try {
+      const res = await fetch(`/api/develop/threads/${threadId}`);
+      if (res.ok) {
+        const data = await res.json();
+        devState.messages = data.messages || [];
+        renderTranscript();
+        devEl.composer.style.display = 'flex';
+        // Show action buttons only if there's at least one assistant message
+        const hasAssistant = devState.messages.some((m) => m.role === 'assistant');
+        devEl.threadActions.style.display = hasAssistant ? 'flex' : 'none';
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  function renderTranscript() {
+    if (!devEl.transcript) return;
+    if (!devState.activeThreadId) {
+      devEl.transcript.innerHTML = '<div class="develop-empty">Select or create a conversation to start.</div>';
+      return;
+    }
+    if (devState.messages.length === 0) {
+      devEl.transcript.innerHTML = '<div class="develop-empty">Start the conversation below.</div>';
+      return;
+    }
+    let html = '';
+    devState.messages.forEach((m) => {
+      const isUser = (m.role || '').toLowerCase() === 'user';
+      const roleName = isUser ? (state.displayName || 'You') : 'Development editor';
+      const timeStr = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      html += `
+        <div class="message-bubble ${isUser ? 'user-message' : 'assistant-message'}">
+          <div class="message-header">
+            <span class="message-sender">${escapeHtml(roleName)}</span>
+            ${timeStr ? `<span class="message-time">${escapeHtml(timeStr)}</span>` : ''}
+          </div>
+          <div class="message-body">${escapeHtml(m.text || '')}</div>
+        </div>
+      `;
+    });
+    devEl.transcript.innerHTML = html;
+    devEl.transcript.scrollTop = devEl.transcript.scrollHeight;
+  }
+
+  function hideActionCards() {
+    if (devEl.proposeCard) devEl.proposeCard.style.display = 'none';
+    if (devEl.mergeCard) devEl.mergeCard.style.display = 'none';
+  }
+
+  // Send message
+  async function handleDevelopSend() {
+    if (!devState.activeThreadId) return;
+    const text = devEl.input ? devEl.input.value.trim() : '';
+    if (!text) return;
+
+    devEl.input.disabled = true;
+    devEl.sendBtn.disabled = true;
+    const origText = devEl.sendBtn.textContent;
+    devEl.sendBtn.textContent = 'Sending…';
+    hideActionCards();
+
+    try {
+      const res = await fetch(`/api/develop/threads/${devState.activeThreadId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newMsgs = data.messages || [];
+        devState.messages.push(...newMsgs);
+        renderTranscript();
+        devEl.input.value = '';
+        devEl.threadActions.style.display = 'flex';
+        // Update thread updated_at in local list
+        const tIdx = devState.threads.findIndex((t) => t.id === devState.activeThreadId);
+        if (tIdx !== -1 && newMsgs.length > 0) {
+          devState.threads[tIdx].updated_at = newMsgs[newMsgs.length - 1].created_at;
+        }
+      } else {
+        alert('Could not send message.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error sending message.');
+    } finally {
+      devEl.input.disabled = false;
+      devEl.sendBtn.disabled = false;
+      devEl.sendBtn.textContent = origText;
+      if (devEl.input) devEl.input.focus();
+    }
+  }
+
+  if (devEl.sendBtn) {
+    devEl.sendBtn.addEventListener('click', handleDevelopSend);
+  }
+  if (devEl.input) {
+    devEl.input.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleDevelopSend();
+      }
+    });
+  }
+
+  // --- Save to story bible (propose) ---
+  if (devEl.saveBibleBtn) {
+    devEl.saveBibleBtn.addEventListener('click', async () => {
+      if (!devState.activeThreadId) return;
+      hideActionCards();
+      devEl.saveBibleBtn.disabled = true;
+      devEl.saveBibleBtn.textContent = 'Looking through the conversation…';
+      try {
+        const res = await fetch(`/api/develop/threads/${devState.activeThreadId}/propose-bible`, {
+          method: 'POST',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const entries = data.entries || [];
+          if (entries.length === 0) {
+            devEl.proposeEntries.innerHTML = '<p style="font-family:var(--font-sans);font-size:var(--text-sm);color:var(--color-ink-mid);">Nothing clearly settled in this conversation yet — keep talking!</p>';
+          } else {
+            let html = '';
+            entries.forEach((entry, idx) => {
+              html += `
+                <div class="develop-propose-entry">
+                  <label>
+                    <input type="checkbox" class="propose-entry-cb" data-idx="${idx}" checked>
+                    <span class="entry-kind">${escapeHtml(entry.kind)}</span>
+                    <span>
+                      ${entry.name ? `<span class="entry-name">${escapeHtml(entry.name)}</span> — ` : ''}
+                      <span class="entry-detail">${escapeHtml(entry.detail)}</span>
+                    </span>
+                  </label>
+                </div>
+              `;
+            });
+            devEl.proposeEntries.innerHTML = html;
+            devEl.proposeEntries.dataset.entries = JSON.stringify(entries);
+          }
+          devEl.proposeCard.style.display = 'block';
+        } else {
+          alert('Could not get proposals.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Error getting proposals.');
+      } finally {
+        devEl.saveBibleBtn.disabled = false;
+        devEl.saveBibleBtn.textContent = 'Save to story bible';
+      }
+    });
+  }
+
+  if (devEl.proposeCancelBtn) {
+    devEl.proposeCancelBtn.addEventListener('click', () => {
+      devEl.proposeCard.style.display = 'none';
+    });
+  }
+
+  if (devEl.proposeConfirmBtn) {
+    devEl.proposeConfirmBtn.addEventListener('click', async () => {
+      let entries = [];
+      try {
+        entries = JSON.parse(devEl.proposeEntries.dataset.entries || '[]');
+      } catch (e) { entries = []; }
+
+      const checked = Array.from(devEl.proposeEntries.querySelectorAll('.propose-entry-cb'))
+        .filter((cb) => cb.checked)
+        .map((cb) => parseInt(cb.dataset.idx, 10));
+      const toSave = entries.filter((_, idx) => checked.includes(idx));
+
+      if (toSave.length === 0) {
+        devEl.proposeCard.style.display = 'none';
+        return;
+      }
+
+      devEl.proposeConfirmBtn.disabled = true;
+      devEl.proposeConfirmBtn.textContent = 'Saving…';
+
+      try {
+        for (const entry of toSave) {
+          const res = await fetch(`/api/pieces/${devState.pieceId}/bible`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(entry),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            devState.bible.push(data.entry);
+          }
+        }
+        devEl.proposeCard.style.display = 'none';
+        renderBiblePanel();
+      } catch (e) {
+        console.error(e);
+        alert('Error saving entries.');
+      } finally {
+        devEl.proposeConfirmBtn.disabled = false;
+        devEl.proposeConfirmBtn.textContent = 'Confirm';
+      }
+    });
+  }
+
+  // --- Add to my book (merge) ---
+  if (devEl.addBookBtn) {
+    devEl.addBookBtn.addEventListener('click', async () => {
+      if (!devState.activeThreadId) return;
+      hideActionCards();
+      devEl.addBookBtn.disabled = true;
+      devEl.addBookBtn.textContent = 'Preparing preview…';
+      try {
+        const res = await fetch(`/api/develop/threads/${devState.activeThreadId}/merge-preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ insert_after_paragraph: 'end' }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          devState.pendingMerge = data;
+          devState.pendingMergeInsertAt = 'end';
+          renderMergeCard(data);
+          devEl.mergeCard.style.display = 'block';
+        } else {
+          alert('Could not prepare preview.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Error preparing preview.');
+      } finally {
+        devEl.addBookBtn.disabled = false;
+        devEl.addBookBtn.textContent = 'Add to my book';
+      }
+    });
+  }
+
+  function renderMergeCard(data) {
+    const entries = data.bible_entries || [];
+    const passage = data.passage || '';
+
+    // Bible entries preview
+    if (entries.length > 0) {
+      let html = '<div style="font-family:var(--font-sans);font-size:var(--text-xs);font-weight:700;color:var(--color-ink-mid);margin-bottom:var(--sp-2);">Story bible entries to add:</div>';
+      entries.forEach((e) => {
+        html += `<div class="develop-propose-entry"><span class="entry-kind">${escapeHtml(e.kind)}</span> <span class="entry-name">${escapeHtml(e.name)}</span> — <span class="entry-detail">${escapeHtml(e.detail)}</span></div>`;
+      });
+      devEl.mergeBiblePreview.innerHTML = html;
+      devEl.mergeBiblePreview.style.display = 'block';
+    } else {
+      devEl.mergeBiblePreview.innerHTML = '';
+      devEl.mergeBiblePreview.style.display = 'none';
+    }
+
+    // Passage preview
+    if (passage.trim()) {
+      devEl.mergePassagePreview.textContent = passage;
+      devEl.mergePassagePreview.style.display = 'block';
+
+      // Build position options
+      const body = el.bodyTextarea ? el.bodyTextarea.value : '';
+      const paragraphs = body ? body.split(/\n{2,}/) : [];
+      let optHtml = '<option value="end">At the end</option>';
+      paragraphs.forEach((p, idx) => {
+        const preview = p.trim().slice(0, 40) + (p.trim().length > 40 ? '…' : '');
+        optHtml += `<option value="${idx}">After paragraph ${idx + 1}: "${escapeHtml(preview)}"</option>`;
+      });
+      devEl.mergePositionSelect.innerHTML = optHtml;
+      devEl.mergeWhere.style.display = 'flex';
+    } else {
+      devEl.mergePassagePreview.style.display = 'none';
+      devEl.mergeWhere.style.display = 'none';
+    }
+  }
+
+  if (devEl.mergeCancelBtn) {
+    devEl.mergeCancelBtn.addEventListener('click', () => {
+      devEl.mergeCard.style.display = 'none';
+      devState.pendingMerge = null;
+    });
+  }
+
+  if (devEl.mergeApplyBtn) {
+    devEl.mergeApplyBtn.addEventListener('click', async () => {
+      if (!devState.pendingMerge || !devState.activeThreadId) return;
+      const data = devState.pendingMerge;
+      let insertAt = devEl.mergePositionSelect.value === 'end' ? 'end' : parseInt(devEl.mergePositionSelect.value, 10);
+
+      devEl.mergeApplyBtn.disabled = true;
+      devEl.mergeApplyBtn.textContent = 'Applying…';
+
+      try {
+        const res = await fetch(`/api/develop/threads/${devState.activeThreadId}/merge-apply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bible_entries: data.bible_entries || [],
+            passage: data.passage || '',
+            insert_after_paragraph: insertAt,
+            confirmed: true,
+          }),
+        });
+        if (res.ok) {
+          const result = await res.json();
+          // Update piece body in state and editor
+          if (result.piece) {
+            state.currentPiece = result.piece;
+            if (el.bodyTextarea) el.bodyTextarea.value = result.piece.body || '';
+            updateWordCount();
+            state.lastSavedContent = {
+              title: state.currentPiece.title,
+              body: state.currentPiece.body,
+            };
+            const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (el.saveIndicatorSpan) el.saveIndicatorSpan.textContent = `Saved at ${now}`;
+          }
+          // Update bible
+          if (result.applied && result.applied.bible_entries) {
+            devState.bible.push(...result.applied.bible_entries);
+            renderBiblePanel();
+          }
+          devEl.mergeCard.style.display = 'none';
+          devState.pendingMerge = null;
+        } else {
+          alert('Could not apply changes.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Error applying changes.');
+      } finally {
+        devEl.mergeApplyBtn.disabled = false;
+        devEl.mergeApplyBtn.textContent = 'Add it';
+      }
+    });
+  }
+
+  // --- Bible panel ---
+  function renderBiblePanel() {
+    if (!devEl.bibleList) return;
+    if (devState.bible.length === 0) {
+      devEl.bibleList.innerHTML = '<div style="font-family:var(--font-sans);font-size:var(--text-xs);color:var(--color-ink-dim);font-style:italic;">No entries yet.</div>';
+      return;
+    }
+    const groups = {};
+    devState.bible.forEach((e) => {
+      if (!groups[e.kind]) groups[e.kind] = [];
+      groups[e.kind].push(e);
+    });
+    let html = '';
+    for (const [kind, entries] of Object.entries(groups)) {
+      html += `<div class="develop-bible-group-title">${escapeHtml(kind)}</div>`;
+      entries.forEach((e) => {
+        html += `
+          <div class="develop-bible-entry" data-entry-id="${e.id}">
+            ${e.name ? `<span class="develop-bible-entry-name">${escapeHtml(e.name)}</span>` : ''}
+            <span class="develop-bible-entry-detail">${escapeHtml(e.detail)}</span>
+            <div class="develop-bible-entry-actions">
+              <button class="edit-bible-btn" data-id="${e.id}" title="Edit">Edit</button>
+              <button class="del-btn delete-bible-btn" data-id="${e.id}" title="Delete">Delete</button>
+            </div>
+          </div>
+        `;
+      });
+    }
+    devEl.bibleList.innerHTML = html;
+
+    devEl.bibleList.querySelectorAll('.delete-bible-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const entryId = parseInt(btn.dataset.id, 10);
+        if (!confirm('Delete this bible entry?')) return;
+        try {
+          const res = await fetch(`/api/bible/${entryId}`, { method: 'DELETE' });
+          if (res.ok) {
+            devState.bible = devState.bible.filter((e) => e.id !== entryId);
+            renderBiblePanel();
+          }
+        } catch (e) { console.error(e); }
+      });
+    });
+
+    devEl.bibleList.querySelectorAll('.edit-bible-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const entryId = parseInt(btn.dataset.id, 10);
+        const entry = devState.bible.find((e) => e.id === entryId);
+        if (!entry) return;
+        // Show add form pre-filled for editing
+        devEl.bibleKindSelect.value = entry.kind;
+        devEl.bibleNameInput.value = entry.name;
+        devEl.bibleDetailInput.value = entry.detail;
+        devEl.bibleAddForm.style.display = 'block';
+        devEl.bibleAddForm.dataset.editId = entryId;
+        devEl.bibleNameInput.focus();
+      });
+    });
+  }
+
+  if (devEl.addBibleBtn) {
+    devEl.addBibleBtn.addEventListener('click', () => {
+      devEl.bibleAddForm.style.display = devEl.bibleAddForm.style.display === 'none' ? 'block' : 'none';
+      devEl.bibleAddForm.dataset.editId = '';
+      devEl.bibleKindSelect.value = 'character';
+      devEl.bibleNameInput.value = '';
+      devEl.bibleDetailInput.value = '';
+      if (devEl.bibleAddForm.style.display === 'block') devEl.bibleNameInput.focus();
+    });
+  }
+
+  if (devEl.bibleCancelBtn) {
+    devEl.bibleCancelBtn.addEventListener('click', () => {
+      devEl.bibleAddForm.style.display = 'none';
+      devEl.bibleAddForm.dataset.editId = '';
+    });
+  }
+
+  if (devEl.bibleSaveBtn) {
+    devEl.bibleSaveBtn.addEventListener('click', async () => {
+      const kind = devEl.bibleKindSelect.value;
+      const name = devEl.bibleNameInput.value.trim();
+      const detail = devEl.bibleDetailInput.value.trim();
+      if (!detail) { alert('Please add a detail.'); return; }
+
+      const editId = devEl.bibleAddForm.dataset.editId ? parseInt(devEl.bibleAddForm.dataset.editId, 10) : null;
+
+      devEl.bibleSaveBtn.disabled = true;
+      devEl.bibleSaveBtn.textContent = 'Saving…';
+
+      try {
+        if (editId) {
+          const res = await fetch(`/api/bible/${editId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind, name, detail }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const idx = devState.bible.findIndex((e) => e.id === editId);
+            if (idx !== -1) devState.bible[idx] = data.entry;
+          }
+        } else {
+          const res = await fetch(`/api/pieces/${devState.pieceId}/bible`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind, name, detail }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            devState.bible.push(data.entry);
+          }
+        }
+        devEl.bibleAddForm.style.display = 'none';
+        devEl.bibleAddForm.dataset.editId = '';
+        renderBiblePanel();
+      } catch (e) {
+        console.error(e);
+        alert('Error saving bible entry.');
+      } finally {
+        devEl.bibleSaveBtn.disabled = false;
+        devEl.bibleSaveBtn.textContent = 'Save';
+      }
+    });
+  }
+
+  // Extend startNewPiece/openPieceInEditor to reset develop room
+  const _origStartNewPiece = startNewPiece;
+  // Wrap openPieceInEditor to also reset develop state
+  const _origOpenPiece = openPieceInEditor;
+
+  function resetDevelopRoom() {
+    developVisible = false;
+    if (devEl.room) devEl.room.style.display = 'none';
+    if (devEl.toggleBtn) {
+      devEl.toggleBtn.textContent = 'Develop';
+      devEl.toggleBtn.disabled = true;
+    }
+    if (el.stuckBtn) el.stuckBtn.disabled = true;
+    devState.pieceId = null;
+    devState.threads = [];
+    devState.activeThreadId = null;
+    devState.messages = [];
+    devState.bible = [];
+    devState.pendingMerge = null;
+    hideActionCards();
+    if (devEl.threadTabs) devEl.threadTabs.innerHTML = '';
+    if (devEl.transcript) devEl.transcript.innerHTML = '';
+    if (devEl.bibleList) devEl.bibleList.innerHTML = '';
+    if (devEl.composer) devEl.composer.style.display = 'none';
+    if (devEl.threadActions) devEl.threadActions.style.display = 'none';
+  }
+
+  // Monkey-patch startNewPiece to reset develop state
+  startNewPiece = function(exercise) {
+    resetDevelopRoom();
+    _origStartNewPiece(exercise);
+  };
+
+  openPieceInEditor = function(pieceId) {
+    resetDevelopRoom();
+    return _origOpenPiece(pieceId).then ? _origOpenPiece(pieceId).then(() => {
+      updateDevelopToggleState();
+    }) : _origOpenPiece(pieceId);
+  };
+
+  // After pieces load / save, also enable develop toggle
+  const origPerformAutosave = performAutosave;
+  performAutosave = async function() {
+    await origPerformAutosave.apply(this, arguments);
+    updateDevelopToggleState();
+  };
+
+  // --- STUCK? ---
+  el.stuckBtn = document.getElementById('stuck-btn');
+  const stuckCard = document.getElementById('stuck-card');
+  const stuckDirectionsEl = document.getElementById('stuck-directions');
+  const stuckDismissBtn = document.getElementById('stuck-dismiss-btn');
+
+  if (el.stuckBtn) {
+    el.stuckBtn.addEventListener('click', async () => {
+      if (!state.currentPiece) return;
+      el.stuckBtn.disabled = true;
+      el.stuckBtn.textContent = 'Thinking…';
+      if (stuckCard) stuckCard.style.display = 'none';
+
+      try {
+        const res = await fetch(`/api/pieces/${state.currentPiece.id}/stuck`, {
+          method: 'POST',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (stuckDirectionsEl) stuckDirectionsEl.textContent = data.directions || '';
+          if (stuckCard) stuckCard.style.display = 'block';
+        } else if (res.status === 429) {
+          const data = await res.json();
+          const msg = (data.detail && data.detail.detail) ? data.detail.detail : (data.detail || "that's your three for this hour, write a little and it comes back");
+          if (stuckDirectionsEl) stuckDirectionsEl.textContent = msg;
+          if (stuckCard) stuckCard.style.display = 'block';
+        } else {
+          alert('Could not get directions.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Error.');
+      } finally {
+        el.stuckBtn.disabled = !state.currentPiece;
+        el.stuckBtn.textContent = 'Stuck?';
+      }
+    });
+  }
+
+  if (stuckDismissBtn && stuckCard) {
+    stuckDismissBtn.addEventListener('click', () => {
+      stuckCard.style.display = 'none';
+    });
+  }
+
   // --- UTILS ---
   function escapeHtml(str) {
     if (!str) return '';

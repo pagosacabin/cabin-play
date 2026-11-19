@@ -1,11 +1,14 @@
+import json
 import logging
 import re
 from typing import Any
 import httpx
 
 from app.config import (
+    DEVELOP_PROMPT_PATH,
     DISCUSSION_PROMPT_PATH,
     REVIEW_PROMPT_PATH,
+    STUCK_PROMPT_PATH,
     get_deepseek_api_key,
     get_deepseek_model,
 )
@@ -236,3 +239,353 @@ def discuss_review(
             + STUB_DISCUSSION_TEMPLATE.partition("\n\n")[2]
         )
         return (stub_with_error.strip(), "stub")
+
+
+# ---------------------------------------------------------------------------
+# STUB templates for the new Develop mode functions
+# ---------------------------------------------------------------------------
+
+STUB_DEVELOP_TEMPLATE = (
+    "**STUB DEVELOP REPLY** (DeepSeek API key missing or request could not complete)\n\n"
+    "That's an interesting direction to explore. What made you land on that particular choice? "
+    "Looking at what you have so far, the tension between the characters feels like the core "
+    "thread to follow. I'd want to understand more about what you're trying to hold onto before "
+    "suggesting we pull it in a new direction. What's the moment in the manuscript that you're "
+    "least sure about right now?"
+)
+
+STUB_STUCK_TEMPLATE = (
+    "1. What does the character want most in this moment, and what's stopping them?\n"
+    "2. There's a detail from earlier in the piece — bring it back here.\n"
+    "3. What question does this scene need to answer before it can end?"
+)
+
+
+def _render_bible_text(bible: list[dict[str, Any]]) -> str:
+    """Render bible entries as grouped plain text for the system prompt."""
+    if not bible:
+        return "(no entries yet)"
+    groups: dict[str, list[str]] = {}
+    for entry in bible:
+        kind = entry.get("kind", "other")
+        name = entry.get("name", "")
+        detail = entry.get("detail", "")
+        groups.setdefault(kind, []).append(f"- {name}: {detail}" if name else f"- {detail}")
+    parts = []
+    for kind, lines in groups.items():
+        parts.append(f"### {kind.capitalize()}\n" + "\n".join(lines))
+    return "\n\n".join(parts)
+
+
+def _build_develop_messages(
+    system_content: str,
+    thread_messages: list[dict[str, Any]],
+    max_chars: int = 60000,
+) -> list[dict[str, str]]:
+    """Build the chat message list, dropping oldest non-first messages when too long."""
+    chat: list[dict[str, str]] = [{"role": "system", "content": system_content}]
+    for msg in thread_messages:
+        role = msg.get("role", "user")
+        if role not in ("user", "assistant"):
+            role = "user"
+        text = msg.get("text", "") or msg.get("content", "")
+        chat.append({"role": role, "content": text})
+
+    # Trim oldest messages (keep system + first user + recent) if too long
+    total_chars = sum(len(m["content"]) for m in chat)
+    if total_chars > max_chars and len(chat) > 3:
+        # Always keep: system (index 0), first user message (index 1 if user)
+        # Drop from index 2 onward (oldest non-first messages)
+        keep_head = chat[:2]
+        tail = chat[2:]
+        while tail and sum(len(m["content"]) for m in keep_head + tail) > max_chars:
+            tail.pop(0)
+        chat = keep_head + tail
+    return chat
+
+
+def develop_reply(
+    piece_text: str,
+    bible: list[dict[str, Any]],
+    thread_messages: list[dict[str, Any]],
+) -> tuple[str, str]:
+    """Call the development-editor with the piece, bible, and thread history.
+
+    Returns (reply_text, provider_name) where provider_name is 'deepseek' or 'stub'.
+    -- STUB FALLBACK clearly marked below --
+    """
+    api_key = get_deepseek_api_key()
+    if not api_key:
+        logger.warning("No DeepSeek API key configured; falling back to stub develop reply.")
+        return (STUB_DEVELOP_TEMPLATE.strip(), "stub")  # STUB
+
+    try:
+        base_prompt = DEVELOP_PROMPT_PATH.read_text(encoding="utf-8").strip()
+    except Exception:
+        base_prompt = "You are a trusted development-editor peer."
+
+    bible_text = _render_bible_text(bible)
+    system_content = (
+        f"{base_prompt}\n\n"
+        f"## The manuscript\n{piece_text.strip()}\n\n"
+        f"## Story bible\n{bible_text}"
+    )
+
+    model = get_deepseek_model()
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    messages = _build_develop_messages(system_content, thread_messages)
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.8,
+        "max_tokens": 700,
+    }
+
+    try:
+        with httpx.Client(timeout=120.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices")
+            if choices and len(choices) > 0:
+                content = choices[0].get("message", {}).get("content", "").strip()
+                if content:
+                    return (content, "deepseek")
+            return (STUB_DEVELOP_TEMPLATE.strip(), "stub")  # STUB
+    except Exception as exc:
+        err_msg = f"{exc.__class__.__name__}: {exc}"
+        logger.warning("DeepSeek develop_reply failed (%s); returning stub.", err_msg)
+        return (STUB_DEVELOP_TEMPLATE.strip(), "stub")  # STUB
+
+
+def propose_bible_entries(
+    piece_text: str,
+    bible: list[dict[str, Any]],
+    thread_messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str]:
+    """Ask the model to propose bible entries from the thread.
+
+    Returns (list_of_entry_dicts, provider_name). Writes nothing to the DB.
+    -- STUB FALLBACK clearly marked below --
+    """
+    api_key = get_deepseek_api_key()
+    if not api_key:
+        logger.warning("No DeepSeek API key configured; returning empty bible proposals (stub).")
+        return ([], "stub")  # STUB
+
+    try:
+        base_prompt = DEVELOP_PROMPT_PATH.read_text(encoding="utf-8").strip()
+    except Exception:
+        base_prompt = "You are a trusted development-editor peer."
+
+    bible_text = _render_bible_text(bible)
+    system_content = (
+        f"{base_prompt}\n\n"
+        f"## The manuscript\n{piece_text.strip()}\n\n"
+        f"## Story bible\n{bible_text}\n\n"
+        "---\n"
+        "Now review the conversation thread and identify the facts, decisions, and character "
+        "details that were agreed upon. Return STRICT JSON with no markdown fences:\n"
+        '{"entries":[{"kind":"character|timeline|world|decision","name":"...","detail":"..."}]}\n'
+        "Include 1 to 6 entries capturing only what was clearly settled in the thread. "
+        "If nothing was settled, return {\"entries\":[]}."
+    )
+
+    model = get_deepseek_model()
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    messages = _build_develop_messages(system_content, thread_messages)
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 700,
+    }
+
+    try:
+        with httpx.Client(timeout=120.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices")
+            if choices and len(choices) > 0:
+                raw = choices[0].get("message", {}).get("content", "").strip()
+                # Strip markdown fences defensively
+                raw = re.sub(r"^```[a-z]*\n?", "", raw, flags=re.IGNORECASE)
+                raw = re.sub(r"\n?```$", "", raw)
+                raw = raw.strip()
+                try:
+                    parsed = json.loads(raw)
+                    entries = parsed.get("entries", [])
+                    if isinstance(entries, list):
+                        # Validate each entry has required keys
+                        valid = []
+                        for e in entries:
+                            if isinstance(e, dict) and "kind" in e and "name" in e and "detail" in e:
+                                valid.append({
+                                    "kind": str(e["kind"]),
+                                    "name": str(e["name"]),
+                                    "detail": str(e["detail"]),
+                                })
+                        return (valid, "deepseek")
+                except (json.JSONDecodeError, ValueError):
+                    logger.warning("propose_bible_entries: JSON parse failed; returning empty list.")
+                    return ([], "deepseek")
+            return ([], "stub")  # STUB
+    except Exception as exc:
+        err_msg = f"{exc.__class__.__name__}: {exc}"
+        logger.warning("DeepSeek propose_bible_entries failed (%s); returning empty list.", err_msg)
+        return ([], "stub")  # STUB
+
+
+def draft_merge(
+    piece_text: str,
+    bible: list[dict[str, Any]],
+    thread_messages: list[dict[str, Any]],
+    insert_after_paragraph: Any,
+) -> tuple[dict[str, Any], str]:
+    """Ask the model to draft a merge: bible entries and an optional passage.
+
+    insert_after_paragraph is "end" or an integer paragraph index (0-based).
+    Returns (dict_with_bible_entries_and_passage, provider_name).
+    Writes nothing to the DB.
+    -- STUB FALLBACK clearly marked below --
+    """
+    api_key = get_deepseek_api_key()
+    if not api_key:
+        logger.warning("No DeepSeek API key configured; returning stub merge preview.")
+        return ({"bible_entries": [], "passage": ""}, "stub")  # STUB
+
+    try:
+        base_prompt = DEVELOP_PROMPT_PATH.read_text(encoding="utf-8").strip()
+    except Exception:
+        base_prompt = "You are a trusted development-editor peer."
+
+    bible_text = _render_bible_text(bible)
+
+    if insert_after_paragraph == "end":
+        position_desc = "at the end of the manuscript"
+    else:
+        position_desc = f"after paragraph {insert_after_paragraph} (0-based) of the manuscript"
+
+    system_content = (
+        f"{base_prompt}\n\n"
+        f"## The manuscript\n{piece_text.strip()}\n\n"
+        f"## Story bible\n{bible_text}\n\n"
+        "---\n"
+        "Review the conversation thread. Return STRICT JSON with no markdown fences:\n"
+        '{"bible_entries":[{"kind":"character|timeline|world|decision","name":"...","detail":"..."}],"passage":"..."}\n'
+        f"The passage (120 words max, may be empty string \"\") should be drafted to sit {position_desc}. "
+        "bible_entries should capture settled facts from the thread (may be empty list). "
+        "Return only the JSON object."
+    )
+
+    model = get_deepseek_model()
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    messages = _build_develop_messages(system_content, thread_messages)
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 700,
+    }
+
+    try:
+        with httpx.Client(timeout=120.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices")
+            if choices and len(choices) > 0:
+                raw = choices[0].get("message", {}).get("content", "").strip()
+                raw = re.sub(r"^```[a-z]*\n?", "", raw, flags=re.IGNORECASE)
+                raw = re.sub(r"\n?```$", "", raw)
+                raw = raw.strip()
+                try:
+                    parsed = json.loads(raw)
+                    entries = parsed.get("bible_entries", [])
+                    passage = str(parsed.get("passage", ""))
+                    if isinstance(entries, list):
+                        valid_entries = []
+                        for e in entries:
+                            if isinstance(e, dict) and "kind" in e and "name" in e and "detail" in e:
+                                valid_entries.append({
+                                    "kind": str(e["kind"]),
+                                    "name": str(e["name"]),
+                                    "detail": str(e["detail"]),
+                                })
+                        return ({"bible_entries": valid_entries, "passage": passage}, "deepseek")
+                except (json.JSONDecodeError, ValueError):
+                    logger.warning("draft_merge: JSON parse failed; returning empty result.")
+                    return ({"bible_entries": [], "passage": ""}, "deepseek")
+            return ({"bible_entries": [], "passage": ""}, "stub")  # STUB
+    except Exception as exc:
+        err_msg = f"{exc.__class__.__name__}: {exc}"
+        logger.warning("DeepSeek draft_merge failed (%s); returning stub.", err_msg)
+        return ({"bible_entries": [], "passage": ""}, "stub")  # STUB
+
+
+def stuck_directions(piece_text: str) -> tuple[str, str]:
+    """Call the model with stuck_prompt.md and return a numbered list of 2-3 directions.
+
+    Returns (directions_text, provider_name) where provider_name is 'deepseek' or 'stub'.
+    -- STUB FALLBACK clearly marked below --
+    """
+    api_key = get_deepseek_api_key()
+    if not api_key:
+        logger.warning("No DeepSeek API key configured; falling back to stub stuck directions.")
+        return (STUB_STUCK_TEMPLATE.strip(), "stub")  # STUB
+
+    try:
+        stuck_prompt = STUCK_PROMPT_PATH.read_text(encoding="utf-8").strip()
+    except Exception:
+        stuck_prompt = (
+            "You are a trusted writing peer. The writer is stuck. "
+            "Return exactly 2 or 3 numbered directions (one sentence each) and nothing else."
+        )
+
+    model = get_deepseek_model()
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": stuck_prompt},
+            {"role": "user", "content": piece_text.strip()},
+        ],
+        "temperature": 0.8,
+        "max_tokens": 300,
+    }
+
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices")
+            if choices and len(choices) > 0:
+                content = choices[0].get("message", {}).get("content", "").strip()
+                if content:
+                    return (content, "deepseek")
+            return (STUB_STUCK_TEMPLATE.strip(), "stub")  # STUB
+    except Exception as exc:
+        err_msg = f"{exc.__class__.__name__}: {exc}"
+        logger.warning("DeepSeek stuck_directions failed (%s); returning stub.", err_msg)
+        return (STUB_STUCK_TEMPLATE.strip(), "stub")  # STUB

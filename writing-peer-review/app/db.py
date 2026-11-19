@@ -66,6 +66,50 @@ def init_db(db_path: Path | str | None = None) -> None:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS develop_threads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    piece_id INTEGER NOT NULL REFERENCES pieces(id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_develop_threads_piece_id
+                    ON develop_threads(piece_id);
+
+                CREATE TABLE IF NOT EXISTS develop_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    thread_id INTEGER NOT NULL REFERENCES develop_threads(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_develop_messages_thread_id
+                    ON develop_messages(thread_id);
+
+                CREATE TABLE IF NOT EXISTS bible_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    piece_id INTEGER NOT NULL REFERENCES pieces(id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    detail TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_bible_entries_piece_id
+                    ON bible_entries(piece_id);
+
+                CREATE TABLE IF NOT EXISTS stuck_calls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    piece_id INTEGER NOT NULL REFERENCES pieces(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_stuck_calls_piece_id
+                    ON stuck_calls(piece_id);
                 """
             )
 

@@ -1,10 +1,11 @@
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -17,7 +18,7 @@ from app.export import (
     render_portfolio_pdf,
 )
 from app.peak import peak_status
-from app.provider import discuss_review, review_piece
+from app.provider import discuss_review, review_piece, develop_reply, propose_bible_entries, draft_merge, stuck_directions
 
 
 class CreatePieceRequest(BaseModel):
@@ -46,6 +47,17 @@ def _discussion_lock(review_id: int) -> threading.Lock:
         return _discussion_locks.setdefault(review_id, threading.Lock())
 
 
+# One lock per develop thread: two concurrent posts to the same thread must not
+# interleave their user message / assistant reply pairs.
+_develop_locks: dict[int, threading.Lock] = {}
+_develop_locks_guard = threading.Lock()
+
+
+def _develop_lock(thread_id: int) -> threading.Lock:
+    with _develop_locks_guard:
+        return _develop_locks.setdefault(thread_id, threading.Lock())
+
+
 class SettingsRequest(BaseModel):
     display_name: str
 
@@ -60,6 +72,37 @@ class ExportPortfolioRequest(BaseModel):
     piece_ids: list[int]
     format: Literal["md", "pdf"]
     include_reviews: bool = True
+
+
+class CreateThreadRequest(BaseModel):
+    title: str = ""
+
+
+class CreateDevelopMessageRequest(BaseModel):
+    text: str
+
+
+class BibleEntryRequest(BaseModel):
+    kind: str
+    name: str
+    detail: str
+
+
+class BibleEntryUpdate(BaseModel):
+    kind: str
+    name: str
+    detail: str
+
+
+class MergePreviewRequest(BaseModel):
+    insert_after_paragraph: Any = "end"
+
+
+class MergeApplyRequest(BaseModel):
+    bible_entries: list[dict] = []
+    passage: str = ""
+    insert_after_paragraph: Any = "end"
+    confirmed: bool = False
 
 
 def create_app() -> FastAPI:
@@ -567,6 +610,434 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=400, detail="Unsupported format")
         finally:
             conn.close()
+
+    # -----------------------------------------------------------------------
+    # DEVELOP MODE ENDPOINTS
+    # -----------------------------------------------------------------------
+
+    def _get_piece_or_404(conn, piece_id: int):
+        p_cur = conn.execute("SELECT * FROM pieces WHERE id = ?;", (piece_id,))
+        p_row = p_cur.fetchone()
+        if not p_row:
+            raise HTTPException(status_code=404, detail="Piece not found")
+        return dict(p_row)
+
+    def _get_thread_or_404(conn, thread_id: int):
+        t_cur = conn.execute("SELECT * FROM develop_threads WHERE id = ?;", (thread_id,))
+        t_row = t_cur.fetchone()
+        if not t_row:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        return dict(t_row)
+
+    def _get_bible(conn, piece_id: int) -> list[dict]:
+        b_cur = conn.execute(
+            "SELECT * FROM bible_entries WHERE piece_id = ? ORDER BY kind ASC, id ASC;",
+            (piece_id,),
+        )
+        return [dict(row) for row in b_cur.fetchall()]
+
+    def _get_thread_messages(conn, thread_id: int) -> list[dict]:
+        m_cur = conn.execute(
+            "SELECT * FROM develop_messages WHERE thread_id = ? ORDER BY id ASC;",
+            (thread_id,),
+        )
+        return [dict(row) for row in m_cur.fetchall()]
+
+    @app.get("/api/pieces/{piece_id}/develop/threads")
+    def list_develop_threads(piece_id: int, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            _get_piece_or_404(conn, piece_id)
+            cur = conn.execute(
+                """
+                SELECT dt.id, dt.piece_id, dt.title, dt.created_at, dt.updated_at,
+                       COUNT(dm.id) AS message_count
+                FROM develop_threads dt
+                LEFT JOIN develop_messages dm ON dm.thread_id = dt.id
+                WHERE dt.piece_id = ?
+                GROUP BY dt.id
+                ORDER BY dt.updated_at DESC;
+                """,
+                (piece_id,),
+            )
+            threads = [dict(row) for row in cur.fetchall()]
+            return {"threads": threads}
+        finally:
+            conn.close()
+
+    @app.post("/api/pieces/{piece_id}/develop/threads")
+    def create_develop_thread(piece_id: int, payload: CreateThreadRequest, request: Request):
+        now_str = datetime.now(timezone.utc).isoformat()
+        title = payload.title.strip() or "New conversation"
+        conn = get_connection(request.app.state.db_path)
+        try:
+            _get_piece_or_404(conn, piece_id)
+            with conn:
+                cur = conn.execute(
+                    """
+                    INSERT INTO develop_threads (piece_id, title, created_at, updated_at)
+                    VALUES (?, ?, ?, ?);
+                    """,
+                    (piece_id, title, now_str, now_str),
+                )
+                thread_id = cur.lastrowid
+            row = conn.execute(
+                """
+                SELECT dt.id, dt.piece_id, dt.title, dt.created_at, dt.updated_at,
+                       0 AS message_count
+                FROM develop_threads dt WHERE dt.id = ?;
+                """,
+                (thread_id,),
+            ).fetchone()
+            return {"thread": dict(row)}
+        finally:
+            conn.close()
+
+    @app.delete("/api/develop/threads/{thread_id}")
+    def delete_develop_thread(thread_id: int, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            with conn:
+                cur = conn.execute(
+                    "DELETE FROM develop_threads WHERE id = ?;", (thread_id,)
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Thread not found")
+            return {"deleted": True, "thread_id": thread_id}
+        finally:
+            conn.close()
+
+    @app.get("/api/develop/threads/{thread_id}")
+    def get_develop_thread(thread_id: int, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            thread = _get_thread_or_404(conn, thread_id)
+            messages = _get_thread_messages(conn, thread_id)
+            return {"thread": thread, "messages": messages}
+        finally:
+            conn.close()
+
+    @app.post("/api/develop/threads/{thread_id}/messages")
+    def post_develop_message(thread_id: int, payload: CreateDevelopMessageRequest, request: Request):
+        with _develop_lock(thread_id):
+            return _post_develop_message_inner(thread_id, payload, request)
+
+    def _post_develop_message_inner(thread_id: int, payload: CreateDevelopMessageRequest, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            thread = _get_thread_or_404(conn, thread_id)
+            piece_id = thread["piece_id"]
+            piece = _get_piece_or_404(conn, piece_id)
+
+            user_text = payload.text.strip()
+            if not user_text:
+                raise HTTPException(status_code=400, detail="Message text cannot be empty")
+
+            now_str = datetime.now(timezone.utc).isoformat()
+            prior_messages = _get_thread_messages(conn, thread_id)
+            bible = _get_bible(conn, piece_id)
+
+            with conn:
+                u_cur = conn.execute(
+                    """
+                    INSERT INTO develop_messages (thread_id, role, text, created_at)
+                    VALUES (?, 'user', ?, ?);
+                    """,
+                    (thread_id, user_text, now_str),
+                )
+                user_msg_id = u_cur.lastrowid
+
+            user_msg = {
+                "id": user_msg_id,
+                "thread_id": thread_id,
+                "role": "user",
+                "text": user_text,
+                "created_at": now_str,
+            }
+
+            full_thread = prior_messages + [user_msg]
+            reply_text, provider_name = develop_reply(piece["body"], bible, full_thread)
+
+            asst_now_str = datetime.now(timezone.utc).isoformat()
+            with conn:
+                a_cur = conn.execute(
+                    """
+                    INSERT INTO develop_messages (thread_id, role, text, created_at)
+                    VALUES (?, 'assistant', ?, ?);
+                    """,
+                    (thread_id, reply_text, asst_now_str),
+                )
+                asst_msg_id = a_cur.lastrowid
+                # Update thread updated_at
+                conn.execute(
+                    "UPDATE develop_threads SET updated_at = ? WHERE id = ?;",
+                    (asst_now_str, thread_id),
+                )
+
+            assistant_msg = {
+                "id": asst_msg_id,
+                "thread_id": thread_id,
+                "role": "assistant",
+                "text": reply_text,
+                "created_at": asst_now_str,
+            }
+
+            return {
+                "messages": [user_msg, assistant_msg],
+                "provider": provider_name,
+            }
+        finally:
+            conn.close()
+
+    # -----------------------------------------------------------------------
+    # BIBLE ENDPOINTS
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/pieces/{piece_id}/bible")
+    def get_bible(piece_id: int, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            _get_piece_or_404(conn, piece_id)
+            entries = _get_bible(conn, piece_id)
+            return {"entries": entries}
+        finally:
+            conn.close()
+
+    @app.post("/api/pieces/{piece_id}/bible")
+    def create_bible_entry(piece_id: int, payload: BibleEntryRequest, request: Request):
+        now_str = datetime.now(timezone.utc).isoformat()
+        conn = get_connection(request.app.state.db_path)
+        try:
+            _get_piece_or_404(conn, piece_id)
+            with conn:
+                cur = conn.execute(
+                    """
+                    INSERT INTO bible_entries (piece_id, kind, name, detail, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?);
+                    """,
+                    (piece_id, payload.kind, payload.name, payload.detail, now_str, now_str),
+                )
+                entry_id = cur.lastrowid
+            row = conn.execute(
+                "SELECT * FROM bible_entries WHERE id = ?;", (entry_id,)
+            ).fetchone()
+            return {"entry": dict(row)}
+        finally:
+            conn.close()
+
+    @app.put("/api/bible/{entry_id}")
+    def update_bible_entry(entry_id: int, payload: BibleEntryUpdate, request: Request):
+        now_str = datetime.now(timezone.utc).isoformat()
+        conn = get_connection(request.app.state.db_path)
+        try:
+            with conn:
+                cur = conn.execute(
+                    """
+                    UPDATE bible_entries
+                    SET kind = ?, name = ?, detail = ?, updated_at = ?
+                    WHERE id = ?;
+                    """,
+                    (payload.kind, payload.name, payload.detail, now_str, entry_id),
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Bible entry not found")
+            row = conn.execute(
+                "SELECT * FROM bible_entries WHERE id = ?;", (entry_id,)
+            ).fetchone()
+            return {"entry": dict(row)}
+        finally:
+            conn.close()
+
+    @app.delete("/api/bible/{entry_id}")
+    def delete_bible_entry(entry_id: int, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            with conn:
+                cur = conn.execute(
+                    "DELETE FROM bible_entries WHERE id = ?;", (entry_id,)
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Bible entry not found")
+            return {"deleted": True, "entry_id": entry_id}
+        finally:
+            conn.close()
+
+    # -----------------------------------------------------------------------
+    # PROPOSE BIBLE / MERGE ENDPOINTS
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/develop/threads/{thread_id}/propose-bible")
+    def propose_bible_endpoint(thread_id: int, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            thread = _get_thread_or_404(conn, thread_id)
+            piece_id = thread["piece_id"]
+            piece = _get_piece_or_404(conn, piece_id)
+            bible = _get_bible(conn, piece_id)
+            messages = _get_thread_messages(conn, thread_id)
+        finally:
+            conn.close()
+
+        entries, provider_name = propose_bible_entries(piece["body"], bible, messages)
+        return {"entries": entries, "provider": provider_name}
+
+    @app.post("/api/develop/threads/{thread_id}/merge-preview")
+    def merge_preview_endpoint(thread_id: int, payload: MergePreviewRequest, request: Request):
+        conn = get_connection(request.app.state.db_path)
+        try:
+            thread = _get_thread_or_404(conn, thread_id)
+            piece_id = thread["piece_id"]
+            piece = _get_piece_or_404(conn, piece_id)
+            bible = _get_bible(conn, piece_id)
+            messages = _get_thread_messages(conn, thread_id)
+        finally:
+            conn.close()
+
+        insert_at = payload.insert_after_paragraph
+        result, provider_name = draft_merge(piece["body"], bible, messages, insert_at)
+        return {
+            "bible_entries": result.get("bible_entries", []),
+            "passage": result.get("passage", ""),
+            "insert_after_paragraph": insert_at,
+            "provider": provider_name,
+        }
+
+    @app.post("/api/develop/threads/{thread_id}/merge-apply")
+    def merge_apply_endpoint(thread_id: int, payload: MergeApplyRequest, request: Request):
+        if not payload.confirmed:
+            raise HTTPException(status_code=400, detail="confirmed must be true to apply")
+
+        now_str = datetime.now(timezone.utc).isoformat()
+        conn = get_connection(request.app.state.db_path)
+        try:
+            thread = _get_thread_or_404(conn, thread_id)
+            piece_id = thread["piece_id"]
+            piece = _get_piece_or_404(conn, piece_id)
+
+            applied_entries = []
+            with conn:
+                for entry in payload.bible_entries:
+                    kind = str(entry.get("kind", ""))
+                    name = str(entry.get("name", ""))
+                    detail = str(entry.get("detail", ""))
+                    cur = conn.execute(
+                        """
+                        INSERT INTO bible_entries (piece_id, kind, name, detail, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?);
+                        """,
+                        (piece_id, kind, name, detail, now_str, now_str),
+                    )
+                    row = conn.execute(
+                        "SELECT * FROM bible_entries WHERE id = ?;", (cur.lastrowid,)
+                    ).fetchone()
+                    applied_entries.append(dict(row))
+
+            updated_piece = None
+            if payload.passage and payload.passage.strip():
+                body = piece["body"]
+                passage = payload.passage.strip()
+                insert_at = payload.insert_after_paragraph
+
+                if insert_at == "end":
+                    new_body = body.rstrip() + "\n\n" + passage
+                else:
+                    # Split on blank lines (paragraph boundaries)
+                    paragraphs = re.split(r"\n{2,}", body)
+                    idx = int(insert_at)
+                    # Insert after paragraph idx (0-based)
+                    idx = max(0, min(idx, len(paragraphs) - 1))
+                    paragraphs.insert(idx + 1, passage)
+                    new_body = "\n\n".join(paragraphs)
+
+                with conn:
+                    conn.execute(
+                        "UPDATE pieces SET body = ?, updated_at = ? WHERE id = ?;",
+                        (new_body, now_str, piece_id),
+                    )
+                updated_piece = dict(
+                    conn.execute("SELECT * FROM pieces WHERE id = ?;", (piece_id,)).fetchone()
+                )
+                updated_piece["word_count"] = (
+                    len(updated_piece["body"].split()) if updated_piece["body"] else 0
+                )
+            else:
+                updated_piece = piece
+                updated_piece["word_count"] = (
+                    len(updated_piece["body"].split()) if updated_piece["body"] else 0
+                )
+
+            return {
+                "applied": {
+                    "bible_entries": applied_entries,
+                    "passage": payload.passage,
+                    "insert_after_paragraph": payload.insert_after_paragraph,
+                },
+                "piece": updated_piece,
+            }
+        finally:
+            conn.close()
+
+    # -----------------------------------------------------------------------
+    # STUCK ENDPOINT
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/pieces/{piece_id}/stuck")
+    def stuck_endpoint(piece_id: int, request: Request):
+        now_str = datetime.now(timezone.utc).isoformat()
+        conn = get_connection(request.app.state.db_path)
+        try:
+            piece = _get_piece_or_404(conn, piece_id)
+
+            # Rolling 60-minute cap: count calls in the last 60 minutes
+            from datetime import timedelta
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+            count_cur = conn.execute(
+                """
+                SELECT COUNT(*) AS cnt FROM stuck_calls
+                WHERE piece_id = ? AND created_at > ?;
+                """,
+                (piece_id, cutoff),
+            )
+            current_count = count_cur.fetchone()["cnt"]
+
+            if current_count >= 3:
+                # Do NOT record a row, do NOT call provider
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "detail": "that's your three for this hour, write a little and it comes back",
+                        "remaining": 0,
+                        "capped": True,
+                    },
+                )
+
+            # Record the call BEFORE calling provider
+            with conn:
+                conn.execute(
+                    "INSERT INTO stuck_calls (piece_id, created_at) VALUES (?, ?);",
+                    (piece_id, now_str),
+                )
+
+            # Recount after insertion
+            new_count_cur = conn.execute(
+                """
+                SELECT COUNT(*) AS cnt FROM stuck_calls
+                WHERE piece_id = ? AND created_at > ?;
+                """,
+                (piece_id, cutoff),
+            )
+            new_count = new_count_cur.fetchone()["cnt"]
+            remaining = max(0, 3 - new_count)
+
+        finally:
+            conn.close()
+
+        directions_text, provider_name = stuck_directions(piece["body"])
+        return {
+            "directions": directions_text,
+            "provider": provider_name,
+            "remaining": remaining,
+        }
 
     return app
 

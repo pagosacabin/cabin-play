@@ -91,7 +91,10 @@
         <div class="save-indicator">
           <span id="save-indicator">Not yet saved</span>
         </div>
-        <div id="word-count">0 words</div>
+        <div style="display:flex;align-items:center;gap:var(--sp-3);">
+          <div id="word-count">0 words</div>
+          <button id="stuck-btn" class="btn btn-subtle" style="font-size:var(--text-xs);padding:0.35rem 0.75rem;min-height:32px;" disabled title="Get 2–3 directions to try next">Stuck?</button>
+        </div>
       </div>
 
       <input type="text" id="piece-title" class="title-input" placeholder="Title your piece..." autocomplete="off">
@@ -101,6 +104,7 @@
         <div class="editor-actions">
           <button id="submit-review-btn" class="btn btn-primary">Submit for review</button>
           <button id="new-piece-btn" class="btn">New piece</button>
+          <button id="develop-toggle-btn" class="btn" disabled title="Open the Develop room for this piece">Develop</button>
         </div>
         <div class="editor-actions">
           <select id="export-piece-scope" class="export-scope-select" title="Export scope">
@@ -119,6 +123,99 @@
           <h2>Peer Reviews</h2>
         </div>
         <div id="reviews-container"></div>
+      </section>
+
+      <!-- Stuck card (dismissible, shown/hidden by JS) -->
+      <div id="stuck-card" class="stuck-card" style="display:none;">
+        <div class="stuck-card-header">
+          <span class="stuck-card-title">A few directions to try</span>
+          <button id="stuck-dismiss-btn" class="btn-subtle" style="font-size:1.1rem;padding:0.1rem 0.4rem;min-height:0;" title="Dismiss">×</button>
+        </div>
+        <div id="stuck-directions" class="stuck-directions"></div>
+      </div>
+
+      <!-- Develop Room (shown when Develop toggle is active) -->
+      <section id="develop-room" class="develop-room" style="display:none;">
+        <div class="develop-room-inner">
+          <!-- Left panel: thread list + conversation -->
+          <div class="develop-main">
+            <div class="develop-room-header">
+              <span class="develop-room-label">Conversation</span>
+              <button id="develop-new-thread-btn" class="btn btn-subtle" style="font-size:var(--text-xs);">+ New conversation</button>
+            </div>
+
+            <!-- Thread tabs -->
+            <div id="develop-thread-tabs" class="develop-thread-tabs"></div>
+
+            <!-- Bible presence note -->
+            <div class="develop-bible-note">Working from your manuscript and your story bible</div>
+
+            <!-- Conversation transcript -->
+            <div id="develop-thread-transcript" class="develop-transcript"></div>
+
+            <!-- Action buttons after last assistant reply -->
+            <div id="develop-thread-actions" class="develop-thread-actions" style="display:none;">
+              <button id="develop-save-bible-btn" class="btn btn-subtle">Save to story bible</button>
+              <button id="develop-add-book-btn" class="btn btn-subtle">Add to my book</button>
+            </div>
+
+            <!-- Propose-bible confirmation card -->
+            <div id="develop-propose-card" class="develop-action-card" style="display:none;">
+              <div class="develop-action-card-title">Save to story bible</div>
+              <div class="develop-action-card-hint">Choose what to save — these will be added to your story bible.</div>
+              <div id="develop-propose-entries"></div>
+              <div class="develop-action-card-footer">
+                <button id="develop-propose-confirm-btn" class="btn btn-primary">Confirm</button>
+                <button id="develop-propose-cancel-btn" class="btn btn-subtle">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Merge preview card -->
+            <div id="develop-merge-card" class="develop-action-card" style="display:none;">
+              <div class="develop-action-card-title">Add to my book</div>
+              <div class="develop-action-card-hint">Review the passage and choose where it goes.</div>
+              <div id="develop-merge-bible-preview"></div>
+              <div id="develop-merge-passage-preview" class="develop-merge-passage"></div>
+              <div id="develop-merge-where" class="develop-merge-where" style="display:none;">
+                <label for="develop-merge-position-select" style="font-size:var(--text-xs);font-weight:600;color:var(--color-ink-mid);">Where it goes:</label>
+                <select id="develop-merge-position-select" class="export-scope-select" style="font-size:var(--text-sm);"></select>
+              </div>
+              <div class="develop-action-card-footer">
+                <button id="develop-merge-apply-btn" class="btn btn-primary">Add it</button>
+                <button id="develop-merge-cancel-btn" class="btn btn-subtle">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Composer -->
+            <div class="develop-composer" id="develop-composer" style="display:none;">
+              <textarea id="develop-input" class="discussion-input" placeholder="Talk through your story here…" rows="2"></textarea>
+              <button id="develop-send-btn" class="btn btn-primary">Send</button>
+            </div>
+          </div>
+
+          <!-- Right panel: Story bible -->
+          <aside class="develop-bible-panel">
+            <div class="develop-bible-header">
+              <span class="develop-bible-label">Story bible</span>
+              <button id="develop-add-bible-btn" class="btn btn-subtle" style="font-size:var(--text-xs);">+ Add entry</button>
+            </div>
+            <div id="develop-bible-add-form" class="develop-bible-add-form" style="display:none;">
+              <select id="develop-bible-kind-select" class="export-scope-select" style="font-size:var(--text-sm);width:100%;margin-bottom:var(--sp-2);">
+                <option value="character">Character</option>
+                <option value="timeline">Timeline</option>
+                <option value="world">World</option>
+                <option value="decision">Decision</option>
+              </select>
+              <input type="text" id="develop-bible-name-input" class="form-input" placeholder="Name" style="margin-bottom:var(--sp-2);max-width:100%;">
+              <textarea id="develop-bible-detail-input" class="discussion-input" placeholder="Detail…" rows="2" style="margin-bottom:var(--sp-2);"></textarea>
+              <div style="display:flex;gap:var(--sp-2);">
+                <button id="develop-bible-save-btn" class="btn btn-primary" style="font-size:var(--text-xs);">Save</button>
+                <button id="develop-bible-cancel-btn" class="btn btn-subtle" style="font-size:var(--text-xs);">Cancel</button>
+              </div>
+            </div>
+            <div id="develop-bible-list" class="develop-bible-list"></div>
+          </aside>
+        </div>
       </section>
     </section>
 

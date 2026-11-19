@@ -1623,3 +1623,372 @@ html[data-theme="night"] .user-message .message-sender { color: #5ca88a; }
 
 /* Night: timestamps sit on the darker bubble surface, so ink-dim loses contrast there */
 html[data-theme="night"] .message-time { color: var(--color-ink-mid); }
+
+/* ── 19. DEVELOP MODE ────────────────────────────────────────── */
+
+/* Stuck card */
+.stuck-card {
+  margin-top: var(--sp-4);
+  background-color: var(--color-accent-soft);
+  border: 1px solid var(--color-accent-rule);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.stuck-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-2);
+}
+
+.stuck-card-title {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-accent);
+}
+
+.stuck-directions {
+  font-family: var(--font-serif);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  color: var(--color-ink);
+  white-space: pre-line;
+}
+
+/* Develop room container */
+.develop-room {
+  margin-top: var(--sp-6);
+  border-top: 2px solid var(--color-border);
+  padding-top: var(--sp-6);
+}
+
+.develop-room-inner {
+  display: flex;
+  gap: var(--sp-6);
+  align-items: flex-start;
+}
+
+.develop-main {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Develop room header */
+.develop-room-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-3);
+  gap: var(--sp-3);
+}
+
+.develop-room-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-accent);
+}
+
+/* Thread tabs */
+.develop-thread-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.develop-thread-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-pill);
+  background-color: var(--color-surface);
+  color: var(--color-ink-mid);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  white-space: nowrap;
+  min-height: 32px;
+}
+
+.develop-thread-tab:hover {
+  border-color: var(--color-accent-rule);
+  background-color: var(--color-accent-soft);
+  color: var(--color-ink);
+}
+
+.develop-thread-tab.active {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.develop-thread-tab-delete {
+  font-size: 0.8rem;
+  color: var(--color-ink-dim);
+  margin-left: var(--sp-1);
+  line-height: 1;
+  padding: 0 0.1rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.develop-thread-tab-delete:hover {
+  color: var(--color-danger);
+}
+
+/* Bible note */
+.develop-bible-note {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--color-ink-dim);
+  font-style: italic;
+  margin-bottom: var(--sp-3);
+}
+
+/* Transcript */
+.develop-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-height: 460px;
+  overflow-y: auto;
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-1) 0;
+  scroll-behavior: smooth;
+}
+
+.develop-empty {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-ink-mid);
+  font-style: italic;
+  padding: var(--sp-3) 0;
+}
+
+/* Thread action buttons */
+.develop-thread-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+/* Action cards (propose-bible, merge-preview) */
+.develop-action-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-3);
+  box-shadow: var(--shadow-sm);
+}
+
+.develop-action-card-title {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-accent);
+  margin-bottom: var(--sp-1);
+}
+
+.develop-action-card-hint {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--color-ink-mid);
+  margin-bottom: var(--sp-3);
+}
+
+.develop-action-card-footer {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.develop-propose-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+}
+
+.develop-propose-entry:last-child {
+  border-bottom: none;
+}
+
+.develop-propose-entry label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  cursor: pointer;
+  flex: 1;
+}
+
+.develop-propose-entry .entry-kind {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-ink-dim);
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
+.develop-propose-entry .entry-name {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.develop-propose-entry .entry-detail {
+  color: var(--color-ink-mid);
+  margin-left: var(--sp-1);
+}
+
+/* Merge passage preview */
+.develop-merge-passage {
+  font-family: var(--font-serif);
+  font-size: var(--text-base);
+  line-height: 1.75;
+  color: var(--color-ink);
+  background-color: var(--color-accent-soft);
+  border-left: 3px solid var(--color-accent-rule);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  margin-bottom: var(--sp-3);
+  white-space: pre-wrap;
+}
+
+.develop-merge-where {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-2);
+}
+
+/* Composer */
+.develop-composer {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-end;
+  margin-top: var(--sp-3);
+}
+
+/* Bible panel */
+.develop-bible-panel {
+  width: 240px;
+  flex-shrink: 0;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-sm);
+  align-self: flex-start;
+  position: sticky;
+  top: 80px;
+}
+
+.develop-bible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-3);
+}
+
+.develop-bible-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-ink-mid);
+}
+
+.develop-bible-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.develop-bible-group-title {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-ink-dim);
+  margin-top: var(--sp-3);
+  margin-bottom: var(--sp-1);
+  padding-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.develop-bible-entry {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.develop-bible-entry-name {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.develop-bible-entry-detail {
+  color: var(--color-ink-mid);
+}
+
+.develop-bible-entry-actions {
+  display: flex;
+  gap: var(--sp-1);
+  margin-top: 2px;
+}
+
+.develop-bible-entry-actions button {
+  font-size: 0.65rem;
+  color: var(--color-ink-dim);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.develop-bible-entry-actions button:hover {
+  color: var(--color-accent);
+}
+.develop-bible-entry-actions .del-btn:hover {
+  color: var(--color-danger);
+}
+
+.develop-bible-add-form {
+  margin-bottom: var(--sp-3);
+}
+
+/* On narrow screens, stack the develop panels */
+@media (max-width: 680px) {
+  .develop-room-inner {
+    flex-direction: column;
+  }
+  .develop-bible-panel {
+    width: 100%;
+    position: static;
+  }
+}
+

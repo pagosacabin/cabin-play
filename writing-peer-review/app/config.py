@@ -7,6 +7,8 @@ REVIEW_PROMPT_PATH = BASE_DIR / "review_prompt.md"
 DISCUSSION_PROMPT_PATH = BASE_DIR / "discussion_prompt.md"
 
 DEFAULT_DISPLAY_NAME = "Bethany"
+DEVELOP_PROMPT_PATH = BASE_DIR / "develop_prompt.md"
+STUCK_PROMPT_PATH = BASE_DIR / "stuck_prompt.md"
 
 
 def load_env_file(env_path: Path) -> dict[str, str]:

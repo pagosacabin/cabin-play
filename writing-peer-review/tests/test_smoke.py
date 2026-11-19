@@ -631,8 +631,8 @@ def test_13_concurrent_posts_do_not_interleave(client: TestClient, monkeypatch):
 # 14. The service worker cache is versioned, so an installed PWA adopts the new shell
 def test_14_service_worker_cache_version_bumped(client: TestClient):
     sw = client.get("/sw.js").text
-    assert "writing-peer-review-v5" in sw
-    assert "writing-peer-review-v4" not in sw
+    assert "writing-peer-review-v6" in sw
+    assert "writing-peer-review-v5" not in sw
     assert "/static/app.js" in sw
 
 
@@ -855,3 +855,380 @@ def test_17_delete_relies_on_fk_cascade_not_manual_child_deletes(client: TestCli
         assert check.execute("SELECT COUNT(*) FROM messages WHERE review_id = ?;", (cascade_rid,)).fetchone()[0] == 0
     finally:
         check.close()
+
+
+# =============================================================================
+# DEVELOP MODE TESTS (new feature)
+# =============================================================================
+
+
+def _make_piece(client, body="The rain fell soft on the old stone roof."):
+    """Helper: create a piece and return its id."""
+    resp = client.post("/api/pieces", json={"title": "Test Piece", "body": body})
+    assert resp.status_code == 200
+    return resp.json()["piece"]["id"]
+
+
+# 18. Develop thread create / list / delete
+def test_18_develop_thread_create_list_delete(client: TestClient, monkeypatch):
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+    piece_id = _make_piece(client)
+
+    # List threads (empty)
+    list_resp = client.get(f"/api/pieces/{piece_id}/develop/threads")
+    assert list_resp.status_code == 200
+    assert list_resp.json()["threads"] == []
+
+    # Create a thread
+    create_resp = client.post(
+        f"/api/pieces/{piece_id}/develop/threads",
+        json={"title": "My first conversation"},
+    )
+    assert create_resp.status_code == 200
+    thread = create_resp.json()["thread"]
+    thread_id = thread["id"]
+    assert thread["piece_id"] == piece_id
+    assert thread["title"] == "My first conversation"
+    assert "created_at" in thread
+
+    # List threads now shows 1
+    list_resp2 = client.get(f"/api/pieces/{piece_id}/develop/threads")
+    assert list_resp2.status_code == 200
+    threads = list_resp2.json()["threads"]
+    assert len(threads) == 1
+    assert threads[0]["id"] == thread_id
+    assert "message_count" in threads[0]
+
+    # Create a second thread with default title
+    create_resp2 = client.post(
+        f"/api/pieces/{piece_id}/develop/threads", json={}
+    )
+    assert create_resp2.status_code == 200
+    assert create_resp2.json()["thread"]["title"] == "New conversation"
+
+    # Delete first thread
+    del_resp = client.delete(f"/api/develop/threads/{thread_id}")
+    assert del_resp.status_code == 200
+    assert del_resp.json() == {"deleted": True, "thread_id": thread_id}
+
+    # List shows only 1 thread now
+    list_resp3 = client.get(f"/api/pieces/{piece_id}/develop/threads")
+    assert len(list_resp3.json()["threads"]) == 1
+    assert list_resp3.json()["threads"][0]["id"] != thread_id
+
+    # 404 on unknown thread
+    assert client.delete("/api/develop/threads/999999").status_code == 404
+
+
+# 19. Posting a message stores user+assistant pair and uses stub when no key
+def test_19_develop_message_stub(client: TestClient, monkeypatch):
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+    piece_id = _make_piece(client)
+
+    # Create thread
+    tid = client.post(
+        f"/api/pieces/{piece_id}/develop/threads", json={"title": "Chat"}
+    ).json()["thread"]["id"]
+
+    # Post a message
+    msg_resp = client.post(
+        f"/api/develop/threads/{tid}/messages",
+        json={"text": "What should happen next in the scene?"},
+    )
+    assert msg_resp.status_code == 200
+    data = msg_resp.json()
+    messages = data["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[0]["text"] == "What should happen next in the scene?"
+    assert messages[1]["role"] == "assistant"
+    assert "STUB" in messages[1]["text"]  # stub reply is clearly marked
+    assert data["provider"] == "stub"
+
+    # GET the thread shows both messages persisted
+    thread_resp = client.get(f"/api/develop/threads/{tid}")
+    assert thread_resp.status_code == 200
+    stored = thread_resp.json()["messages"]
+    assert len(stored) == 2
+    assert stored[0]["role"] == "user"
+    assert stored[1]["role"] == "assistant"
+
+    # Empty text is rejected
+    empty_resp = client.post(
+        f"/api/develop/threads/{tid}/messages", json={"text": ""}
+    )
+    assert empty_resp.status_code == 400
+
+
+# 20. Bible create / list / update / delete
+def test_20_bible_crud(client: TestClient, monkeypatch):
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+    piece_id = _make_piece(client)
+
+    # List (empty)
+    list_resp = client.get(f"/api/pieces/{piece_id}/bible")
+    assert list_resp.status_code == 200
+    assert list_resp.json()["entries"] == []
+
+    # Create a character entry
+    create_resp = client.post(
+        f"/api/pieces/{piece_id}/bible",
+        json={"kind": "character", "name": "Elena", "detail": "The protagonist; keeps a journal."},
+    )
+    assert create_resp.status_code == 200
+    entry = create_resp.json()["entry"]
+    entry_id = entry["id"]
+    assert entry["kind"] == "character"
+    assert entry["name"] == "Elena"
+    assert entry["piece_id"] == piece_id
+
+    # Create a decision entry
+    client.post(
+        f"/api/pieces/{piece_id}/bible",
+        json={"kind": "decision", "name": "Ending", "detail": "She stays in the village."},
+    )
+
+    # List shows 2 entries
+    list_resp2 = client.get(f"/api/pieces/{piece_id}/bible")
+    assert list_resp2.status_code == 200
+    entries = list_resp2.json()["entries"]
+    assert len(entries) == 2
+
+    # Update
+    put_resp = client.put(
+        f"/api/bible/{entry_id}",
+        json={"kind": "character", "name": "Elena", "detail": "Updated detail."},
+    )
+    assert put_resp.status_code == 200
+    assert put_resp.json()["entry"]["detail"] == "Updated detail."
+
+    # Delete
+    del_resp = client.delete(f"/api/bible/{entry_id}")
+    assert del_resp.status_code == 200
+    assert del_resp.json() == {"deleted": True, "entry_id": entry_id}
+
+    # 404 on missing
+    assert client.delete(f"/api/bible/{entry_id}").status_code == 404
+    assert client.put(f"/api/bible/{entry_id}", json={"kind": "world", "name": "X", "detail": "Y"}).status_code == 404
+
+    # List shows 1 entry
+    list_resp3 = client.get(f"/api/pieces/{piece_id}/bible")
+    assert len(list_resp3.json()["entries"]) == 1
+
+
+# 21. propose-bible returns proposals and writes nothing to the bible
+def test_21_propose_bible_no_writes(client: TestClient, monkeypatch):
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+    piece_id = _make_piece(client)
+
+    tid = client.post(
+        f"/api/pieces/{piece_id}/develop/threads", json={}
+    ).json()["thread"]["id"]
+
+    # Post a message so there is content
+    client.post(
+        f"/api/develop/threads/{tid}/messages",
+        json={"text": "Let's settle that the main character is named Marco."},
+    )
+
+    # Call propose-bible
+    propose_resp = client.post(f"/api/develop/threads/{tid}/propose-bible")
+    assert propose_resp.status_code == 200
+    data = propose_resp.json()
+    assert "entries" in data
+    assert "provider" in data
+    # entries is a list (may be empty with stub)
+    assert isinstance(data["entries"], list)
+
+    # Bible is still empty — propose writes nothing
+    bible_resp = client.get(f"/api/pieces/{piece_id}/bible")
+    assert bible_resp.json()["entries"] == []
+
+
+# 22. merge-preview writes nothing; merge-apply with confirmed=false is refused;
+#     merge-apply with confirmed=true inserts bible entries and passage
+def test_22_merge_preview_and_apply(client: TestClient, monkeypatch):
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+    body = "First paragraph of the story.\n\nSecond paragraph continues here.\n\nThird and final paragraph."
+    piece_id = _make_piece(client, body=body)
+
+    tid = client.post(
+        f"/api/pieces/{piece_id}/develop/threads", json={}
+    ).json()["thread"]["id"]
+    client.post(
+        f"/api/develop/threads/{tid}/messages",
+        json={"text": "What if we add a beat about the wind?"},
+    )
+
+    # merge-preview writes nothing
+    preview_resp = client.post(
+        f"/api/develop/threads/{tid}/merge-preview",
+        json={"insert_after_paragraph": "end"},
+    )
+    assert preview_resp.status_code == 200
+    preview = preview_resp.json()
+    assert "bible_entries" in preview
+    assert "passage" in preview
+    assert "insert_after_paragraph" in preview
+    assert "provider" in preview
+
+    # Piece body unchanged after preview
+    piece_resp = client.get(f"/api/pieces/{piece_id}")
+    assert piece_resp.json()["piece"]["body"] == body
+
+    # merge-apply with confirmed=false is refused
+    apply_no_confirm = client.post(
+        f"/api/develop/threads/{tid}/merge-apply",
+        json={
+            "bible_entries": [],
+            "passage": "A new passage.",
+            "insert_after_paragraph": "end",
+            "confirmed": False,
+        },
+    )
+    assert apply_no_confirm.status_code == 400
+
+    # Piece body still unchanged
+    assert client.get(f"/api/pieces/{piece_id}").json()["piece"]["body"] == body
+
+    # merge-apply with confirmed=true + "end" inserts at end
+    apply_resp = client.post(
+        f"/api/develop/threads/{tid}/merge-apply",
+        json={
+            "bible_entries": [{"kind": "world", "name": "Wind", "detail": "The wind picks up at dusk."}],
+            "passage": "The wind swept through.",
+            "insert_after_paragraph": "end",
+            "confirmed": True,
+        },
+    )
+    assert apply_resp.status_code == 200
+    result = apply_resp.json()
+    assert len(result["applied"]["bible_entries"]) == 1
+    new_body = result["piece"]["body"]
+    assert "The wind swept through." in new_body
+    assert new_body.endswith("The wind swept through.")
+
+    # Bible shows the new entry
+    bible_entries = client.get(f"/api/pieces/{piece_id}/bible").json()["entries"]
+    assert any(e["name"] == "Wind" for e in bible_entries)
+
+
+def test_22b_merge_apply_at_paragraph_index(client: TestClient, monkeypatch):
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+    body = "Para zero.\n\nPara one.\n\nPara two."
+    piece_id = _make_piece(client, body=body)
+    tid = client.post(
+        f"/api/pieces/{piece_id}/develop/threads", json={}
+    ).json()["thread"]["id"]
+
+    # Insert after paragraph 0 (0-based)
+    apply_resp = client.post(
+        f"/api/develop/threads/{tid}/merge-apply",
+        json={
+            "bible_entries": [],
+            "passage": "Inserted passage.",
+            "insert_after_paragraph": 0,
+            "confirmed": True,
+        },
+    )
+    assert apply_resp.status_code == 200
+    new_body = apply_resp.json()["piece"]["body"]
+    paragraphs = [p.strip() for p in new_body.split("\n\n") if p.strip()]
+    # After para 0 we expect: [Para zero., Inserted passage., Para one., Para two.]
+    assert paragraphs[0] == "Para zero."
+    assert paragraphs[1] == "Inserted passage."
+    assert paragraphs[2] == "Para one."
+
+
+# 23. stuck returns directions and records a call; 4th call returns 429 and
+#     makes no provider call and writes no stuck_calls row; a row older than
+#     60 minutes does not count.
+def test_23_stuck_cap_and_old_rows(client: TestClient, monkeypatch):
+    from app.db import get_connection
+    from datetime import timedelta
+
+    monkeypatch.setattr("app.provider.get_deepseek_api_key", lambda: "")
+    piece_id = _make_piece(client)
+
+    # Insert an OLD stuck_calls row (> 60 minutes ago) directly into the DB
+    db_path = client.app.state.db_path
+    old_time = (datetime.now(timezone.utc) - timedelta(minutes=90)).isoformat()
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO stuck_calls (piece_id, created_at) VALUES (?, ?);",
+                (piece_id, old_time),
+            )
+    finally:
+        conn.close()
+
+    # Count of old row in DB before any new calls
+    conn = get_connection(db_path)
+    try:
+        total_before = conn.execute(
+            "SELECT COUNT(*) FROM stuck_calls WHERE piece_id = ?;", (piece_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert total_before == 1  # the old row
+
+    # 3 successful calls should work (old row does not count toward cap)
+    for i in range(3):
+        resp = client.post(f"/api/pieces/{piece_id}/stuck")
+        assert resp.status_code == 200, f"call {i+1} failed: {resp.text}"
+        data = resp.json()
+        assert "directions" in data
+        assert "provider" in data
+        assert data["provider"] == "stub"
+        assert "remaining" in data
+        assert data["remaining"] == 2 - i  # 2, 1, 0
+
+    # 4th call within the hour → 429, no provider call, no new DB row
+    provider_called = []
+
+    def fake_stuck_directions(piece_text):
+        provider_called.append(piece_text)
+        return ("1. Direction.\n2. Another.", "deepseek")
+
+    monkeypatch.setattr("app.main.stuck_directions", fake_stuck_directions)
+
+    conn = get_connection(db_path)
+    try:
+        count_before_4th = conn.execute(
+            "SELECT COUNT(*) FROM stuck_calls WHERE piece_id = ?;", (piece_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    resp4 = client.post(f"/api/pieces/{piece_id}/stuck")
+    assert resp4.status_code == 429
+    body4 = resp4.json()
+    # The detail may be nested (FastAPI wraps HTTPException.detail)
+    detail = body4.get("detail", {})
+    if isinstance(detail, dict):
+        assert detail.get("capped") is True
+        assert detail.get("remaining") == 0
+    else:
+        # direct detail string
+        assert "three" in str(detail).lower() or "capped" in str(body4).lower()
+
+    # Provider was NOT called
+    assert provider_called == [], "provider was called on the 4th (capped) request"
+
+    # No new DB row was written
+    conn = get_connection(db_path)
+    try:
+        count_after_4th = conn.execute(
+            "SELECT COUNT(*) FROM stuck_calls WHERE piece_id = ?;", (piece_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert count_after_4th == count_before_4th, "a stuck_calls row was written on a capped request"
+
+
+# 24. Service worker cache version is now v6
+def test_24_service_worker_cache_version_v6(client: TestClient):
+    sw = client.get("/sw.js").text
+    assert "writing-peer-review-v6" in sw
+    assert "writing-peer-review-v5" not in sw

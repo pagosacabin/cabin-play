@@ -1232,3 +1232,64 @@ def test_24_service_worker_cache_version_v6(client: TestClient):
     sw = client.get("/sw.js").text
     assert "writing-peer-review-v6" in sw
     assert "writing-peer-review-v5" not in sw
+
+
+# 25. Extraction calls (propose-bible / merge-preview) must end on the
+#     instruction, not on the thread's last assistant reply — a thread that ends
+#     with an assistant turn makes the model continue the conversation instead
+#     of answering in JSON (seen live 2026-11-19).
+def test_25_extraction_calls_put_instruction_last(monkeypatch):
+    import json as _json
+    from app import provider as prov
+
+    monkeypatch.setattr(prov, "get_deepseek_api_key", lambda: "test-key")
+    thread = [
+        {"role": "user", "text": "Who is Marta?"},
+        {"role": "assistant", "text": "Marta keeps the ledger. What do you think?"},
+    ]
+
+    captured = []
+
+    class FakeResponse:
+        def __init__(self, content):
+            self._content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": self._content}}]}
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, headers=None, json=None, timeout=None):
+            captured.append(json)
+            last = json["messages"][-1]["content"]
+            if "bible_entries" in last:
+                return FakeResponse(_json.dumps({"bible_entries": [], "passage": "She waited."}))
+            return FakeResponse(_json.dumps({"entries": [{"kind": "character", "name": "Marta", "detail": "Keeps the ledger."}]}))
+
+    monkeypatch.setattr(prov.httpx, "Client", FakeClient)
+
+    entries, provider_name = prov.propose_bible_entries("Body text.", [], thread)
+    assert provider_name == "deepseek"
+    assert entries and entries[0]["name"] == "Marta"
+    merge, _ = prov.draft_merge("Body text.", [], thread, "end")
+    assert merge["passage"] == "She waited."
+
+    assert len(captured) == 2
+    for payload in captured:
+        assert payload["messages"][0]["role"] == "system"
+        assert payload["messages"][-1]["role"] == "user"
+        assert "STRICT JSON" in payload["messages"][-1]["content"]
+        # the thread is rendered as transcript text, not as chat turns
+        assert all(m["role"] == "system" or m is payload["messages"][-1] for m in payload["messages"])
+        assert "Bethany: Who is Marta?" in payload["messages"][-1]["content"]

@@ -304,6 +304,30 @@ def _build_develop_messages(
     return chat
 
 
+def _render_thread_transcript(
+    thread_messages: list[dict[str, Any]], max_chars: int = 60000
+) -> str:
+    """Render a develop thread as plain text for an extraction call.
+
+    Extraction calls must not hand the thread back as chat turns: a thread that
+    ends with an assistant reply makes the model continue the conversation
+    instead of answering the instruction that follows (seen live 2026-11-19 —
+    propose-bible returned prose, not JSON). One user message carrying the
+    transcript *and* the instruction keeps the instruction last.
+    """
+    lines = []
+    for msg in thread_messages:
+        role = msg.get("role", "user")
+        speaker = "Bethany" if role == "user" else "Partner"
+        text = (msg.get("text") or msg.get("content") or "").strip()
+        if text:
+            lines.append(f"{speaker}: {text}")
+    transcript = "\n\n".join(lines)
+    if len(transcript) > max_chars:
+        transcript = transcript[-max_chars:]
+    return transcript
+
+
 def develop_reply(
     piece_text: str,
     bible: list[dict[str, Any]],
@@ -387,13 +411,17 @@ def propose_bible_entries(
     system_content = (
         f"{base_prompt}\n\n"
         f"## The manuscript\n{piece_text.strip()}\n\n"
-        f"## Story bible\n{bible_text}\n\n"
+        f"## Story bible\n{bible_text}"
+    )
+    user_content = (
+        "## The conversation so far\n"
+        f"{_render_thread_transcript(thread_messages)}\n\n"
         "---\n"
-        "Now review the conversation thread and identify the facts, decisions, and character "
-        "details that were agreed upon. Return STRICT JSON with no markdown fences:\n"
+        "Identify the facts, decisions, and character details that were clearly agreed upon "
+        "in that conversation. Reply with STRICT JSON and nothing else, no markdown fences:\n"
         '{"entries":[{"kind":"character|timeline|world|decision","name":"...","detail":"..."}]}\n'
-        "Include 1 to 6 entries capturing only what was clearly settled in the thread. "
-        "If nothing was settled, return {\"entries\":[]}."
+        "Include 1 to 6 entries capturing only what was settled. "
+        "If nothing was settled, reply {\"entries\":[]}."
     )
 
     model = get_deepseek_model()
@@ -403,7 +431,10 @@ def propose_bible_entries(
         "Content-Type": "application/json",
     }
 
-    messages = _build_develop_messages(system_content, thread_messages)
+    messages = [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content},
+    ]
     payload = {
         "model": model,
         "messages": messages,
@@ -480,13 +511,18 @@ def draft_merge(
     system_content = (
         f"{base_prompt}\n\n"
         f"## The manuscript\n{piece_text.strip()}\n\n"
-        f"## Story bible\n{bible_text}\n\n"
+        f"## Story bible\n{bible_text}"
+    )
+    user_content = (
+        "## The conversation so far\n"
+        f"{_render_thread_transcript(thread_messages)}\n\n"
         "---\n"
-        "Review the conversation thread. Return STRICT JSON with no markdown fences:\n"
+        "Draft what this conversation would add to the manuscript. Reply with STRICT JSON and "
+        "nothing else, no markdown fences:\n"
         '{"bible_entries":[{"kind":"character|timeline|world|decision","name":"...","detail":"..."}],"passage":"..."}\n'
-        f"The passage (120 words max, may be empty string \"\") should be drafted to sit {position_desc}. "
-        "bible_entries should capture settled facts from the thread (may be empty list). "
-        "Return only the JSON object."
+        f"The passage (120 words max, may be the empty string \"\") must be drafted to sit {position_desc}. "
+        "bible_entries should capture settled facts from the conversation (may be an empty list). "
+        "Reply with only the JSON object."
     )
 
     model = get_deepseek_model()
@@ -496,7 +532,10 @@ def draft_merge(
         "Content-Type": "application/json",
     }
 
-    messages = _build_develop_messages(system_content, thread_messages)
+    messages = [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content},
+    ]
     payload = {
         "model": model,
         "messages": messages,

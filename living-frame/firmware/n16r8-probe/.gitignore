@@ -1,0 +1,7 @@
+.pio/
+sdkconfig.n16r8
+sdkconfig.old
+report.bin
+readback14m.bin
+pat4k.bin
+serial-probe.log

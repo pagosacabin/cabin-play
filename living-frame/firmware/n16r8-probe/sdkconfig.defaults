@@ -1,0 +1,28 @@
+# 0225: the probe's own config.  Everything here is a claim the probe has to
+# verify at runtime, not a fact taken from the listing.
+CONFIG_IDF_TARGET="esp32s3"
+
+# The listing claims 16 MB flash.  If the real part is 8 MB, esptool's flash_id
+# and esp_flash_get_size() will disagree with this and the reply says so.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# N16R8 = N(16 MB flash) R8(8 MB octal PSRAM).  Octal is the whole point: the
+# 64-colour rung needs 307,200 B of framebuffer, which internal RAM cannot hold.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=1024
+
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# Console on UART0 -> FTDI FT232R -> /dev/ttyUSB0.  USB-Serial/JTAG is left
+# alone so the console survives an esptool flash.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# The pattern test walks 8 MB twice; keep the log level quiet so the numbers
+# are not buried in component chatter.
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y

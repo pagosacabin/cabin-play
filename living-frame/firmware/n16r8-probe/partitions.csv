@@ -1,0 +1,10 @@
+# 0225 probe partition table.
+# The probe's own console is unreliable through the FT232R on this bench, so the
+# run's report is written to `report` and read back with
+#   esptool --port /dev/ttyUSB0 read_flash 0x310000 0x10000 report.bin
+# Offset is fixed here on purpose: the read-back command has to name it.
+# Name,     Type, SubType,   Offset,    Size,
+nvs,        data, nvs,       0x9000,    0x6000,
+phy_init,   data, phy,       0xf000,    0x1000,
+factory,    app,  factory,   0x10000,   0x300000,
+report,     data, 0x40,      0x310000,  0x10000,

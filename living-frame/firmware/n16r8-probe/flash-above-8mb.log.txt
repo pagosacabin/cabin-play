@@ -1,0 +1,9 @@
+pattern sha256 ad5dc1725525b3889fae9f1037ad5f9baca84655a6621fe8843cffead05b20f0
+Hash of data verified.
+
+Hard resetting via RTS pin...
+
+Hard resetting via RTS pin...
+written   ad5dc1725525b3889fae9f1037ad5f9baca84655a6621fe8843cffead05b20f0
+readback  ad5dc1725525b3889fae9f1037ad5f9baca84655a6621fe8843cffead05b20f0
+RESULT: MATCH at 0x00E00000 (14 MB)

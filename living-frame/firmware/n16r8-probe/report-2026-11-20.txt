@@ -1,0 +1,50 @@
+
+
+########## 0225 N16R8 PROBE ##########
+build: Nov 20 2026 10:20:33
+
+=== 1. SILICON ===
+CHIP: esp32-s3 cores=2 rev=v0.2 feature_bits=0x0012
+IDF: 5.5.0
+MAC: c4:9e:7e:08:6d:f4
+FLASH_BYTES: 8388608 (8 MB reported by esp_flash_get_size)
+PSRAM_INITIALIZED: yes
+PSRAM_SIZE_BYTES: 8388608
+PSRAM_HEAP_BYTES: 8388608 (largest block 8257536)
+PSRAM_MODE_SDKCONFIG: OCTAL (this build)
+PSRAM internal RAM: free 342955, largest 245760
+
+=== 2. PSRAM PATTERN TEST ===
+PATTERN_CLAIMED_BYTES: 8388608
+PATTERN_BLOCKS: 2
+  block 0: 8257536 bytes at 0x3c040998
+  block 1: 126976 bytes at 0x3c82099c
+PATTERN_TESTED_BYTES: 8384512 (8.00 MB)
+PATTERN_PASS1_MISMATCHES: 0
+PATTERN_PASS2_MISMATCHES: 0
+PATTERN_RESULT: PASS
+PATTERN_COVERAGE: tested 8384512 of 8388608 claimed bytes (100.0%)
+
+=== 3. PIN LABEL CHECK (12 wired pins) ===
+METHOD: each pin driven high+read, then low+read. PASS = pad drives and the input follows.
+PIN 4  RED0    VGA DAC red bit 0          PASS
+PIN 5  RED1    VGA DAC red bit 1          PASS
+PIN 6  GREEN0  VGA DAC green bit 0        PASS
+PIN 7  GREEN1  VGA DAC green bit 1        PASS
+PIN 15 BLUE0   VGA DAC blue bit 0         PASS
+PIN 16 BLUE1   VGA DAC blue bit 1         PASS
+PIN 17 HSYNC   VGA horizontal sync        PASS
+PIN 18 VSYNC   VGA vertical sync          PASS
+PIN 12 SD_SCK  SD SPI clock               PASS
+PIN 11 SD_MOSI SD SPI MOSI                PASS
+PIN 13 SD_MISO SD SPI MISO                PASS
+PIN 10 SD_CS   SD SPI chip select         PASS
+PIN_DISCREPANCIES: none found
+
+=== 4. SD CARD (READ-ONLY) ===
+METHOD: SPI on SCK=12 MOSI=11 MISO=13 CS=10, raw sdmmc_read_sectors. No mount, no format, no writes.
+SD_CARD_DETECT: GPIO14=1 (high (no CD switch, or no card))
+SD_CARD_INIT: first attempt (default clock) failed: ESP_ERR_NOT_SUPPORTED
+SD_RESULT: FAIL card_init=ESP_ERR_NOT_SUPPORTED at 400 kHz too (card absent, not seated, or not answering CMD0/CMD8)
+
+########## PROBE COMPLETE ##########

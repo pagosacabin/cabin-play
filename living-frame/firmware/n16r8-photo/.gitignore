@@ -1,0 +1,5 @@
+.pio/
+sdkconfig.n16r8-photo
+sdkconfig.old
+report.bin
+src/photo64_640x480.bin

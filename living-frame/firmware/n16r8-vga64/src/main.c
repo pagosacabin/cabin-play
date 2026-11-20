@@ -286,8 +286,19 @@ void app_main(void)
     app_logf("sync pins  : hsync GPIO17, vsync GPIO18, both active-low\n");
     app_logf("data pins  : bit0=R_LSB/5 bit1=R_MSB/4 bit2=G_LSB/7 bit3=G_MSB/6 "
              "bit4=B_LSB/16 bit5=B_MSB/15 (bits 6-7, pclk, de unrouted)\n");
-    app_logf("dac bytes  : level bytes 0x%02x,0x%02x,0x%02x,0x%02x (channel at 0..3)\n",
+    /* Expected DAC byte per ramp step, per channel.  The card is judged by eye,
+     * but these are the numbers to compare it against, which is what turns a
+     * swapped channel or a swapped MSB/LSB into a checkable claim rather than a
+     * memory of what the screen looked like (peer review, finding 4). */
+    app_logf("ramp R     : expected DAC bytes 0x%02x 0x%02x 0x%02x 0x%02x\n",
              dac(0,0,0), dac(1,0,0), dac(2,0,0), dac(3,0,0));
+    app_logf("ramp G     : expected DAC bytes 0x%02x 0x%02x 0x%02x 0x%02x\n",
+             dac(0,0,0), dac(0,1,0), dac(0,2,0), dac(0,3,0));
+    app_logf("ramp B     : expected DAC bytes 0x%02x 0x%02x 0x%02x 0x%02x\n",
+             dac(0,0,0), dac(0,0,1), dac(0,0,2), dac(0,0,3));
+    app_logf("grid index : r + 4g + 16b, cell (r,g,b) = DAC byte (b<<4)|(g<<2)|r\n");
+    app_logf("checker    : 1px alternation 0x%02x/0x%02x, 120x120 canvas pixels\n",
+             dac(0,0,0), dac(3,3,3));
 
     draw_test_card();
     app_logf("test card  : R/G/B ramps + 64-colour grid + 1px checker + 1x text drawn\n");
@@ -301,6 +312,10 @@ void app_main(void)
     }
     app_logf("panel      : streaming (no_fb, %d-line bounce buffers, %d B each)\n",
              BB_LINES, BB_PX);
+    app_logf("isr note   : the bounce-empty ISR memcpy's straight out of PSRAM, so the\n"
+             "             data cache must stay enabled and the ISR must not touch flash;\n"
+             "             the first symptom of that breaking is a bounce underrun or\n"
+             "             horizontal corruption, not a wrong size (peer review, finding 3)\n");
     write_report();
 
     /* Measure what the driver is actually doing for 6 s, then report once. */

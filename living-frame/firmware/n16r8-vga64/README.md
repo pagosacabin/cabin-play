@@ -56,6 +56,23 @@ in code (task constraint).
 | Bounce fills | 10,714 in the same window → **30.0 per frame**, matching 480 lines / 16-line buffer |
 | Sync | hsync GPIO17, vsync GPIO18, active-low |
 
+### What the card should look like, in numbers
+
+The card asserts nothing by itself — Stephen judges it by eye — but these are the
+DAC bytes behind each element, so a swap can be stated as a comparison rather
+than a memory of the screen (the firmware logs the same lines):
+
+| Element | Expected DAC bytes |
+| --- | --- |
+| Red ramp, steps 0-3 | `0x00 0x01 0x02 0x03` |
+| Green ramp, steps 0-3 | `0x00 0x04 0x08 0x0c` |
+| Blue ramp, steps 0-3 | `0x00 0x10 0x20 0x30` |
+| 64-colour grid cell (r,g,b) | `(b<<4) | (g<<2) | r` at index `r + 4g + 16b` |
+| 1-pixel checker | alternation `0x00` / `0x3f`, 120x120 canvas pixels |
+
+A channel swap shows as the wrong bar lighting up; an MSB/LSB swap inside a
+channel shows as non-monotonic steps (e.g. `0x00 0x02 0x01 0x03` on red).
+
 The measured figures come from the driver's own vsync and bounce-empty callbacks,
 so they are independent of what the configuration says: the LCD_CAM really is
 scanning 30 bounce buffers per frame at 59.5 Hz, with the framebuffer being read
@@ -74,6 +91,25 @@ The flash read-back exists because the FT232R bridge on this bench delivers no
 usable console (0225 finding): with the app running, `read()` returns a fixed
 `00 80 78` cycle at every baud while esptool still talks to the chip in both
 directions. The report partition at `0x310000` is the authoritative log.
+
+## Peer review (Copilot, 2026-11-20, reviewed at f7600a8)
+
+Five findings, none blocking:
+
+1. **1:1 raster path** (Low) — no doubling, upscaling or line-skip anywhere:
+   `bounce_fill()` is a plain `memcpy` from the 307,200 B framebuffer.
+2. **DAC packing / GPIO order** (Low) — matches the agreed map exactly.
+3. **PSRAM read inside the bounce ISR** (Medium) — plausible but not formally
+   proven safe: it relies on the data cache being enabled and `memcpy` being
+   ISR-safe for cached PSRAM. Accepted and now stated in the firmware output and
+   here; the failure symptom would be a bounce underrun or horizontal
+   corruption, not a wrong size. The measured 30.0 fills/frame at 59.5 Hz is the
+   evidence it is currently holding.
+4. **Swap detection** (Medium) — the card catches direct pin swaps and gross
+   misrouting, but it is a visual judgement, not a machine assertion. Accepted:
+   the expected DAC bytes are now logged (table above) and the reply says plainly
+   that the panel is Stephen's to judge.
+5. **Canvas→raster mapping** (Low) — correct 90° clockwise.
 
 ## Files
 

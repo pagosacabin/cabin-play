@@ -1,16 +1,24 @@
 
 
 ########## 0226 64-COLOUR PORT (N16R8) ##########
-build: Nov 20 2026 10:32:35
+build: Nov 20 2026 10:35:45
 resolution : 640x480 native, 1 fb pixel = 1 DAC byte = 1 output pixel
 colour     : 8 bpp = 64 colours (RGB222 through the 6-bit DAC)
 framebuffer: 0x3c030998, 307200 B, in PSRAM (integrity ok)
 timing     : pclk 25000000 Hz, h 96+48+640+16, v 2+33+480+10 -> 59.52 Hz (configured)
 sync pins  : hsync GPIO17, vsync GPIO18, both active-low
 data pins  : bit0=R_LSB/5 bit1=R_MSB/4 bit2=G_LSB/7 bit3=G_MSB/6 bit4=B_LSB/16 bit5=B_MSB/15 (bits 6-7, pclk, de unrouted)
-dac bytes  : level bytes 0x00,0x01,0x02,0x03 (channel at 0..3)
+ramp R     : expected DAC bytes 0x00 0x01 0x02 0x03
+ramp G     : expected DAC bytes 0x00 0x04 0x08 0x0c
+ramp B     : expected DAC bytes 0x00 0x10 0x20 0x30
+grid index : r + 4g + 16b, cell (r,g,b) = DAC byte (b<<4)|(g<<2)|r
+checker    : 1px alternation 0x00/0x3f, 120x120 canvas pixels
 test card  : R/G/B ramps + 64-colour grid + 1px checker + 1x text drawn
 panel      : streaming (no_fb, 16-line bounce buffers, 10240 B each)
-measured   : 357 vsync in 5.999 s -> 59.51 Hz refresh
-fills      : 10714 bounce fills in the same window -> 30.0 per frame
+isr note   : the bounce-empty ISR memcpy's straight out of PSRAM, so the
+             data cache must stay enabled and the ISR must not touch flash;
+             the first symptom of that breaking is a bounce underrun or
+             horizontal corruption, not a wrong size (peer review, finding 3)
+measured   : 357 vsync in 5.998 s -> 59.52 Hz refresh
+fills      : 10712 bounce fills in the same window -> 30.0 per frame
 expected   : 30.0 fills/frame (480 lines / 16-line bounce buffer)

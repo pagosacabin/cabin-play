@@ -1,0 +1,4 @@
+.pio/
+sdkconfig.n16r8-vga64
+sdkconfig.old
+report.bin

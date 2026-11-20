@@ -63,8 +63,12 @@ def stats(bin_path, rmask):
     nn = sum(pad[1 + dy:1 + dy + LH, 1 + dx:1 + dx + LW]
              for dy in (-1, 0, 1) for dx in (-1, 0, 1) if (dy, dx) != (0, 0))
     nn_region = nn[rmask][nz]
-    isolated = 100.0 * float((nn_region <= 1).mean()) if nn_region.size else 0.0
-    return cover, mean_dac, isolated, float(nn_region.mean()) if nn_region.size else 0.0
+    # Two different things, and conflating them was a fair review finding:
+    #   alone%  == pixels with NO non-black neighbour (a true isolated speck)
+    #   sparse% == pixels with 0 or 1 non-black neighbours (any thin scatter)
+    alone = 100.0 * float((nn_region == 0).mean()) if nn_region.size else 0.0
+    sparse = 100.0 * float((nn_region <= 1).mean()) if nn_region.size else 0.0
+    return cover, mean_dac, alone, sparse, float(nn_region.mean()) if nn_region.size else 0.0
 
 
 def main():
@@ -78,11 +82,11 @@ def main():
     print(f"dark region   : darkest quartile by linear luminance "
           f"(threshold {np.quantile(lum, 0.25):.4f}), {int(mask.sum())} of {PW * PH} canvas px")
     print()
-    print(f"{'rendering':<26} {'cover%':>8} {'meanDAC':>8} {'isolated%':>10} {'meanNN':>7}")
+    print(f"{'rendering':<26} {'cover%':>8} {'meanDAC':>8} {'alone%':>8} {'sparse%':>8} {'meanNN':>7}")
     for b in bins:
         label = b.split("/")[-1]
-        c, m, iso, nn = stats(b, rmask)
-        print(f"{label:<26} {c:8.2f} {m:8.2f} {iso:10.1f} {nn:7.2f}")
+        c, m, alone, sparse, nn = stats(b, rmask)
+        print(f"{label:<26} {c:8.2f} {m:8.2f} {alone:8.1f} {sparse:8.1f} {nn:7.2f}")
     return 0
 
 

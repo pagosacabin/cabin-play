@@ -5,7 +5,16 @@ LCD_CAM path, native 640x480, 8 bpp RGB222, framebuffer in PSRAM, 16-line bounce
 buffers, nothing doubled) with the test card replaced by a dithered photo that
 ships inside the app image.
 
-## Source photograph
+## Source photographs
+
+**0228 onward (on the panel now): `data/hummingbird.jpg`** — *Antillean crested
+hummingbird feeding* by Charles J. Sharp, CC BY 3.0, Wikimedia Commons; 1280x931
+thumbnail of the 1846x1343 original, attribution in `data/ATTRIBUTION.md`. Swapped
+in at Stephen's request after the lorikeet judged badly: bright subject, warm bokeh
+instead of large black fields, smooth out-of-focus gradients. The lorikeet remains
+below as the 0227 record and as the image that produced the starfield diagnosis.
+
+## 0227's source (historical)
 
 `living-frame/firmware/photo-display-s3/data/parrot.jpg` — 640x480, the
 **LORIKEET** test image (`IMG16_LORIKEET` in 0180, `IMG_LORIKEET` in 0179, and
@@ -54,15 +63,28 @@ selects it; `--space linear` still reproduces 0227's bytes exactly
 Shadow coverage, over the darkest quartile of source-luminance pixels (76,816 of
 307,200 canvas px, `tools/shadow_coverage.py`):
 
-| Rendering | cover% | mean DAC byte | isolated dots | mean non-black neighbours |
-| --- | --- | --- | --- | --- |
-| 0227 linear | **1.47** | 0.06 | 98.9% | 0.16 |
-| 0228 gamma | **21.36** | 1.28 | 49.8% | 1.56 |
+Lorikeet (0227's image), darkest quartile threshold 0.0073:
 
-Dark-region dot coverage rises **14.5x** (1.47% -> 21.36%) and the share of
-isolated specks halves (98.9% -> 49.8%): the starfield signature the photos showed
-is exactly what these numbers describe. Dithering in gamma space also reduces
-pure-black pixels overall from 155,515 to 93,299.
+| Rendering | cover% | mean DAC byte | alone (0 nbrs) | sparse (<=1 nbr) | mean non-black neighbours |
+| --- | --- | --- | --- | --- | --- |
+| linear | **1.47** | 0.06 | 98.4% | 98.9% | 0.16 |
+| gamma | **21.36** | 1.28 | 47.0% | 49.8% | 1.56 |
+
+Hummingbird (the image now on the panel), darkest quartile threshold 0.1642 —
+note the threshold: this image has no deep blacks at all, so its "dark" quartile is
+out-of-focus bokeh, which is exactly why it does not starfield:
+
+| Rendering | cover% | mean DAC byte | alone (0 nbrs) | sparse (<=1 nbr) | mean non-black neighbours |
+| --- | --- | --- | --- | --- | --- |
+| linear | **49.40** | 2.51 | 0.8% | 2.9% | 5.29 |
+| gamma | **71.79** | 6.23 | 0.3% | 0.6% | 6.98 |
+
+On the lorikeet, dark-region dot coverage rises **14.5x** (1.47% -> 21.36%) and
+the share of isolated specks halves (98.9% -> 49.8%) — the starfield signature the
+photos showed. On the hummingbird the same change still helps (49.4% -> 71.8%
+coverage, isolated specks 0.8% -> 0.3%) but from a base that was never starving,
+because the image has no large black fields. Worth stating plainly: **the picture
+choice moved that number further than the dither space did.**
 
 Whether that reads as better on the panel is Stephen's call — the diagnosis is a
 hypothesis until he says so.
@@ -75,7 +97,7 @@ hypothesis until he says so.
 | Colours | 64 (RGB222), Floyd–Steinberg, 47 of the 64 DAC bytes used |
 | Framebuffer | **307,200 B in PSRAM** at `0x3c090998`, heap integrity ok |
 | Embedded image | 307,200 B, `0x3c0381b4` in the app image |
-| **SHA-256 check** | 0228 (gamma) runtime `f8dded81…97d9c` **==** tool hash → **MATCH**, unchanged after 6.0 s of streaming (0227's linear run was `5ee7c64e…16cd335`) |
+| **SHA-256 check** | 0228 (gamma, hummingbird) runtime `5454395c…9196f` **==** tool hash → **MATCH**, unchanged after 6.0 s of streaming (lorikeet linear was `5ee7c64e…16cd335`, lorikeet gamma `f8dded81…97d9c`) |
 | Output | 640x480 native, 1 fb pixel = 1 DAC byte = 1 output pixel |
 | Timing | 25 MHz pclk, h 96+48+640+16, v 2+33+480+10 → 59.52 Hz configured |
 | Measured | **357 vsync in 5.998 s → 59.52 Hz**; 10,713 fills → **30.0 per frame** |

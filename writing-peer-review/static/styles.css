@@ -551,6 +551,13 @@ main {
   color: var(--color-accent);
 }
 
+/* The built-in Example Story: marked, never deletable. */
+.badge-example {
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-ink-mid);
+}
+
 /* ── 8. CARD — single shared treatment ───────────────────────── */
 .card {
   background-color: var(--color-surface);
@@ -1265,6 +1272,15 @@ select:focus,
   font-size: var(--text-sm);
   color: var(--color-ink-mid);
   margin-bottom: var(--sp-6);
+}
+
+/* App version line — quiet, always visible at the foot of Settings. */
+.settings-version {
+  margin-top: var(--sp-6);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  color: var(--color-ink-mid);
 }
 
 .settings-notice {

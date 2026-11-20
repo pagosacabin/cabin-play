@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.config import DEFAULT_DISPLAY_NAME, STATIC_DIR, get_db_path
+from app.config import APP_VERSION, DEFAULT_DISPLAY_NAME, STATIC_DIR, get_db_path
 from app.db import get_connection, get_setting, init_db, set_setting
 from app.export import (
     render_piece_markdown,
@@ -141,6 +141,7 @@ def create_app() -> FastAPI:
         return {
             "peak": status_info,
             "display_name": display_name,
+            "version": APP_VERSION,
         }
 
     @app.get("/api/exercises")
@@ -211,6 +212,7 @@ def create_app() -> FastAPI:
             cur = conn.execute(
                 """
                 SELECT p.id, p.title, p.body, p.exercise_id, p.created_at, p.updated_at,
+                       p.is_fixture,
                        COUNT(r.id) AS review_count
                 FROM pieces p
                 LEFT JOIN reviews r ON r.piece_id = p.id
@@ -229,6 +231,7 @@ def create_app() -> FastAPI:
                         "updated_at": row["updated_at"],
                         "word_count": len(body_text.split()) if body_text else 0,
                         "review_count": row["review_count"],
+                        "is_fixture": bool(row["is_fixture"]),
                     }
                 )
             return {"pieces": pieces}
@@ -308,6 +311,19 @@ def create_app() -> FastAPI:
     def delete_piece(piece_id: int, request: Request):
         conn = get_connection(request.app.state.db_path)
         try:
+            # Fixtures are part of the app, not the writer's archive: the Example
+            # Story is refused here, server-side, so hiding the button is not the
+            # only thing standing between it and a stray request.
+            row = conn.execute(
+                "SELECT is_fixture FROM pieces WHERE id = ?;", (piece_id,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Piece not found")
+            if row["is_fixture"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail="This piece is part of the app and can't be deleted.",
+                )
             with conn:
                 cur = conn.execute(
                     "DELETE FROM pieces WHERE id = ?;",
@@ -500,7 +516,7 @@ def create_app() -> FastAPI:
         display_name = get_setting(
             "display_name", DEFAULT_DISPLAY_NAME, request.app.state.db_path
         )
-        return {"display_name": display_name}
+        return {"display_name": display_name, "version": APP_VERSION}
 
     @app.put("/api/settings")
     def update_settings_endpoint(payload: SettingsRequest, request: Request):

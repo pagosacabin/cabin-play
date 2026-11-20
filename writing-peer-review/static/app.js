@@ -87,6 +87,7 @@
     reviews: [],
     portfolioPieces: [], // ordered list of piece objects for portfolio view
     displayName: 'Bethany',
+    appVersion: '',
     autosaveTimer: null,
     isSaving: false,
     lastSavedContent: { title: '', body: '' },
@@ -135,7 +136,14 @@
     displayNameInput: document.getElementById('settings-display-name'),
     saveSettingsBtn: document.getElementById('save-settings-btn'),
     settingsFeedback: document.getElementById('settings-feedback'),
+    appVersionEl: document.getElementById('app-version'),
   };
+
+  function showVersion(version) {
+    if (!version) return;
+    state.appVersion = version;
+    if (el.appVersionEl) el.appVersionEl.textContent = version;
+  }
 
   // --- SERVICE WORKER REGISTRATION ---
   if ('serviceWorker' in navigator) {
@@ -176,6 +184,7 @@
       if (!res.ok) return;
       const data = await res.json();
       state.displayName = data.display_name || 'Bethany';
+      showVersion(data.version);
 
       const peak = data.peak;
       if (peak) {
@@ -752,9 +761,13 @@
             <span class="badge ${p.review_count > 0 ? 'badge-accent' : ''}">
               ${p.review_count} ${p.review_count === 1 ? 'review' : 'reviews'}
             </span>
+            ${p.is_fixture ? `
+            <span class="badge badge-example" title="This piece is part of the app and stays">Example</span>
+            ` : `
             <button class="btn btn-subtle piece-delete-btn" data-id="${p.id}" title="Delete piece" aria-label="Delete piece">
               Delete
             </button>
+            `}
           </div>
         </div>
       `;
@@ -810,7 +823,13 @@
         }
         renderHistory();
       } else {
-        alert('Failed to delete piece.');
+        let message = 'Failed to delete piece.';
+        try {
+          const data = await res.json();
+          if (data && data.detail) message = data.detail;
+        } catch (e) { /* keep the plain fallback */ }
+        alert(message);
+        loadHistory();
       }
     } catch (e) {
       console.error(e);
@@ -1009,6 +1028,7 @@
       if (res.ok) {
         const data = await res.json();
         state.displayName = data.display_name || 'Bethany';
+        showVersion(data.version);
         el.displayNameInput.value = state.displayName;
       }
     } catch (e) {

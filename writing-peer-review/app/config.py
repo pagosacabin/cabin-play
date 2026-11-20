@@ -10,6 +10,11 @@ DEFAULT_DISPLAY_NAME = "Bethany"
 DEVELOP_PROMPT_PATH = BASE_DIR / "develop_prompt.md"
 STUCK_PROMPT_PATH = BASE_DIR / "stuck_prompt.md"
 
+# The one place the app's version lives. Shown in Settings and reported by
+# /api/status, /api/settings. Bump it in the same commit as the service-worker
+# cache version (static/sw.js) so the two never drift apart.
+APP_VERSION = "1.1.0"
+
 
 def load_env_file(env_path: Path) -> dict[str, str]:
     """Parse a simple .env file without external dependencies."""

@@ -631,8 +631,8 @@ def test_13_concurrent_posts_do_not_interleave(client: TestClient, monkeypatch):
 # 14. The service worker cache is versioned, so an installed PWA adopts the new shell
 def test_14_service_worker_cache_version_bumped(client: TestClient):
     sw = client.get("/sw.js").text
-    assert "writing-peer-review-v6" in sw
-    assert "writing-peer-review-v5" not in sw
+    assert "writing-peer-review-v7" in sw
+    assert "writing-peer-review-v6" not in sw
     assert "/static/app.js" in sw
 
 
@@ -1228,10 +1228,10 @@ def test_23_stuck_cap_and_old_rows(client: TestClient, monkeypatch):
 
 
 # 24. Service worker cache version is now v6
-def test_24_service_worker_cache_version_v6(client: TestClient):
+def test_24_service_worker_cache_version_v7(client: TestClient):
     sw = client.get("/sw.js").text
-    assert "writing-peer-review-v6" in sw
-    assert "writing-peer-review-v5" not in sw
+    assert "writing-peer-review-v7" in sw
+    assert "writing-peer-review-v6" not in sw
 
 
 # 25. Extraction calls (propose-bible / merge-preview) must end on the
@@ -1293,3 +1293,186 @@ def test_25_extraction_calls_put_instruction_last(monkeypatch):
         # the thread is rendered as transcript text, not as chat turns
         assert all(m["role"] == "system" or m is payload["messages"][-1] for m in payload["messages"])
         assert "Bethany: Who is Marta?" in payload["messages"][-1]["content"]
+
+
+# 26. The app reports one version string, from one place, everywhere it is used.
+def test_26_version_shown_and_reported(client: TestClient):
+    from app.config import APP_VERSION
+
+    # A real version number, not a placeholder.
+    assert APP_VERSION.count(".") == 2
+    assert all(part.isdigit() for part in APP_VERSION.split("."))
+
+    assert client.get("/api/status").json()["version"] == APP_VERSION
+    assert client.get("/api/settings").json()["version"] == APP_VERSION
+
+    html = client.get("/").text
+    assert 'id="app-version"' in html
+    assert "Version" in html
+
+    js = client.get("/static/app.js").text
+    # The settings view fills the line from the API, and the header poll keeps it current.
+    assert "appVersionEl.textContent = version" in js
+    assert js.count("showVersion(data.version)") >= 2
+
+
+# 27. The Example Story is a complete showcase: writing, a review, bible entries
+#     and a Develop thread — all present without anyone opening the app first.
+def test_27_example_story_is_a_complete_fixture(client: TestClient):
+    pieces = client.get("/api/pieces").json()["pieces"]
+    examples = [p for p in pieces if p.get("is_fixture")]
+    assert len(examples) == 1, pieces
+
+    ex = examples[0]
+    assert ex["title"] == "Example Story"
+
+    detail = client.get(f"/api/pieces/{ex['id']}").json()
+    body = detail["piece"]["body"]
+    assert "Marta" in body and "Elias" in body
+    assert len(body.split()) >= 50
+
+    assert len(detail["reviews"]) >= 1
+    review = detail["reviews"][0]["body"]
+    for heading in (
+        "## What worked",
+        "## Craft points",
+        "## A question for you",
+        "## Follow-up exercise",
+        "## Voice check",
+    ):
+        assert heading in review
+
+    bible = client.get(f"/api/pieces/{ex['id']}/bible").json()["entries"]
+    kinds = {entry["kind"] for entry in bible}
+    assert {"character", "decision"} <= kinds
+    names = {entry["name"] for entry in bible}
+    assert {"Marta", "Elias"} <= names
+
+    threads = client.get(f"/api/pieces/{ex['id']}/develop/threads").json()["threads"]
+    assert len(threads) >= 1
+    thread_detail = client.get(f"/api/develop/threads/{threads[0]['id']}").json()
+    roles = [m["role"] for m in thread_detail["messages"]]
+    assert roles.count("user") >= 1 and roles.count("assistant") >= 1
+
+
+# 28. Delete protection is server-side: the endpoint refuses the fixture even when
+#     a client ignores the hidden button, and leaves every part of it intact.
+def test_28_example_story_delete_refused_server_side(client: TestClient):
+    from app.db import get_connection
+
+    ex = next(
+        p for p in client.get("/api/pieces").json()["pieces"] if p.get("is_fixture")
+    )
+
+    refused = client.delete(f"/api/pieces/{ex['id']}")
+    assert refused.status_code == 403
+    assert "can't be deleted" in refused.json()["detail"]
+
+    # Still there, with its review, bible and thread untouched.
+    still = client.get(f"/api/pieces/{ex['id']}")
+    assert still.status_code == 200
+    assert len(still.json()["reviews"]) >= 1
+    assert len(client.get(f"/api/pieces/{ex['id']}/bible").json()["entries"]) >= 1
+
+    # Every other piece stays deletable, as today.
+    ordinary = client.post(
+        "/api/pieces", json={"title": "Delete Me", "body": "A throwaway draft."}
+    ).json()["piece"]
+    assert client.delete(f"/api/pieces/{ordinary['id']}").status_code == 200
+    assert client.get(f"/api/pieces/{ordinary['id']}").status_code == 404
+
+    # And the refusal did not quietly drop the row.
+    conn = get_connection(client.app.state.db_path)
+    try:
+        row = conn.execute(
+            "SELECT id, is_fixture FROM pieces WHERE id = ?;", (ex["id"],)
+        ).fetchone()
+        assert row is not None and row["is_fixture"] == 1
+    finally:
+        conn.close()
+
+
+# 29. A restart (or a deploy) re-runs init_db: the fixture must be repaired, not
+#     duplicated, and nothing about it may change on a second pass.
+def test_29_example_story_survives_reinit(client: TestClient):
+    before_pieces = client.get("/api/pieces").json()["pieces"]
+    ex_before = next(p for p in before_pieces if p.get("is_fixture"))
+    bible_before = len(client.get(f"/api/pieces/{ex_before['id']}/bible").json()["entries"])
+    threads_before = len(
+        client.get(f"/api/pieces/{ex_before['id']}/develop/threads").json()["threads"]
+    )
+    reviews_before = len(client.get(f"/api/pieces/{ex_before['id']}").json()["reviews"])
+
+    app2 = create_app()
+    with TestClient(app2) as client2:
+        after_pieces = client2.get("/api/pieces").json()["pieces"]
+        examples = [p for p in after_pieces if p.get("is_fixture")]
+        assert len(examples) == 1
+        assert examples[0]["id"] == ex_before["id"]
+        assert examples[0]["title"] == "Example Story"
+        assert len(after_pieces) == len(before_pieces)
+
+        after_detail = client2.get(f"/api/pieces/{ex_before['id']}").json()
+        assert len(after_detail["reviews"]) == reviews_before
+        assert len(
+            client2.get(f"/api/pieces/{ex_before['id']}/bible").json()["entries"]
+        ) == bible_before
+        assert len(
+            client2.get(f"/api/pieces/{ex_before['id']}/develop/threads").json()["threads"]
+        ) == threads_before
+
+
+# 30. An older database arrives with no fixture flag and a live "0223 E2E" project:
+#     init_db adds the column and adopts that piece instead of creating a second one.
+def test_30_legacy_database_is_migrated_and_adopted(temp_db, tmp_path):
+    import sqlite3
+
+    legacy = tmp_path / "legacy.db"
+    conn = sqlite3.connect(str(legacy))
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE pieces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                exercise_id INTEGER NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO pieces (title, body, created_at, updated_at)
+            VALUES ('0223 E2E', 'Marta kept the lighthouse ledger in a tin box.', '2026-11-19', '2026-11-19');
+            INSERT INTO pieces (title, body, created_at, updated_at)
+            VALUES ('First piece', 'Her own writing.', '2026-11-18', '2026-11-18');
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    from app.db import init_db, get_connection
+
+    init_db(legacy)
+
+    conn = get_connection(legacy)
+    try:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(pieces);")}
+        assert "is_fixture" in columns
+
+        fixtures = conn.execute(
+            "SELECT id, title, body FROM pieces WHERE is_fixture = 1;"
+        ).fetchall()
+        assert len(fixtures) == 1
+        assert fixtures[0]["title"] == "Example Story"
+        # The adopted piece keeps its own words.
+        assert fixtures[0]["body"].startswith("Marta kept the lighthouse ledger")
+
+        total = conn.execute("SELECT COUNT(*) AS cnt FROM pieces;").fetchone()["cnt"]
+        assert total == 2
+
+        first = conn.execute(
+            "SELECT is_fixture FROM pieces WHERE title = 'First piece';"
+        ).fetchone()
+        assert first["is_fixture"] == 0
+    finally:
+        conn.close()

@@ -1,9 +1,11 @@
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from app.config import DEFAULT_DISPLAY_NAME, get_db_path
 from app.exercises import SEED_EXERCISES
+from app.example_story import ensure_example_story
 
 
 def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
@@ -41,6 +43,7 @@ def init_db(db_path: Path | str | None = None) -> None:
                     exercise_id INTEGER NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    is_fixture INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE SET NULL
                 );
 
@@ -119,6 +122,15 @@ def init_db(db_path: Path | str | None = None) -> None:
                 (DEFAULT_DISPLAY_NAME,),
             )
 
+            # Older databases predate the fixture flag: add it without touching rows.
+            piece_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(pieces);")
+            }
+            if "is_fixture" not in piece_columns:
+                conn.execute(
+                    "ALTER TABLE pieces ADD COLUMN is_fixture INTEGER NOT NULL DEFAULT 0;"
+                )
+
             # Seed exercises if empty
             cursor = conn.execute("SELECT COUNT(*) AS count FROM exercises;")
             row = cursor.fetchone()
@@ -130,6 +142,10 @@ def init_db(db_path: Path | str | None = None) -> None:
                     """,
                     SEED_EXERCISES,
                 )
+
+            # The built-in Example Story is a fixture of every database, so a
+            # restart, a fresh install or a deploy always has it to show off.
+            ensure_example_story(conn, datetime.now(timezone.utc).isoformat())
     finally:
         conn.close()
 

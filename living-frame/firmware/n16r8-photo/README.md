@@ -21,9 +21,11 @@ meant the globe instead, it is a one-argument change:
    so the framing is comparable to what Stephen already judged
 2. sRGB -> linear light (2.2), because dithering in code space speckles shadows
    (0177 round-2 finding)
-3. **Floyd–Steinberg error diffusion** in linear light over the 64 RGB222 colours,
-   distance weighted by luminance (0.2126/0.7152/0.0722) so luminance errors beat
-   chroma errors
+3. **Floyd–Steinberg error diffusion** in linear light over the 64 RGB222 colours.
+   The nearest-colour test is squared error in linear RGB weighted by the
+   luminance coefficients (0.2126/0.7152/0.0722) — a heuristic that favours
+   luminance accuracy, not a perceptual luminance/chroma metric (peer review was
+   right to pin that wording down)
 4. pack each pixel as the board's DAC byte, `(b<<4)|(g<<2)|r`, 2-bit fields in
    (MSB,LSB) order — the same packing 0226's `dac()` uses
 5. rotate the portrait canvas into the landscape raster **90° counter-clockwise**,
@@ -43,16 +45,18 @@ rotated back to the portrait Stephen should see.
 | Colours | 64 (RGB222), Floyd–Steinberg, 47 of the 64 DAC bytes used |
 | Framebuffer | **307,200 B in PSRAM** at `0x3c090998`, heap integrity ok |
 | Embedded image | 307,200 B, `0x3c0381b4` in the app image |
-| **SHA-256 check** | runtime `5ee7c64e…16cd335` **==** tool `5ee7c64e…16cd335` → **MATCH** |
+| **SHA-256 check** | runtime `5ee7c64e…16cd335` **==** tool `5ee7c64e…16cd335` → **MATCH**, and still unchanged after 6.0 s of streaming |
 | Output | 640x480 native, 1 fb pixel = 1 DAC byte = 1 output pixel |
 | Timing | 25 MHz pclk, h 96+48+640+16, v 2+33+480+10 → 59.52 Hz configured |
 | Measured | **357 vsync in 5.998 s → 59.52 Hz**; 10,713 fills → **30.0 per frame** |
 | Rotation | 90° counter-clockwise (180° from the 0226 test card) |
 
-The SHA-256 comparison is the point of the check: the app hashes the framebuffer
-it actually streams and compares it with the converter's own hash, so "the panel
-is showing the converted photograph" is measured rather than assumed. Whether it
-looks good is Stephen's call, as with 0180/0226.
+What the SHA-256 comparison proves, precisely: the bytes the app holds and streams
+match the converter's output, and they still match after 6 s of continuous
+scanout, so nothing wrote into the framebuffer while the DMA was reading it. It
+does **not** measure the electrical DAC output, and it cannot detect a fault after
+the check — so "the panel is showing this photograph" rests on the hash plus the
+vsync/fill counters, and on Stephen's eyes for the picture itself.
 
 ## Rebuild
 
@@ -67,6 +71,24 @@ esptool --port /dev/ttyUSB0 --baud 460800 read_flash 0x310000 0x10000 report.bin
 The report partition exists because the FT232R console on this bench delivers no
 usable output (0225 finding); the read-back is the authoritative log, as 0225/0226
 established and 0227's Proof section allows.
+
+## Peer review (Copilot, 2026-11-20, reviewed at 39283d0)
+
+Five findings, one Medium:
+
+1. **Rotation / previews** (Low) — the counter-clockwise mapping is 180° opposite
+   0226's clockwise card, and the previews match what is scanned out.
+2. **Floyd–Steinberg + RGB222** (Low) — weights (7/16, 3/16, 5/16, 1/16) and the
+   four-level candidates are correct; the distance is luminance-weighted squared
+   error in linear RGB, a heuristic rather than a perceptual metric. README
+   wording corrected.
+3. **DAC packing** (Low) — tool and firmware agree with the agreed pin map.
+4. **Runtime SHA-256** (Medium) — proves the copy matches the converter and is not
+   disturbed during scanout; it does not prove electrical output. Accepted: the
+   firmware now re-hashes after the 6 s window (`unchanged`), and the README says
+   exactly what the hash does and does not cover.
+5. **Const image + PSRAM copy** (Low) — fits the 3 MB app partition, no extra
+   writable RAM.
 
 ## Files
 

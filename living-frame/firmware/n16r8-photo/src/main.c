@@ -223,6 +223,15 @@ void app_main(void)
     app_logf("fills      : %u bounce fills -> %.1f per frame (expected %.1f)\n",
              (unsigned)df, dv ? (double)df / (double)dv : 0.0,
              (double)OUT_H / (double)BB_LINES);
+    /* Re-hash after the scanout window: the first hash only proves the copy the
+     * app made.  If anything wrote to the framebuffer while the DMA was reading
+     * it, this catches it (peer review, finding 4). */
+    char post_sha[65];
+    sha256_hex(s_fb, FB_BYTES, post_sha);
+    app_logf("sha256     : after %.1f s streaming: %s\n", (double)dt / 1e6,
+             strcmp(post_sha, PHOTO64_SHA256) == 0
+                 ? "unchanged (framebuffer not disturbed during scanout)"
+                 : "CHANGED - something wrote to the framebuffer during scanout");
     write_report();
     app_logf("held       : the photograph stays on screen\n");
 

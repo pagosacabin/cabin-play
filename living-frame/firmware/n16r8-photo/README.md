@@ -37,6 +37,36 @@ The tool writes `src/photo64_data.h` (the array the firmware embeds),
 `*-raster.png` is exactly what the panel receives, `*-as-seen.png` is that
 rotated back to the portrait Stephen should see.
 
+## 0228 — gamma-space dither test (ONE variable)
+
+Stephen's verdict on 0227 was "it's still pixelated", and his close-ups showed why:
+in dark areas the colour was built from rare isolated single pixels. At 2 bits per
+channel the first step above black is 1/3 of full scale, and 0227 dithered in
+**linear light**, which makes those steps perceptually even coarser and starves the
+shadows.
+
+0228 changes exactly one thing: the dithering working space, linear -> **gamma
+(sRGB code) space**. Same source, same cover-crop, same rotation, same orientation,
+same pins, same timings, same firmware path. `tools/convert_photo64.py --space`
+selects it; `--space linear` still reproduces 0227's bytes exactly
+(sha256 `5ee7c64e…16cd335`), which is the check that nothing else moved.
+
+Shadow coverage, over the darkest quartile of source-luminance pixels (76,816 of
+307,200 canvas px, `tools/shadow_coverage.py`):
+
+| Rendering | cover% | mean DAC byte | isolated dots | mean non-black neighbours |
+| --- | --- | --- | --- | --- |
+| 0227 linear | **1.47** | 0.06 | 98.9% | 0.16 |
+| 0228 gamma | **21.36** | 1.28 | 49.8% | 1.56 |
+
+Dark-region dot coverage rises **14.5x** (1.47% -> 21.36%) and the share of
+isolated specks halves (98.9% -> 49.8%): the starfield signature the photos showed
+is exactly what these numbers describe. Dithering in gamma space also reduces
+pure-black pixels overall from 155,515 to 93,299.
+
+Whether that reads as better on the panel is Stephen's call — the diagnosis is a
+hypothesis until he says so.
+
 ## Result on the panel (firmware's own report, 2026-11-20)
 
 | Item | Value |
@@ -45,7 +75,7 @@ rotated back to the portrait Stephen should see.
 | Colours | 64 (RGB222), Floyd–Steinberg, 47 of the 64 DAC bytes used |
 | Framebuffer | **307,200 B in PSRAM** at `0x3c090998`, heap integrity ok |
 | Embedded image | 307,200 B, `0x3c0381b4` in the app image |
-| **SHA-256 check** | runtime `5ee7c64e…16cd335` **==** tool `5ee7c64e…16cd335` → **MATCH**, and still unchanged after 6.0 s of streaming |
+| **SHA-256 check** | 0228 (gamma) runtime `f8dded81…97d9c` **==** tool hash → **MATCH**, unchanged after 6.0 s of streaming (0227's linear run was `5ee7c64e…16cd335`) |
 | Output | 640x480 native, 1 fb pixel = 1 DAC byte = 1 output pixel |
 | Timing | 25 MHz pclk, h 96+48+640+16, v 2+33+480+10 → 59.52 Hz configured |
 | Measured | **357 vsync in 5.998 s → 59.52 Hz**; 10,713 fills → **30.0 per frame** |

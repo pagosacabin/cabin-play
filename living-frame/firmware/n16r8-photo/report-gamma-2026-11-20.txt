@@ -1,0 +1,21 @@
+
+
+########## PHOTOGRAPH ON THE 64-COLOUR BUILD ##########
+build      : Nov 20 2026 11:04:01
+source     : parrot.jpg (640x480), converted by tools/convert_photo64.py
+conversion : 480x640 portrait cover-crop, Floyd-Steinberg error diffusion
+             in gamma space over the 64 RGB222 colours (0228 tests this one variable)
+rotation   : 90deg counter-clockwise (180deg from the 0226 test card)
+embedded   : 307200 B at 0x3c038274
+framebuffer: 0x3c090998, 307200 B in PSRAM (integrity ok)
+sha256     : runtime f8dded81c2cdcdbebb704ae105fbb8715f75b1debf619ab423c7edfc00197d9c
+sha256     : tool    f8dded81c2cdcdbebb704ae105fbb8715f75b1debf619ab423c7edfc00197d9c
+sha256     : MATCH - streamed framebuffer is the converted photograph
+resolution : 640x480 native, 1 fb pixel = 1 DAC byte = 1 output pixel
+colour     : 8 bpp = 64 colours (RGB222 through the 6-bit DAC)
+timing     : pclk 25000000 Hz, h 96+48+640+16, v 2+33+480+10 -> 59.52 Hz configured
+data pins  : bit0=R_LSB/5 bit1=R_MSB/4 bit2=G_LSB/7 bit3=G_MSB/6 bit4=B_LSB/16 bit5=B_MSB/15; hsync 17, vsync 18, both active-low
+panel      : streaming (no_fb, 16-line bounce buffers, 10240 B each)
+measured   : 357 vsync in 5.998 s -> 59.52 Hz refresh
+fills      : 10713 bounce fills -> 30.0 per frame (expected 30.0)
+sha256     : after 6.0 s streaming: unchanged (framebuffer not disturbed during scanout)

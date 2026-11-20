@@ -157,12 +157,13 @@ static esp_err_t panel_start(esp_lcd_panel_handle_t *out_panel)
 
 void app_main(void)
 {
-    app_logf("\n\n########## 0227 PHOTOGRAPH ON THE 64-COLOUR BUILD ##########\n");
+    app_logf("\n\n########## PHOTOGRAPH ON THE 64-COLOUR BUILD ##########\n");
     app_logf("build      : %s %s\n", __DATE__, __TIME__);
     app_logf("source     : %s (%s), converted by tools/convert_photo64.py\n",
              PHOTO64_SOURCE, PHOTO64_SRC_SIZE);
     app_logf("conversion : 480x640 portrait cover-crop, Floyd-Steinberg error diffusion\n"
-             "             in linear light over the 64 RGB222 colours\n");
+             "             in %s space over the 64 RGB222 colours (0228 tests this one variable)\n",
+             PHOTO64_SPACE);
     app_logf("rotation   : %s\n", PHOTO64_ROTATION);
 
     const size_t embedded = sizeof(PHOTO64_IMAGE);

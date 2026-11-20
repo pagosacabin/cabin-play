@@ -1,13 +1,15 @@
 
 
 ########## 0225 N16R8 PROBE ##########
-build: Nov 20 2026 10:20:33
+build: Nov 20 2026 10:24:09
 
 === 1. SILICON ===
 CHIP: esp32-s3 cores=2 rev=v0.2 feature_bits=0x0012
 IDF: 5.5.0
 MAC: c4:9e:7e:08:6d:f4
-FLASH_BYTES: 8388608 (8 MB reported by esp_flash_get_size)
+FLASH_CONFIGURED_BYTES: 8388608 (8 MB, esp_flash_get_size - build/runtime view)
+FLASH_PHYSICAL_BYTES: 16777216 (16 MB, esp_flash_get_physical_size - chip ID)
+FLASH_DISCREPANCY: configured view and chip ID disagree by 8388608 bytes; the physical size is the one that governs partition layout
 PSRAM_INITIALIZED: yes
 PSRAM_SIZE_BYTES: 8388608
 PSRAM_HEAP_BYTES: 8388608 (largest block 8257536)
@@ -39,7 +41,8 @@ PIN 12 SD_SCK  SD SPI clock               PASS
 PIN 11 SD_MOSI SD SPI MOSI                PASS
 PIN 13 SD_MISO SD SPI MISO                PASS
 PIN 10 SD_CS   SD SPI chip select         PASS
-PIN_DISCREPANCIES: none found
+PIN_RESULT: 12 of 12 labelled pads drive both levels and are unobstructed
+PIN_CHECK_SCOPE: label-to-header mapping NOT verified by this test (swapped labels on working pins still pass)
 
 === 4. SD CARD (READ-ONLY) ===
 METHOD: SPI on SCK=12 MOSI=11 MISO=13 CS=10, raw sdmmc_read_sectors. No mount, no format, no writes.

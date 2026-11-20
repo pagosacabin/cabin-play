@@ -48,11 +48,11 @@ not a firmware one.
 | Item | Measured |
 | --- | --- |
 | Chip | ESP32-S3, 2 cores, rev v0.2, IDF 5.5.0 |
-| Flash | **16 MB** — JEDEC `68 4018`, and a 4 KB pattern written at `0x00E00000` (14 MB) read back identical (`flash-above-8mb.log.txt`) |
-| Flash, app view | `esp_flash_get_size()` reports **8 MB** — disagrees with the chip; see below |
+| Flash | **16 MB** — JEDEC `68 4018`, `esp_flash_get_physical_size()` = 16,777,216, and a 4 KB pattern written at `0x00E00000` (14 MB) read back identical (`flash-above-8mb.log.txt`) |
+| Flash, build view | `esp_flash_get_size()` reports **8 MB** — a build/runtime size, not the chip; the probe now prints both and flags the disagreement |
 | PSRAM | **8 MB, octal**, initialised; `esp_psram_get_size()` = 8,388,608 |
 | PSRAM pattern | **PASS** — 8,384,512 of 8,388,608 bytes (100.0%) in 2 blocks, 0 mismatches in both passes |
-| Pins | **none found** — all 12 wired GPIOs drive and read back correctly |
+| Pins | **12 of 12** labelled pads drive both levels and are unobstructed. Scope: this does **not** prove the silkscreen label maps to the header position it names |
 | SD | **FAIL** — `sdmmc_card_init` = `ESP_ERR_NOT_SUPPORTED` at default clock and at 400 kHz; GPIO14 card-detect reads high |
 
 The flash discrepancy is left in on purpose: `esp_flash_get_size()` says 8 MB
@@ -66,6 +66,25 @@ SPI pins at either clock, and the holder exposes no card-detect switch (GPIO14
 high). That reads as a card that is not seated, a holder wired to different pins,
 or a card that needs 3.3 V/SPI mode set on the holder — Stephen's bench call, and
 nothing was written to the card.
+
+### Peer review (Copilot, 2026-11-20)
+
+Copilot reviewed `0169a50` file by file and returned four findings, all Medium
+except the SD path:
+
+1. **PSRAM test** — strong functional evidence (aliasing and undersized parts
+   fail it) but not silicon identity: `esp_psram_get_size()` and the heap are
+   software reports. A die-ID/IDD measurement would be stronger. Accepted; the
+   claim in the reply is "8 MB addressed and bit-clean", not "JEDEC-verified".
+2. **Pin self-test** — catches a dead or reserved pin, not a swapped label: a
+   working GPIO with the wrong silkscreen still passes. Accepted and fixed in
+   the output: `PIN_CHECK_SCOPE` now says so explicitly, and the reply no longer
+   claims the labels were verified.
+3. **SD read-only** — proven: only `sdmmc_card_init` + `sdmmc_read_sectors`, no
+   mount, no format, no writes.
+4. **8 MB vs 16 MB flash** — build/runtime metadata, not a smaller die. Accepted
+   and fixed: the probe now also calls `esp_flash_get_physical_size()` and the
+   two are printed side by side with a `FLASH_DISCREPANCY` line.
 
 ## Files
 

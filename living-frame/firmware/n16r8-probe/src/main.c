@@ -141,8 +141,22 @@ static void report_chip(void)
     app_logf("IDF: %s\n", esp_get_idf_version());
     app_logf("MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    app_logf("FLASH_BYTES: %" PRIu32 " (%" PRIu32 " MB reported by esp_flash_get_size)\n",
+    uint32_t flash_physical = 0;
+    esp_err_t phys_err = esp_flash_get_physical_size(NULL, &flash_physical);
+    app_logf("FLASH_CONFIGURED_BYTES: %" PRIu32 " (%" PRIu32 " MB, esp_flash_get_size - build/runtime view)\n",
            flash_bytes, flash_bytes / (1024u * 1024u));
+    if (phys_err == ESP_OK) {
+        app_logf("FLASH_PHYSICAL_BYTES: %" PRIu32 " (%" PRIu32 " MB, esp_flash_get_physical_size - chip ID)\n",
+                 flash_physical, flash_physical / (1024u * 1024u));
+        if (flash_physical != flash_bytes) {
+            app_logf("FLASH_DISCREPANCY: configured view and chip ID disagree by %" PRIu32 " bytes; "
+                     "the physical size is the one that governs partition layout\n",
+                     flash_physical > flash_bytes ? flash_physical - flash_bytes
+                                                  : flash_bytes - flash_physical);
+        }
+    } else {
+        app_logf("FLASH_PHYSICAL_BYTES: unavailable (%s)\n", esp_err_to_name(phys_err));
+    }
 
     /* PSRAM, three independent readings: IDF's own view, the heap's view, and
      * the compile-time mode the build was given.  They must agree. */
@@ -305,9 +319,14 @@ static void report_pins(void)
                res ? "  RESERVED: " : "",
                res ? res : "");
     }
-    app_logf("PIN_DISCREPANCIES: %s", fails ? "" : "none found");
-    if (fails) app_logf("%u of %u pins did not behave as GPIO", fails, (unsigned)NPINS);
-    app_logf("\n");
+    app_logf("PIN_RESULT: %u of %u labelled pads drive both levels and are unobstructed\n",
+             (unsigned)(NPINS - fails), (unsigned)NPINS);
+    /* Scope, stated in the output because the peer review caught the overclaim:
+     * this proves each labelled GPIO is a usable pad.  It cannot prove the
+     * silkscreen label maps to the header position it names -- a swapped label
+     * on a working pin still PASSes.  That needs a meter or a known fixture. */
+    app_logf("PIN_CHECK_SCOPE: label-to-header mapping NOT verified by this test "
+             "(swapped labels on working pins still pass)\n");
     fflush(stdout);
 }
 

@@ -1,0 +1,12 @@
+REPORT: boot=esp32cam-espnow-tx task=0230
+REPORT: mac=f0:16:1d:ae:2b:20 channel=1 peer=c4:9e:7e:08:6d:f4
+REPORT: set_channel=0
+REPORT: add_peer=0 (0=OK)
+REPORT: transfer_id=0x0230beef pkts=32 len=240 total=7680
+REPORT: sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
+REPORT: pass=1 send_ok=31 send_fail=1 seq_acked=31 seq_missing=1 of 32
+REPORT: pass=2 send_ok=32 send_fail=0 seq_acked=32 seq_missing=0 of 32
+REPORT: send_ok_total=63 send_fail_total=1
+REPORT: seq_acked=32 seq_missing=0 of 32 (last pass)
+REPORT: result=espnow_tx_sent
+REPORT: done

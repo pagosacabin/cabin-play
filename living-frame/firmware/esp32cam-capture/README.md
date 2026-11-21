@@ -113,18 +113,21 @@ window, so the link was proven this run with `esp32cam-espnow-tx`:
 
 ```
 REPORT: sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
-REPORT: pass=1 send_ok=32 send_fail=0
-REPORT: pass=2 send_ok=32 send_fail=0
-REPORT: seq_acked=32 seq_missing=0 of 32
+REPORT: pass=1 send_ok=31 send_fail=1 seq_acked=31 seq_missing=1 of 32
+REPORT: pass=2 send_ok=32 send_fail=0 seq_acked=32 seq_missing=0 of 32
+REPORT: seq_acked=32 seq_missing=0 of 32 (last pass)
 REPORT: result=espnow_tx_sent
 ```
 
 The frame board reassembled the same 7,680 bytes with the same hash — full result
-in `../n16r8-espnow-rx/README.md`. Logs: `bench/run-2026-11-20-reseat/espnow-tx-p3/` (the reviewed firmware; the
-earlier runs are `.../espnow-tx/` and `.../espnow-tx-p2/`, same hash each time).
-`seq_acked=32 seq_missing=0` is the success criterion — every sequence
-individually ACKed, with the sender waiting for that sequence's own callback
-before advancing, which is what Copilot's two review passes asked for.
+in `../n16r8-espnow-rx/README.md`. Logs: `bench/run-2026-11-20-reseat/espnow-tx-p5/` (the reviewed firmware; the
+earlier runs are `.../espnow-tx/`, `-p2/`, `-p3/`, `-p4/`, same hash each time).
+`seq_acked=32 seq_missing=0` on the last pass is the success criterion — every
+sequence individually ACKed, with the sender waiting for that sequence's own
+callback before advancing. Under that strict criterion one frame of pass 1 was
+lost (31/32) and pass 2 closed it; the receiver still ended with all 32 distinct
+packets and the identical SHA-256. The loss was traced to the receiver writing its
+report partition on every packet — see `../n16r8-espnow-rx/README.md`.
 
 ## Next actions at the bench (in order)
 

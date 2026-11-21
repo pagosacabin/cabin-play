@@ -17,6 +17,6 @@ colour     : 8 bpp = 64 colours (RGB222 through the 6-bit DAC)
 timing     : pclk 40000000 Hz, h 128+88+800+40, v 4+23+600+1 -> 60.32 Hz configured
 data pins  : bit0=R_LSB/5 bit1=R_MSB/4 bit2=G_LSB/7 bit3=G_MSB/6 bit4=B_LSB/16 bit5=B_MSB/15; hsync 17, vsync 18, both active-low
 panel      : streaming (no_fb, 15-line bounce buffers, 12000 B each)
-measured   : 362 vsync in 5.998 s -> 60.36 Hz refresh
-fills      : 14471 bounce fills -> 40.0 per frame (expected 40.0)
+measured   : 361 vsync in 5.998 s -> 60.18 Hz refresh
+fills      : 14475 bounce fills -> 40.1 per frame (expected 40.0)
 sha256     : after 6.0 s streaming: unchanged (framebuffer not disturbed during scanout)

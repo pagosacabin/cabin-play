@@ -1,0 +1,23 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x1b (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16560
+load:0x40080400,len:3500
+entry 0x400805b4
+REPORT: boot=esp32cam-espnow-tx task=0230
+REPORT: mac=f0:16:1d:ae:2b:20 channel=1 peer=c4:9e:7e:08:6d:f4
+REPORT: set_channel=0
+REPORT: add_peer=0 (0=OK)
+REPORT: transfer_id=0x0230beef pkts=32 len=240 total=7680
+REPORT: sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
+REPORT: pass=1 send_ok=30 send_fail=2 seq_acked=30 seq_missing=2 of 32
+REPORT: pass=2 send_ok=31 send_fail=1 seq_acked=31 seq_missing=1 of 32
+REPORT: send_ok_total=61 send_fail_total=3
+REPORT: seq_acked=31 seq_missing=1 of 32 (last pass)
+REPORT: result=espnow_tx_incomplete
+REPORT: done

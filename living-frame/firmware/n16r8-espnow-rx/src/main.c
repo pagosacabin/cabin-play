@@ -51,6 +51,7 @@ static int      g_dup;
 static int      g_out_of_range;
 static int      g_first_seq = -1, g_last_seq = -1;
 static volatile bool g_dirty;
+static int64_t g_last_report_ms;
 
 static void app_logf(const char *fmt, ...)
 {
@@ -222,8 +223,14 @@ void app_main(void)
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(250));
-        if (g_dirty) {
+        /* Throttle the report writes: each one erases and rewrites a 64 kB
+         * partition, which stalls the radio task long enough to lose ESP-NOW
+         * frames (seen 2026-11-20: 2 of 32 packets lost with a write per
+         * packet).  A 5 s heartbeat plus the final write is all the host needs. */
+        int64_t now_ms = esp_log_timestamp();
+        if (g_dirty && (now_ms - g_last_report_ms) >= 5000) {
             g_dirty = false;
+            g_last_report_ms = now_ms;
             write_report();
         }
         /* finish 6 s after the first packet, or 90 s after boot with nothing */

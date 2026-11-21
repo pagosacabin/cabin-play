@@ -13,6 +13,7 @@
  * The console is the CH340 uplink at 115200.
  */
 #include <Arduino.h>
+#include <string.h>
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
@@ -117,8 +118,15 @@ void setup()
     Serial.printf("REPORT: sha256_tx=%s\n", sha);
     delay(1500);   /* let the receiver come up / host start reading */
 
+    int seq_acked = 0, seq_missing = 0;
     for (int attempt = 0; attempt < 2; attempt++) {
         int ok0 = g_sent_ok, fail0 = g_sent_fail;
+        /* Clear the per-sequence state at the start of EVERY pass: a leftover
+         * failure from the previous pass would satisfy the wait condition below
+         * immediately and let a late callback be credited to the wrong sequence
+         * (peer review 2026-11-20, third pass). */
+        memset((void *)g_ack_ok, 0, sizeof(g_ack_ok));
+        memset((void *)g_ack_fail, 0, sizeof(g_ack_fail));
         for (int seq = 0; seq < PKT_COUNT; seq++) {
             g_inflight_seq = seq;
             esp_err_t e = esp_now_send(FRAME_MAC, g_buf + seq * PKT_LEN, PKT_LEN);
@@ -127,24 +135,27 @@ void setup()
              * asynchronous, so a fixed delay could let a late callback for seq n be
              * credited to seq n+1 (peer review 2026-11-20, second pass). */
             uint32_t t0 = millis();
-            while (!g_ack_ok[seq] && !g_ack_fail[seq] && (millis() - t0) < 80) delay(1);
+            while (!g_ack_ok[seq] && !g_ack_fail[seq] && (millis() - t0) < 200) delay(1);
             if (!g_ack_ok[seq]) g_ack_fail[seq] = 1;   /* no callback = not ACKed */
             delay(5);
         }
         g_inflight_seq = -1;
         delay(300);
-        Serial.printf("REPORT: pass=%d send_ok=%d send_fail=%d\n",
-                      attempt + 1, g_sent_ok - ok0, g_sent_fail - fail0);
+        seq_acked = 0; seq_missing = 0;
+        for (int seq = 0; seq < PKT_COUNT; seq++) {
+            if (g_ack_ok[seq]) seq_acked++;
+            else seq_missing++;
+        }
+        Serial.printf("REPORT: pass=%d send_ok=%d send_fail=%d seq_acked=%d seq_missing=%d of %d\n",
+                      attempt + 1, g_sent_ok - ok0, g_sent_fail - fail0,
+                      seq_acked, seq_missing, PKT_COUNT);
     }
 
-    int seq_acked = 0, seq_missing = 0;
-    for (int seq = 0; seq < PKT_COUNT; seq++) {
-        if (g_ack_ok[seq]) seq_acked++;
-        else { seq_missing++; if (seq_missing <= 8) Serial.printf("REPORT: missing_seq=%d\n", seq); }
-    }
     Serial.printf("REPORT: send_ok_total=%d send_fail_total=%d\n", g_sent_ok, g_sent_fail);
-    Serial.printf("REPORT: seq_acked=%d seq_missing=%d of %d\n", seq_acked, seq_missing, PKT_COUNT);
-    /* success now means every sequence number was individually ACKed */
+    Serial.printf("REPORT: seq_acked=%d seq_missing=%d of %d (last pass)\n",
+                  seq_acked, seq_missing, PKT_COUNT);
+    /* success now means every sequence number was individually ACKed in the last
+     * pass, whose per-sequence state was cleared before it started */
     Serial.printf("REPORT: result=%s\n",
                   (seq_missing == 0) ? "espnow_tx_sent" : "espnow_tx_incomplete");
     Serial.printf("REPORT: done\n");

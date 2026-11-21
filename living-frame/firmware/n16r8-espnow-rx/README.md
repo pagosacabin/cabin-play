@@ -42,45 +42,51 @@ Radio: `WIFI_MODE_STA`, channel 1, `WIFI_PROTOCOL_11B|11G|11N` on both ends
 protocol/rate mismatch shows up as *nothing received*, not as an error). The
 sender is an ESP32-CAM (classic ESP32) at the 1 Mbps 11b base rate.
 
-## Result, 2026-11-20 17:20 MST and re-run 17:28 MST (rung 2)
-
-Frame board report (`reports/rung2-rx-2026-11-20.txt`):
+## Result, 2026-11-20 17:20 MST and re-run 17:28 MST (rung 2) 
+Frame board report (`reports/rung2-rx-2026-11-20.txt`) — the final run, with the
+reviewed firmware:
 
 ```
 REPORT: boot=n16r8-espnow-rx task=0230
 REPORT: mac=c4:9e:7e:08:6d:f4 channel=1 rate=1Mbps-11b
 REPORT: expect pkts=32 len=240 total=7680 pattern='(seq*7+i*3+0x5a)&0xff'
-REPORT: rx_packets=64 distinct=32 rx_bytes=15360
-REPORT: bad_pattern=0 dup=32 out_of_range=0
+REPORT: rx_packets=63 distinct=32 rx_bytes=15120
+REPORT: bad_pattern=0 dup=31 out_of_range=0
 REPORT: tfer_id=0x0230beef expected_packets=32 first_seq=0 last_seq=31
 REPORT: sha256_rx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
 REPORT: result=espnow_rx_complete
 REPORT: report_write_errors=0
 ```
 
-CAM console, third run — the one that matches this commit
-(`../esp32cam-capture/bench/run-2026-11-20-reseat/espnow-tx-p3/report.txt`; the
-earlier passes are `.../espnow-tx/` and `.../espnow-tx-p2/`, same hash each time):
+CAM console, same run (`../esp32cam-capture/bench/run-2026-11-20-reseat/espnow-tx-p5/report.txt`):
 
 ```
 REPORT: mac=f0:16:1d:ae:2b:20 channel=1 peer=c4:9e:7e:08:6d:f4
 REPORT: transfer_id=0x0230beef pkts=32 len=240 total=7680
 REPORT: sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
-REPORT: pass=1 send_ok=32 send_fail=0
-REPORT: pass=2 send_ok=32 send_fail=0
-REPORT: send_ok_total=64 send_fail_total=0
-REPORT: seq_acked=32 seq_missing=0 of 32
+REPORT: pass=1 send_ok=31 send_fail=1 seq_acked=31 seq_missing=1 of 32
+REPORT: pass=2 send_ok=32 send_fail=0 seq_acked=32 seq_missing=0 of 32
+REPORT: send_ok_total=63 send_fail_total=1
+REPORT: seq_acked=32 seq_missing=0 of 32 (last pass)
 REPORT: result=espnow_tx_sent
 ```
 
 - **Sender's hash == receiver's hash** (`74bb8403…aa2f28`): the 7,680 bytes the
   CAM put on the air are the 7,680 bytes the frame board reassembled, in order.
-- 64 received packets, 32 distinct sequences (0..31): the sender deliberately
-  sends its pass twice, and the receiver reports exactly 32 duplicates — no
-  packet was lost, and `bad_pattern=0` means every payload byte matched the
-  sequence-derived pattern.
-- Every send callback returned `ESP_NOW_SEND_SUCCESS` (MAC-level ACK), which is
-  the link's own both-ways evidence: the frame board ACKed each frame.
+  That is the rung's success criterion, not the ACK count.
+- **One frame of the first pass was lost** (31 of 32 sequences ACKed) and the
+  receiver still ended with all 32 distinct packets and the same hash, because
+  the second pass re-sent every sequence. `bad_pattern=0` and `dup=31` are
+  consistent with that: 63 packets received, 32 distinct.
+- The loss is not noise in the report — it is the receiver's own flash writes.
+  With a report write per packet (the first version), 2 of 32 were lost; the
+  accepted version throttles the write to a 5 s heartbeat and still lost one
+  frame in pass 1. **A design consequence for rung 3:** at ~1 loss per 32 frames,
+  a photo transfer of a few hundred chunks needs the NACK/retry rule in
+  `PROTOCOL.md`, and the receiver should not write flash while a transfer is in
+  flight.
+- Earlier runs (`.../espnow-tx/`, `.../espnow-tx-p2/`, `...-p3/`) reproduced the
+  same hash with 64/64 ACKs under the weaker criterion.
 
 **What this does not prove:** that the *receiver* was running this build is
 inferred from the report it wrote; ESP-NOW delivery beyond 7,680 B, encryption,
@@ -89,8 +95,8 @@ open on the camera.
 
 ## Peer review (Copilot, 2026-11-20, two passes)
 
-First pass at `fb336ec`, second pass at `99960cd`; five findings in total, all
-fixed, and the transfer was re-run after each fix with the identical hash each time.
+Three passes: `fb336ec`, `99960cd`, `f1cca1b`. Seven findings in total, all fixed,
+and the transfer was re-run after each round with the identical hash each time.
 
 1. **Medium — the sender's success condition could report a false success.** It
    counted ACK callbacks in aggregate (`send_ok >= 32`), which two passes over the
@@ -113,7 +119,7 @@ time and reproduced the identical hash:
 3. **Medium — the ACK attribution was still racy.** The fix waited a fixed 30 ms;
    `esp_now_send` is asynchronous, so a late callback for sequence *n* could be
    credited to *n+1*. Fixed: the sender now **waits for that sequence's callback**
-   (80 ms cap, per sequence) before advancing, and a sequence with no callback is
+   (200 ms cap, per sequence) before advancing, and a sequence with no callback is
    marked failed rather than skipped. `seq_acked=32 seq_missing=0` is now a
    per-sequence fact, not an aggregate coincidence.
 4. **Low — the report read-back compared only the header.** Fixed: the whole body
@@ -126,11 +132,33 @@ time and reproduced the identical hash:
 That is why the stored report now ends with `REPORT: report_write_errors=0` **after**
 `result=` — the ordering is the fix.
 
+### Third review pass (re-reviewed at f1cca1b)
+
+6. **Medium — the per-sequence state was not cleared between passes.** A failure
+   recorded in pass 1 left `g_ack_fail[seq]` set, so pass 2's wait was satisfied
+   immediately and a late callback could still be mis-attributed. Fixed: both
+   per-sequence arrays are cleared at the start of every pass, and the success
+   criterion is evaluated on the **last** pass only
+   (`seq_acked=32 seq_missing=1 of 32 (last pass)`).
+
+That fix is what exposed finding 7 — a defect in the *receiving* side that the
+weaker criterion had been hiding:
+
+7. **Real packet loss, caused by the receiver's own flash writes.** With strict
+   per-sequence accounting, pass 1 came back `seq_acked=30 seq_missing=2`: the
+   receiver was erasing and rewriting its 64 kB report partition on *every*
+   packet, stalling long enough to drop frames. Fixed: the report write is
+   throttled to a 5 s heartbeat plus the final write. After that, pass 1 lost 1
+   frame and pass 2 was clean (the run quoted above). The remaining single-frame
+   loss is reported as measured, not papered over — it is what rung 3's retry rule
+   has to absorb.
+
 ## Frame board end state
 
-Test build flashed at 17:19 MST, transfer at 17:20, then the accepted build
-restored at 17:23 MST. Restore was **verified from the board's own report**, not
-from the fact that a flash command exited 0 —
+The test build was flashed for each of the four transfer runs (17:19–17:42 MST) and
+the accepted build restored after each one; the last restore was at **17:43 MST**
+and the board is on it now. Every restore was **verified from the board's own
+report**, not from the fact that a flash command exited 0 —
 `reports/frame-restored-800x600-2026-11-20.txt`:
 
 ```
@@ -140,12 +168,14 @@ sha256     : runtime 204578cc3339baf944345090680c7178f653be7fa79f8fcb83cf82b8ff3
 sha256     : tool    204578cc3339baf944345090680c7178f653be7fa79f8fcb83cf82b8ff3bd306
 sha256     : MATCH - streamed framebuffer is the converted photograph
 resolution : 800x600 native, 1 fb pixel = 1 DAC byte = 1 output pixel
-measured   : 362 vsync in 5.998 s -> 60.36 Hz refresh
+measured   : 361 vsync in 5.998 s -> 60.18 Hz refresh
 fills      : 14475 bounce fills -> 40.1 per frame (expected 40.0)
 ```
 
 Those numbers are the frozen 0228 proof (`../n16r8-photo/report-800x600.txt`)
-reproduced exactly, hash included → the board is running the accepted build.
+reproduced exactly, hash included → the board is running the accepted build. The
+`vsync` count moves by one between boots (361/362 → 60.18/60.36 Hz) — the 6 s
+window is not frame-locked, so that is measurement grain, not a change in output.
 
 ### Trap found while restoring: the 800x600 env cannot be built from the committed tree
 

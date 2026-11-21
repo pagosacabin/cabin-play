@@ -69,3 +69,34 @@ The bench FTDI bridge's console is dead (0225), so the receiver writes a report
 blob to the `report` flash partition (as in 0225-0228) and the host reads it back
 with esptool. Report fields: `transfer_id`, `chunks`, `retries`, `nacks`,
 `total_len`, `sha256_rx`, `sha256_sd`, `sd_path`, `result`.
+
+## Rung 2 as measured (2026-11-20 17:20 MST)
+
+The link test used a **simplified framing**, not the chunked format above: a
+32 × 240 B transfer whose header carries the sequence, the expected count and the
+transfer id, with a sequence-derived payload pattern. It exists to prove the
+radio and the reassembly path, and it did:
+
+```
+sender   sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28  64/64 sends ACKed
+receiver sha256_rx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
+         32 distinct of 32 expected, 32 duplicates (the deliberate second pass), bad_pattern=0
+```
+
+Three facts that cost bench time and are worth carrying forward:
+
+- **Both ends must agree on the 802.11 protocol set.** An ESP32-S3 defaults to a
+  set that includes modes a classic ESP32 peer cannot use; without
+  `esp_wifi_set_protocol(WIFI_IF_STA, 11B|11G|11N)` on *both* sides the receiver
+  sees nothing at all — no error, no log, just silence.
+- **The channel must be set explicitly on the receiver.** The frame board's
+  accepted build never starts WiFi, so there is no associated channel to inherit;
+  `esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE)` on both ends is the contract.
+- **`esp_now_send`'s status callback is MAC-level ACK evidence**, i.e. it does
+  prove the far end received the frame — but it says nothing about what the
+  application did with it. That is why the proof is the hash comparison, not
+  `send_ok=32`.
+
+The chunked format above stays the design for rung 3; the extra machinery it adds
+(START/chunk/DONE headers, NACK-on-gap, retry) is untested until a camera can
+produce a JPEG.

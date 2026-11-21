@@ -1,0 +1,6 @@
+REPORT: boot=esp32cam-probe task=0230
+REPORT: mac=f0:16:1d:ae:2b:20 chip=ESP32-D0WD-V3 rev=3
+REPORT: flash_size=4194304 psram_size=4192123 heap=336032
+REPORT: sd_begin=0 card_type=0 (0=NONE,1=MMC,2=SDSC,3=SDHC)
+REPORT: sd_mounted=0 no_card_or_mount_failure
+REPORT: result=probe_done

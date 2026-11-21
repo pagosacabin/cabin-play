@@ -10,6 +10,7 @@ Three build environments, in bring-up order:
 | `esp32cam-probe` | board identity (MAC, flash, PSRAM) + read-only SD-slot probe |
 | `esp32cam-diag` | SCCB bus scan at XCLK off / 20 MHz / 10 MHz, PWDN both states, alt pin pair, OV2640 PID read |
 | `esp32cam` | the capture build: OV2640 → JPEG in PSRAM → SHA-256 → SD write/read-back → base64 dump on the console |
+| `esp32cam-espnow-tx` | rung 2: sends the deterministic 32 × 240 B test transfer to the frame board (no camera, no SD) |
 
 ```
 pio run -e esp32cam-probe -t upload
@@ -68,6 +69,58 @@ REPORT: sd_mounted=0 no_card_or_mount_failure
 
 The probe is read-only by design: the card identity/scratch-card decision belongs
 to 0229 and nothing here writes to a card.
+
+## Retest after the 2026-11-20 17:00 MST reseat — rung 1 still fails
+
+Stephen unplugged the board, unplugged the camera module, replugged it and
+replugged the board, **all to the same slots**, then authorised a re-run. Both
+bring-up builds were flashed again and captured; the result is unchanged:
+
+| check | before reseat (16:15 MST) | after reseat (17:16 MST) |
+|---|---|---|
+| `i2c_found_count` at 26/27, PWDN high + XCLK off | 0 | 0 |
+| … PWDN low, XCLK off | 0 | 0 |
+| … PWDN low, XCLK 20 MHz | 0 | 0 |
+| … PWDN low, XCLK 10 MHz | 0 | 0 |
+| alternate pair 21/22 | 0 | 0 |
+| `ov2640_pid_20mhz` | `0x00` (expect `0x26`) | `0x00` |
+| SCCB lines idle | SDA 1 / SCL 1 | SDA 1 / SCL 1 |
+| CAM microSD slot | `card_type=0` (NONE) | `card_type=0` (NONE) |
+
+Logs: `bench/run-2026-11-20-reseat/diag/` and `.../probe/`. The board identity is
+identical too (`ESP32-D0WD-V3 rev3`, MAC `f0:16:1d:ae:2b:20`, 4 MB flash, 4 MB
+PSRAM), and the boot was a clean `POWERON_RESET` — the two console captures
+contain no brownout line and no `ESP-ROM` banner, so neither capture reset the
+board.
+
+Reading of the unchanged result: a module connection that was broken and remade
+with **zero** change in the bus state is not a seating fault any more. With the
+lines still idling high under the ESP32's internal pull-ups and no device at any
+address on two candidate pin pairs, the remaining candidates are (a) the module
+itself (or its ribbon) is dead, (b) the module is not receiving power — the
+AI-Thinker feeds the camera from the board's 3.3 V regulator, so a supply fed in
+at 3.3 V instead of 5 V would run the ESP32 while starving the camera, and
+(c) the FFC contacts are facing the wrong way in the connector. All three are
+hands-and-multimeter checks; nothing in firmware can distinguish them.
+
+The CAM slot still holds **no card** (`sd_begin=0 card_type=0`), as the task's
+17:02 update asked to be reported.
+
+## Rung 2 — the link works (2026-11-20 17:20 MST)
+
+The camera is not needed for the radio link, and Stephen granted the rung-2
+window, so the link was proven this run with `esp32cam-espnow-tx`:
+
+```
+REPORT: sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
+REPORT: pass=1 send_ok=32 send_fail=0
+REPORT: pass=2 send_ok=32 send_fail=0
+REPORT: result=espnow_tx_sent
+```
+
+The frame board reassembled the same 7,680 bytes with the same hash — full result
+in `../n16r8-espnow-rx/README.md`. Logs:
+`bench/run-2026-11-20-reseat/espnow-tx/`.
 
 ## Next actions at the bench (in order)
 

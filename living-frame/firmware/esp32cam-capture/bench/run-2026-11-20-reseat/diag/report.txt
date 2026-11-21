@@ -1,0 +1,15 @@
+REPORT: boot=esp32cam-sccb-diag-v2 task=0230
+REPORT: pins pwdn_gpio=32 siod=26 sioc=27 xclk=0
+REPORT: scan=pwdn_high_xclk_off sda=26 scl=27 idle_sda=1 idle_scl=1
+REPORT: i2c_found_count=0
+REPORT: scan=pwdn_low_xclk_off sda=26 scl=27 idle_sda=1 idle_scl=1
+REPORT: i2c_found_count=0
+REPORT: scan=pwdn_low_xclk_20mhz sda=26 scl=27 idle_sda=1 idle_scl=1
+REPORT: i2c_found_count=0
+REPORT: ov2640_pid_20mhz=0x00 (expect 0x26)
+REPORT: scan=pwdn_low_xclk_10mhz sda=26 scl=27 idle_sda=1 idle_scl=1
+REPORT: i2c_found_count=0
+REPORT: scan=alt_pins_21_22_xclk_off sda=21 scl=22 idle_sda=1 idle_scl=1
+REPORT: i2c_found_count=0
+REPORT: primary_bus_devices=0
+REPORT: result=diag_done

@@ -819,15 +819,28 @@ static void raw_inspect(spi_device_handle_t dev)
                      sh, reg[0 + sh], reg[1 + sh], reg[2 + sh], printable ? pnm : "?????",
                      reg[8 + sh] >> 4, reg[8 + sh] & 0x0F,
                      reg[9 + sh], reg[10 + sh], reg[11 + sh], reg[12 + sh],
-                     2000 + ((reg[13 + sh] >> 4) & 0x0F), reg[14 + sh] & 0x0F,
+                     2000 + (((reg[13 + sh] & 0x0F) << 4) | (reg[14 + sh] >> 4)),
+                     reg[14 + sh] & 0x0F,
                      printable ? "  <- printable PNM at this alignment" : "");
         }
         {
-            int sh = (reg[4] >= 0x20 && reg[4] <= 0x7E) ? 1 : 0;
+            /* Pick the alignment by testing all five PNM bytes, not one: a
+             * single byte is usually printable at either offset. */
+            int sh = -1;
+            for (int cand = 0; cand <= 1 && sh < 0; cand++) {
+                bool ok = true;
+                for (int i = 0; i < 5; i++) {
+                    uint8_t c = reg[3 + cand + i];
+                    if (c < 0x20 || c > 0x7E) ok = false;
+                }
+                if (ok) sh = cand;
+            }
+            if (sh < 0) sh = 0;
             char pnm[6] = {0};
             memcpy(pnm, reg + 3 + sh, 5);
-            app_logf("  SD_CID_NAME: %.5s  serial=%02x%02x%02x%02x\n", pnm,
-                     reg[10 + sh], reg[11 + sh], reg[12 + sh], reg[13 + sh]);
+            app_logf("  SD_CID_NAME: %.5s  serial=%02x%02x%02x%02x (PSN, CID bytes %d..%d)\n",
+                     pnm, reg[9 + sh], reg[10 + sh], reg[11 + sh], reg[12 + sh],
+                     9 + sh, 12 + sh);
         }
         }
     } else {
@@ -892,7 +905,10 @@ static void raw_inspect(spi_device_handle_t dev)
                          " boot=%s label='%.11s' root_clus=%" PRIu32 "\n",
                          i, pe[4], lba, nsec, bs_ok ? "OK" : "READ FAILED", lab, rclus);
                 if (bs_ok) {
-                    uint32_t dlba = resv_x + nfats_x * fatsz_x + (rclus > 1 ? (rclus - 2) * bsx[13] : 0);
+                    /* the entry's own start LBA is part of the address (the
+                     * same omission that was just fixed in the FAT32 walk) */
+                    uint32_t dlba = lba + resv_x + nfats_x * fatsz_x +
+                                    (rclus > 1 ? (rclus - 2) * bsx[13] : 0);
                     uint8_t rb[512];
                     int rrc = raw_read_block(dev, dlba, rb);
                     app_logf("    -> data_lba=%" PRIu32 " first bytes %s: %02x %02x %02x %02x\n",
@@ -981,7 +997,9 @@ static void raw_inspect(spi_device_handle_t dev)
      * larger than the volume, the two must agree with each other or one of
      * them is fiction -- a classic counterfeit-card signature.  Read the last
      * block the CSD declares and a block past a 512 MB card. */
-    {
+    if (!g_have_card_id) {
+        app_logf("  CAPACITY_PROBE: skipped -- no valid CSD was decoded\n");
+    } else {
         uint64_t csd_bytes = csd_capacity_bytes(g_csd);
         uint32_t last_lba = (uint32_t)(csd_bytes / 512ull) - 1u;
         uint8_t tb[512];

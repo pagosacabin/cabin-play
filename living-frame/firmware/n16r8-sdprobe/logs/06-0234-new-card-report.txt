@@ -1,8 +1,8 @@
 
 
 ########## 0234 SD RETEST (0229 probe extended) ##########
-build: Nov 21 2026 07:41:41
-FIRSTPASS_BOOT: 14 (slot index for this boot)
+build: Nov 21 2026 08:08:34
+FIRSTPASS_BOOT: 13 (slot index for this boot)
 
 === 1. IDENTITY ===
 CHIP: esp32-s3 cores=2 rev=v0.2
@@ -15,7 +15,7 @@ LINES[idle] pullups=internal-on: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
 --- RAW SPI PROBE [no-internal-pullup], 400 kHz, manual CS, internal pull-ups OFF (external only) ---
 LINES[no-internal-pullup] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
   ATTEMPT 1/5
-    CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff 
     CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff 
     CMD8 verdict: no valid R7 echo (R1=0x00)
   ATTEMPT 2/5
@@ -28,8 +28,10 @@ LINES[no-internal-pullup] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
     CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD41 arg=0x40000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
-    ACMD41 final: R1=0x00 after 38 ms (READY)
+    ACMD41 final: R1=0x00 after 58 ms (READY)
     CMD58 arg=0x00000000: R1=0x00 payload[4]=ff 00 c0 ff 80 00 ff ff ff ff ff ff 
     OCR: c0 ff 80 00 (CCS/voltage)
     ADDRESSING: BLOCK (SDHC/SDXC: CMD17 arg = LBA) (CCS=1)
@@ -41,18 +43,18 @@ LINES[no-internal-pullup] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
   CSD: 40 0e 00 32 db 79 00 0e e5 b7 7f 80 0a 40 40 93
   SD_CAPACITY_FROM_CSD: 488156 MB (511868665856 bytes)
   CID: 03 53 44 53 52 35 31 32 86 e4 84 5e 78 01 89 a5
-  SD_CID[align 0]: MID=0x03 OID=SD PNM=SR512 PRV=8.6 PSN=e4845e78 MDT=2000/9  <- printable PNM at this alignment
-  SD_CID[align 1]: MID=0x53 OID=DS PNM=????? PRV=14.4 PSN=845e7801 MDT=2008/5
-  SD_CID_NAME: R512�  serial=5e780189
+  SD_CID[align 0]: MID=0x03 OID=SD PNM=SR512 PRV=8.6 PSN=e4845e78 MDT=2024/9  <- printable PNM at this alignment
+  SD_CID[align 1]: MID=0x53 OID=DS PNM=????? PRV=14.4 PSN=845e7801 MDT=2154/5
+  SD_CID_NAME: SR512  serial=e4845e78 (PSN, CID bytes 9..12)
   STEP: reading sector 0
   STEP: sector 0 read OK (fa b8 00 10)
   SD_PARTITION: type=0x0c lba=2048
   MBR_ENTRY0: type=0x0c lba=2048 sectors=6301696 boot=OK label='RECALBOX   ' root_clus=2
-    -> data_lba=12320 first bytes OK: 00 00 00 00
+    -> data_lba=14368 first bytes OK: 52 45 43 41
   MBR_ENTRY1: type=0x07 lba=6305792 sectors=991338497 boot=OK label='' root_clus=0
-    -> data_lba=0 first bytes OK: fa b8 00 10
+    -> data_lba=6305792 first bytes OK: eb 76 90 45
   MBR_ENTRY2: type=0x83 lba=997646336 sectors=2097152 boot=OK label='' root_clus=0
-    -> data_lba=0 first bytes OK: fa b8 00 10
+    -> data_lba=997646336 first bytes OK: 00 00 00 00
   SD_FS: FAT32 sector=512 B cluster=4096 B clusters=785960
   SD_CAPACITY_BS: 3076 MB (6300000 sectors of 512 B)
   SD_LABEL: RECALBOX   
@@ -203,22 +205,21 @@ MOUNT_VERDICT: the stock driver MOUNTS this card (read-only listing above)
   SD_CARD: name=SR512 type=SD speed=20000 kHz size=488156 MB
 
 === 4. FIRST-PASS TABLE (persisted across resets, NVS) ===
-FIRSTPASS_SLOTS: 14 (of 24 kept), build_id=20145bcc
+FIRSTPASS_SLOTS: 13 (of 24 kept), build_id=0d47b500
   boot  1: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
-  boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
-  boot  3: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  3: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
   boot  4: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
-  boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
-  boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
-  boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
-  boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
-  boot  9: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  5: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
+  boot  7: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  9: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
   boot 10: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
-  boot 11: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
-  boot 12: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 11: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 12: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
   boot 13: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
-  boot 14: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=38 ms
-FIRSTPASS_SUMMARY: raw_init_ready=14/14 first_pass_ok=0/14
+FIRSTPASS_SUMMARY: raw_init_ready=13/13 first_pass_ok=0/13
 FIRSTPASS_VERDICT: the first init pass after a reset failed on this card too -- the flakiness does NOT follow the old card
 
 === 3. VERDICTS ===

@@ -144,6 +144,8 @@ That is why the stored report now ends with `REPORT: report_write_errors=0` **af
 That fix is what exposed finding 7 — a defect in the *receiving* side that the
 weaker criterion had been hiding:
 
+Fourth pass on `03c8713`: **No findings — Verdict: SHIP.**
+
 7. **Real packet loss, caused by the receiver's own flash writes.** With strict
    per-sequence accounting, pass 1 came back `seq_acked=30 seq_missing=2`: the
    receiver was erasing and rewriting its 64 kB report partition on *every*

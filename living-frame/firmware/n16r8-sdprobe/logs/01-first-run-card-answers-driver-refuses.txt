@@ -1,0 +1,57 @@
+magic=30323239 len=2714
+
+
+########## 0229 SD DIAGNOSIS ##########
+build: Nov 20 2026 20:02:56
+
+=== 1. IDENTITY ===
+CHIP: esp32-s3 cores=2 rev=v0.2
+IDF: 5.5.0
+MAC: c4:9e:7e:08:6d:f4
+SD_PINS: SCK=12 MOSI=11 MISO=13 CS=10 CARD_DETECT=14
+LINES[idle] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+LINES[idle] pullups=internal-on: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+
+--- RAW SPI PROBE [no-internal-pullup], 400 kHz, manual CS, internal pull-ups OFF (external only) ---
+LINES[no-internal-pullup] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 f0 00 01 aa ff ff ff ff ff ff 
+    CMD8 verdict: card is v2.00+ (R7 echoes 0x1AA)
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    ACMD41 initial: R1=0x01
+    CMD55 arg=0x00000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
+    ACMD41 final: R1=0x00 after 15 ms (READY)
+    CMD58 arg=0x00000000: R1=0x00 payload[4]=ff 00 80 ff 80 00 ff ff ff ff ff ff 
+    OCR: 80 ff 80 00 (CCS/voltage)
+    CMD13 arg=0x00000000: R1=0x00 payload[2]=ff 00 00 ff ff ff ff ff ff ff 
+
+--- RAW SPI PROBE [internal-pullup], 400 kHz, manual CS, internal pull-ups ON ---
+LINES[internal-pullup] pullups=internal-on: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x05 payload[4]=ff 05 ff ff ff ff ff ff ff ff ff ff 
+    CMD8 verdict: no valid R7 echo
+
+--- SPI sdmmc_card_init [rung1 400kHz] at 400 kHz ---
+  SD_CARD_INIT[rung1 400kHz 400 kHz]: FAIL ESP_ERR_NOT_SUPPORTED (262)
+
+--- SPI sdmmc_card_init [rung1 default] at 20000 kHz ---
+  SD_CARD_INIT[rung1 default 20000 kHz]: FAIL ESP_ERR_NOT_SUPPORTED (262)
+
+--- SPI sdmmc_card_init [rung3 pullups 400kHz] at 400 kHz ---
+  SD_CARD_INIT[rung3 pullups 400kHz 400 kHz]: FAIL ESP_ERR_NOT_SUPPORTED (262)
+
+--- SDMMC 1-bit [same pins] at 400 kHz ---
+  CLK=12 CMD=11 D0=13 (CS 10 unused in SD mode; card-side DAT3 pull-up assumed)
+  FAIL sdmmc_host_init_slot=ESP_ERR_INVALID_STATE
+
+--- SDMMC 1-bit [same pins] at 20000 kHz ---
+  CLK=12 CMD=11 D0=13 (CS 10 unused in SD mode; card-side DAT3 pull-up assumed)
+  FAIL sdmmc_host_init_slot=ESP_ERR_INVALID_STATE
+
+SD_VERDICT: FAIL - the card does not answer on SPI (both clocks, with and without internal pull-ups) nor in SDMMC 1-bit.
+NEXT: rung 2 (meter) - 3.3 V at the holder's VCC with the card seated and init attempted; continuity from each holder pad to its ESP32 pin; shorts between adjacent lines.  Firmware cannot measure that.
+
+########## PROBE COMPLETE ##########
+

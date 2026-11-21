@@ -1,0 +1,8 @@
+# 0229 SD probe partition table.  Identical to 0225/0227 on purpose: the report
+# read-back command names the offset, and the accepted 800x600 build (which this
+# probe is flashed over and then replaced by) uses the same layout.
+# Name,     Type, SubType,   Offset,    Size,
+nvs,        data, nvs,       0x9000,    0x6000,
+phy_init,   data, phy,       0xf000,    0x1000,
+factory,    app,  factory,   0x10000,   0x300000,
+report,     data, 0x40,      0x310000,  0x10000,

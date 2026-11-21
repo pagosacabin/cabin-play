@@ -1,0 +1,67 @@
+len=3767
+
+
+########## 0229 SD DIAGNOSIS ##########
+build: Nov 20 2026 20:12:52
+
+=== 1. IDENTITY ===
+CHIP: esp32-s3 cores=2 rev=v0.2
+IDF: 5.5.0
+MAC: c4:9e:7e:08:6d:f4
+SD_PINS: SCK=12 MOSI=11 MISO=13 CS=10 CARD_DETECT=14
+D (1906) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (1906) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (1906) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (1916) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (1926) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+LINES[idle] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+D (1936) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (1946) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (1956) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (1966) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (1976) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+LINES[idle] pullups=internal-on: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+
+--- RAW SPI PROBE [no-internal-pullup], 400 kHz, manual CS, internal pull-ups OFF (external only) ---
+D (1996) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (2006) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (2016) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (2016) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (2026) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+LINES[no-internal-pullup] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+D (2046) gdma: new group (0) at 0x3fce9dec
+D (2046) gdma: new pair (0,0) at 0x3fce9c40
+D (2046) gdma: new tx channel (0,0) at 0x3fce9db4
+D (2056) gdma: new rx channel (0,0) at 0x3fce9e78
+D (2056) spi: SPI2 use iomux pins.
+D (2076) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+  ATTEMPT 1/5
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x05 payload[4]=ff 05 ff ff ff ff ff ff ff ff ff ff 
+    CMD8 verdict: no valid R7 echo (R1=0x05)
+  ATTEMPT 2/5
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 f0 00 01 aa ff ff ff ff ff ff 
+    CMD8 verdict: card is v2.00+ (R7 echoes 0x1AA) (R1=0x01)
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    ACMD41 initial: R1=0x01
+    CMD55 arg=0x00000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
+    ACMD41 final: R1=0x00 after 17 ms (READY)
+    CMD58 arg=0x00000000: R1=0x00 payload[4]=ff 00 80 ff 80 00 ff ff ff ff ff ff 
+    OCR: 80 ff 80 00 (CCS/voltage)
+    CMD13 arg=0x00000000: R1=0x00 payload[2]=ff 00 00 ff ff ff ff ff ff ff 
+  RAW_INIT: READY on attempt 2 of 5
+    CMD59 arg=0x00000001: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
+    CMD59 (CRC_ON_OFF=1): R1=0x00 accepted
+    CMD59 arg=0x00000000: R1=0x08 payload[0]=ff 08 ff ff ff ff ff ff 
+    CMD59 (CRC_ON_OFF=0): R1=0x08 rejected
+
+=== 2. CARD CONTENTS (RAW, READ-ONLY) ===
+  CSD: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  SD_CAPACITY_FROM_CSD: 2097152 MB (2199023255552 bytes)
+  CID: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  SD_CID_NAME: �����  serial=ffffffff
+  STEP: reading sector 0
+

@@ -1,7 +1,7 @@
 
 
 ########## 0229 SD DIAGNOSIS ##########
-build: Nov 20 2026 20:47:31
+build: Nov 20 2026 20:53:36
 
 === 1. IDENTITY ===
 CHIP: esp32-s3 cores=2 rev=v0.2
@@ -254,7 +254,7 @@ D (4632) gdma: new tx channel (0,0) at 0x3fce9db4
 D (4632) gdma: new rx channel (0,0) at 0x3fce9e78
 D (4632) spi: SPI2 use iomux pins.
 D (4642) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
-D (4652) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (4662) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
 D (4662) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
 D (4672) spi_master: device5 locked the bus
 D (4672) spi_master: device5 release bus

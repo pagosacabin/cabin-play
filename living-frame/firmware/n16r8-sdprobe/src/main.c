@@ -79,6 +79,7 @@ static bool g_have_card_id;         /* CSD decoded */
 static int  g_cmd59_idle = -1;      /* -1 not probed */
 static uint8_t g_seq_with = 0xFF;   /* CMD59 after CMD52+CMD5, like the driver */
 static uint8_t g_seq_without = 0xFF;/* CMD59 without CMD5 (control) */
+static uint8_t g_seq_52only = 0xFF; /* CMD59 after CMD52 alone (control) */
 static bool g_seq_ran;
 
 /* ---- report sink (same discipline as 0225) ------------------------------ */
@@ -424,8 +425,8 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
         sd_raw_cmd(dev, 0, 0, 0x95, 0, pl, sizeof pl);
         sd_raw_cmd(dev, 8, 0x000001AA, 0x87, 4, pl, sizeof pl);
         sd_raw_cmd(dev, 52, 0, 0xFF, 0, pl, sizeof pl);
-        app_logf("    CMD52 only,   then CMD59=0x%02x\n",
-                 sd_raw_cmd(dev, 59, 0x00000001, 0x00, 0, pl, sizeof pl));
+        g_seq_52only = sd_raw_cmd(dev, 59, 0x00000001, 0x00, 0, pl, sizeof pl);
+        app_logf("    CMD52 only,   then CMD59=0x%02x\n", g_seq_52only);
         sd_raw_cmd(dev, 0, 0, 0x95, 0, pl, sizeof pl);
         sd_raw_cmd(dev, 8, 0x000001AA, 0x87, 4, pl, sizeof pl);
         sd_raw_cmd(dev, 5, 0, 0xFF, 0, pl, sizeof pl);
@@ -446,7 +447,7 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
          * rejection, and 0xFF means the card drove nothing at all. */
         if (r59 == 0xFF)            g_cmd59_idle = 2;
         else if (r59 == 0x05)       g_cmd59_idle = 1;
-        else if ((r59 & 0x7C) != 0) g_cmd59_idle = 3;
+        else if ((r59 & 0x7E) != 0) g_cmd59_idle = 3;   /* 0x7E: every error bit except the idle bit */
         else                        g_cmd59_idle = 0;
         app_logf("    CMD59 probe in IDLE state (after CMD0 R1=0x%02x): R1=0x%02x -> %s\n",
                  ridle, r59,
@@ -1042,7 +1043,7 @@ void app_main(void)
     }
     if (ok) {
         app_logf("SD_VERDICT_DRIVER: sdmmc_card_init succeeded\n");
-    } else if (g_seq_ran && g_seq_with == 0x05 && g_seq_without != 0x05) {
+    } else if (g_seq_ran && g_seq_with == 0x05 && g_seq_without != 0x05 && g_seq_52only != 0x05) {
         app_logf("SD_VERDICT_DRIVER: sdmmc_card_init fails at sdmmc_init_spi_crc because the "
                  "driver issues an SDIO probe (CMD5) before it: after CMD5 this card answers "
                  "0x05 (illegal command) to CMD59, and to the same CMD59 with no CMD5 in the "
@@ -1050,6 +1051,11 @@ void app_main(void)
                  "alone leaves CMD59 working. A card firmware quirk, not a wiring fault; the "
                  "driver cannot be talked out of the CMD5 probe, so the SPI init sequence has "
                  "to be bypassed for this card\n", g_seq_without);
+    } else if (g_seq_ran && g_seq_with == 0x05 && g_seq_without != 0x05) {
+        app_logf("SD_VERDICT_DRIVER: sdmmc_card_init fails at sdmmc_init_spi_crc; a pre-CMD59 "
+                 "probe breaks this card's command handling, but the controls do not isolate "
+                 "which one (CMD52 alone -> 0x%02x, no probe -> 0x%02x). Mechanism undetermined\n",
+                 g_seq_52only, g_seq_without);
     } else if (g_cmd59_idle == 1) {
         app_logf("SD_VERDICT_DRIVER: sdmmc_card_init fails at sdmmc_init_spi_crc: CMD59 "
                  "returns 0x05 (illegal command) inside the driver's own sequence, while a "

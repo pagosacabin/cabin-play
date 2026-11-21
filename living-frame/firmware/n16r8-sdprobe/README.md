@@ -55,12 +55,12 @@ authoritative record; `logs/` holds the runs quoted in the reply.
 | Partition | MBR type `0x0c` at LBA 2048 |
 | Root directory | cluster 2 → LBA 3872, first sector all `0x00`: **empty** |
 | Reads | work over CMD17 (read-only) — MBR and BPB parse at their exact offsets |
-| `sdmmc_card_init` (SPI) | **FAIL** `ESP_ERR_NOT_SUPPORTED` at 400 kHz, 100 kHz and 20 MHz — all at the same step |
-| CMD59 in idle state (driver's order) | **R1=0x01/0x05 — rejected** |
-| CMD59 in transfer state (after ACMD41) | **R1=0x00 — accepted** |
+| `sdmmc_card_init` (SPI) | **FAIL** `ESP_ERR_NOT_SUPPORTED` at 400 kHz, 100 kHz and 20 MHz — all at `sdmmc_init_spi_crc` |
+| CMD59 after the driver's CMD5 probe | **R1=0x05** (illegal command) |
+| CMD59 with no CMD5 in the sequence | **R1=0x01** (accepted; bit0 is the idle bit, not an error) |
 | SDMMC 1-bit | FAIL `ESP_ERR_TIMEOUT` (see caveat below) |
 
-### The mechanism, from the driver's own log
+### The mechanism, from the driver's own log plus a controlled replay
 
 `logs/02-driver-log-names-the-fatal-step.txt`:
 
@@ -68,16 +68,30 @@ authoritative record; `logs/` holds the runs quoted in the reply.
 V sdspi_transaction: r1 = 0x05 ... cmd=52, R1 response: command not supported  <- tolerated
 V sdspi_transaction: r1 = 0x00                                                <- CMD0 ok
 V sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa0100f0                        <- CMD8, "SDHC/SDXC card"
-D sdspi_host: sdspi_host_start_command: cmd=5 error=0x107                    <- CMD5: not IO, fine
+D sdspi_host: sdspi_host_start_command: cmd=5 error=0x107                    <- CMD5: no response
 V sdspi_transaction: r1 = 0x05 ... cmd=59, R1 response: command not supported <- FATAL
 E sdmmc_sd: sdmmc_init_spi_crc: sdmmc_send_cmd_crc_on_off returned 0x106
 ```
 
-`sdmmc_card_init` calls `sdmmc_init_spi_crc` (CMD59) **before** `sdmmc_init_ocr`
-(ACMD41), i.e. while the card is still in idle state. This card rejects CMD59
-in idle and accepts it in transfer state. That is a card-firmware ordering
-quirk, not a wiring fault: every command the card needs to be read works, and
-the failure reproduces identically at three clock rates.
+`sdmmc_card_init` probes SDIO with **CMD5** before it enables CRC, and this card
+does not tolerate CMD5. The replay in the final report isolates it:
+
+```
+with CMD52+CMD5 first: CMD52=0x05  CMD5=0xff  CMD59=0x05   <- poisoned
+without CMD5 (control):                        CMD59=0x01   <- accepted
+CMD52 only,   then CMD59=0x01                               <- CMD52 is harmless
+CMD5 only,    then CMD59=0x05                               <- CMD5 is the poison
+```
+
+After a CMD5 the card answers `0x05` (illegal command) to everything until a
+CMD0 reset. That is a card firmware quirk, not a wiring fault: the card reads
+perfectly, but the driver's own SDIO probe locks it out of the step that
+follows. Note that `R1=0x01` is **not** an error — bit0 means "in idle state" —
+so an idle-state CMD59 answering `0x01` is an accepted command.
+
+The driver cannot be talked out of the CMD5 probe, so the SPI init sequence has
+to be bypassed for this card (this probe already reads sectors directly), or a
+card that tolerates CMD5 used instead.
 
 ### First-pass flakiness worth naming
 

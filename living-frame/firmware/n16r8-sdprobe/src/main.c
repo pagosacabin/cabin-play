@@ -997,10 +997,15 @@ static void raw_inspect(spi_device_handle_t dev)
      * larger than the volume, the two must agree with each other or one of
      * them is fiction -- a classic counterfeit-card signature.  Read the last
      * block the CSD declares and a block past a 512 MB card. */
-    if (!g_have_card_id) {
-        app_logf("  CAPACITY_PROBE: skipped -- no valid CSD was decoded\n");
+    uint64_t csd_bytes = g_have_card_id ? csd_capacity_bytes(g_csd) : 0;
+    if (!g_have_card_id || csd_bytes < 1024ull) {
+        /* A non-0xFF CSD is not necessarily a sane one: a CSD_STRUCTURE this
+         * decoder does not know can compute a capacity under one block, and
+         * `capacity/512 - 1` then underflows to UINT32_MAX.  Skip instead. */
+        app_logf("  CAPACITY_PROBE: skipped -- %s\n",
+                 g_have_card_id ? "CSD capacity is implausibly small"
+                                : "no valid CSD was decoded");
     } else {
-        uint64_t csd_bytes = csd_capacity_bytes(g_csd);
         uint32_t last_lba = (uint32_t)(csd_bytes / 512ull) - 1u;
         uint8_t tb[512];
         int rc1 = raw_read_block(dev, 1000000u, tb);        /* past 512 MB */

@@ -257,7 +257,7 @@ with the ELF magic).
 | **CMD59 in idle state** | **R1=0x01 — ACCEPTED**, also after the driver's CMD52+CMD5 probe (CMD5 itself answers 0x05 = no response) |
 | `sdmmc_card_init` (SPI) | **OK at 400 kHz, 100 kHz and 20 MHz** |
 | **`esp_vfs_fat_sdspi_mount`** | **OK at 400 kHz** — the stock ESP-IDF path works on this card |
-| First-pass behaviour | **13/13 boots failed the FIRST raw init pass** (CMD8 `R1=0x00`, first CMD0 garbage `0x3f`/`0x47`), READY on attempt 2 every time |
+| First-pass behaviour | **14/14 boots failed the FIRST raw init pass** (CMD8 `R1=0x00`, first CMD0 garbage `0x3f`/`0x47`), READY on attempt 2 every time |
 
 ### What followed the card and what stayed with the board
 
@@ -266,7 +266,7 @@ with the ELF magic).
   accepts CMD59 (idle bit only) even after CMD5, so the stock driver both
   initialises and mounts it.
 - **Stayed with the board**: the first-pass flakiness. 0229 saw it as "CMD8
-  `R1=0x05` in 11 of 12 runs"; on this card it is 13/13 (and 14/14 in the earlier
+  `R1=0x05` in 11 of 12 runs"; on this card it is 14/14 (and 13/13 in the intermediate
   pre-review build) with a different signature (`R1=0x00` and a garbage first CMD0). Same *shape* — the first SPI
   exchange after a reset is not understood and the second is clean — so it is
   the board's power-up/contact behaviour, not either card's.

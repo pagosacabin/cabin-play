@@ -74,7 +74,9 @@ static bool g_raw_ready;            /* raw SPI init reached READY */
 static int  g_raw_attempt;
 static bool g_inspect_ok;           /* no read error during inspection */
 static bool g_have_card_id;         /* CSD decoded */
-static int  g_cmd59_idle = -1;      /* -1 not probed, 0 accepted, 1 rejected */
+/* CMD59 in idle state: 0 accepted, 1 rejected with a real R1, 2 unknown (no
+ * response / transfer failure -- which must NOT be reported as a rejection). */
+static int  g_cmd59_idle = -1;      /* -1 not probed */
 
 /* ---- report sink (same discipline as 0225) ------------------------------ */
 static char  g_report[60000];
@@ -403,7 +405,9 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
          * sdmmc_init_spi_crc sends it. */
         uint8_t ridle = sd_raw_cmd(dev, 0, 0, 0x95, 0, pl, sizeof pl);
         uint8_t r59 = sd_raw_cmd(dev, 59, 0x00000001, 0xFF, 0, pl, sizeof pl);
-        g_cmd59_idle = (r59 == 0x00) ? 0 : 1;
+        if (r59 == 0xFF)            g_cmd59_idle = 2;   /* no response at all */
+        else if (r59 == 0x00)       g_cmd59_idle = 0;   /* accepted */
+        else                        g_cmd59_idle = 1;   /* a real R1 rejection */
         app_logf("    CMD59 probe in IDLE state (after CMD0 R1=0x%02x): R1=0x%02x %s\n",
                  ridle, r59, r59 == 0x00 ? "accepted" : "REJECTED");
     }
@@ -629,6 +633,8 @@ static void raw_inspect(spi_device_handle_t dev)
         app_logf("  SD_CID_NAME: %.5s  serial=%02x%02x%02x%02x\n", name,
                  reg[9], reg[10], reg[11], reg[12]);
         }
+    } else {
+        g_inspect_ok = false;   /* a failed CID read is a failed inspection */
     }
 
     write_report_partition();
@@ -801,6 +807,8 @@ static void raw_inspect(spi_device_handle_t dev)
                     app_logf("    FIRST FILE HEX: ");
                     for (int i = 0; i < 16 && i < (int)size; i++) app_logf("%02x ", fb[i]);
                     app_logf("\n");
+                } else {
+                    g_inspect_ok = false;   /* the file it points at is unreadable */
                 }
                 first_file_saved = true;
             }
@@ -994,7 +1002,9 @@ void app_main(void)
     } else {
         app_logf("SD_VERDICT_DRIVER: sdmmc_card_init failed for a reason this probe did not "
                  "isolate (CMD59 probe: %s) -- see the driver log above\n",
-                 g_cmd59_idle == 0 ? "accepted" : "not reached");
+                 g_cmd59_idle == 0 ? "accepted" :
+                 g_cmd59_idle == 1 ? "rejected" :
+                 g_cmd59_idle == 2 ? "no response" : "not reached");
     }
     if (g_have_card_id) {
         app_logf("SD_VERDICT_CARD: identified (see CSD/CID/FAT lines above)\n");

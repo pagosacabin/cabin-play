@@ -130,7 +130,12 @@ the DRIVER verdict asserted the CMD59 mechanism even when the probe never ran
 (now gated on a tri-state probe result), `g_inspect_ok` was not cleared by
 root-sector read errors (now every failure path clears it), and the aliasing
 fix had landed in `raw_inspect()` while `read_root()` still aliased (moot now
-that `read_root()` is gone). Final verdict: see the mailbox reply.
+that `read_root()` is gone).
+
+A third pass found two more, both fixed: `0xFF` (no response) was counted as a
+CMD59 *rejection* -- it is now a distinct "no response" state, and the mechanism
+is only named for a real R1 rejection; and a failed CID read or first-file read
+did not clear `g_inspect_ok`, which it now does.
 
 ## What this means for the write path (task 0230)
 

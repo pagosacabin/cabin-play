@@ -90,10 +90,17 @@ static bool g_seq_ran;
 /* First-pass evidence (0235): the very first CMD0/CMD8 responses of this boot,
  * captured before any retry, so the per-reset counter records the first init
  * pass itself and not the pass that eventually succeeded. */
-static bool     g_fp_captured;      /* first pass already captured this boot */
 static uint8_t  g_fp_cmd0_first = 0xFF;
 static uint8_t  g_fp_first_r1   = 0xFF;
 static uint16_t g_fp_acmd41_ms;
+/* The slot must describe THIS boot's first init pass and nothing later.  The
+ * no-internal-pullup probe runs first, but the pull-up probe and the stock
+ * mount that follow would otherwise overwrite g_raw_ready / g_raw_attempt /
+ * g_fp_acmd41_ms, so a slot could record a PASS produced by a retry.  These
+ * three are written only by the probe that is the first pass (record_first). */
+static bool     g_fp_ready;
+static uint8_t  g_fp_ok_attempt;
+static bool     g_fp_ms_valid;
 
 /* ---- report sink (same discipline as 0225) ------------------------------ */
 static char  g_report[60000];
@@ -289,7 +296,7 @@ static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
     return rx[idx];
 }
 
-static void raw_probe(const char *tag, bool pullups, bool inspect)
+static void raw_probe(const char *tag, bool pullups, bool inspect, bool record_first)
 {
     app_logf("\n--- RAW SPI PROBE [%s], 400 kHz, manual CS, internal pull-ups %s ---\n",
              tag, pullups ? "ON" : "OFF (external only)");
@@ -372,11 +379,12 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
         uint8_t r0 = sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);   /* GO_IDLE */
         vTaskDelay(pdMS_TO_TICKS(5));
         uint8_t r8 = sd_raw_cmd(dev, 8, 0x000001AA, 0x87, 4, pl, sizeof pl);   /* IF_COND */
-        /* 0235: keep the FIRST pass of this boot, before any retry */
-        if (!g_fp_captured && attempt == 1) {
+        /* 0235: keep the FIRST pass of this boot, before any retry, and only
+         * from the probe that IS the first pass - a later probe must not fill
+         * these in on this boot's behalf. */
+        if (record_first && attempt == 1) {
             g_fp_cmd0_first = r0;
             g_fp_first_r1   = r8;
-            g_fp_captured   = true;
         }
         v2 = (r8 == 0x01 && pl[2] == 0x01 && pl[3] == 0xAA);
         app_logf("    CMD8 verdict: %s (R1=0x%02x)\n",
@@ -398,8 +406,9 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
             app_logf("    ACMD41 final: R1=0x%02x after %" PRIu32 " ms (%s)\n", a41,
                      ms41,
                      a41 == 0x00 ? "READY" : "not ready");
-            if (a41 == 0x00 && ok_attempt == 0) {
+            if (a41 == 0x00 && ok_attempt == 0 && record_first) {
                 g_fp_acmd41_ms = (uint16_t)(ms41 > 65535 ? 65535 : ms41);
+                g_fp_ms_valid  = true;
             }
             if (a41 == 0x00) {
                 ready = true;
@@ -419,7 +428,14 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
 
     app_logf("  RAW_INIT: %s on attempt %d of 5\n",
              ready ? "READY" : "FAILED", ready ? ok_attempt : 5);
-    if (ready) { g_raw_ready = true; g_raw_attempt = ok_attempt; }
+    if (ready) {
+        g_raw_ready = true;
+        g_raw_attempt = ok_attempt;
+        if (record_first) {          /* the slot's own view of the first pass */
+            g_fp_ready = true;
+            g_fp_ok_attempt = (uint8_t)ok_attempt;
+        }
+    }
     write_report_partition();
 
     if (ready && inspect) {
@@ -992,11 +1008,11 @@ static void fp_append(void)
     fp_slot_t s;
     memset(&s, 0, sizeof s);
     s.magic       = 0xA5;
-    s.ready       = g_raw_ready ? 1 : 0;
+    s.ready       = g_fp_ready ? 1 : 0;      /* first pass only, not a retry */
     s.first_r1    = g_fp_first_r1;
-    s.ok_attempt  = (uint8_t)(g_raw_ready ? g_raw_attempt : 0);
+    s.ok_attempt  = g_fp_ready ? g_fp_ok_attempt : 0;
     s.cmd0_first  = g_fp_cmd0_first;
-    s.acmd41_ms   = g_fp_acmd41_ms;
+    s.acmd41_ms   = g_fp_ms_valid ? g_fp_acmd41_ms : 0;
 
     if (g_slot_n >= FP_SLOTS) {                 /* keep the newest FP_SLOTS boots */
         memmove(&g_slots[0], &g_slots[1], sizeof(fp_slot_t) * (FP_SLOTS - 1));
@@ -1054,7 +1070,9 @@ static bool      g_mount_ran;
 static bool      g_mount_ok;
 static esp_err_t g_mount_err;
 static int       g_mount_entries;
-static char      g_mount_first[64];
+static char      g_mount_first[264];   /* "/sdcard/" + a FAT name (<=255) + NUL:
+                                        * 64 bytes truncated long names and made a
+                                        * readable file look unopenable */
 static bool      g_mount_file_ok;
 
 /* Why did the driver path fail?  0229's replay (already run by raw_probe()
@@ -1153,7 +1171,10 @@ static void try_stock_mount(uint32_t khz)
                 /* d_name can be longer than the buffer: copy it bounded by hand
                  * rather than let snprintf silently truncate into a warning. */
                 size_t n = strlen(de->d_name);
-                if (n > sizeof g_mount_first - 9) n = sizeof g_mount_first - 9;
+                if (n > sizeof g_mount_first - 9) {   /* not reachable for FAT */
+                    n = sizeof g_mount_first - 9;
+                    app_logf("    (name longer than the path buffer - truncated)\n");
+                }
                 memcpy(g_mount_first, "/sdcard/", 8);
                 memcpy(g_mount_first + 8, de->d_name, n);
                 g_mount_first[8 + n] = 0;
@@ -1344,9 +1365,9 @@ void app_main(void)
     report_line_levels("idle", false);
     report_line_levels("idle", true);
 
-    raw_probe("no-internal-pullup", false, true);
+    raw_probe("no-internal-pullup", false, true, true);
     write_report_partition();
-    raw_probe("internal-pullup", true, false);
+    raw_probe("internal-pullup", true, false, false);
     write_report_partition();
 
     /* 0235 (1): the stock driver all the way to a mounted, read-only volume.

@@ -205,12 +205,18 @@ proof reproduced, `362 vsync in 5.998 s` (one frame of measurement grain).
 
 # 0235 — stock driver to a mount, and a first-pass counter (build-only)
 
-This task extends the probe; it does not re-diagnose the card, and it did not
-touch the hardware: the firmware was **built, not flashed** (the board and the
-seated card were off-limits for this task). So no run is claimed here — the
-numbers in the 0229 section above remain the last measured ones, and re-running
-the probe is what produces 0235's own report through the read-back procedure at
-the top of this file, unchanged.
+This task extends the probe; it does not re-diagnose the card. The board and the
+seated card were off-limits, and the work below is **build-verified only**: no
+run is claimed, the numbers in the 0229 section above remain the last measured
+ones, and re-running the probe is what produces 0235's own report through the
+read-back procedure at the top of this file, unchanged.
+
+One deviation, recorded because it left the bench: the first working turn of the
+goal-mode session ran `pio run -e n16r8-sdprobe -t upload` before the constraint
+was enforced, which flashed this probe over the frame board's build. Nothing was
+written to the card, and the board was restored to its accepted 800x600 build in
+the same session (`n16r8-photo-800x600`, upload verified). The card was never
+written by any part of this task.
 
 Two additions to `src/main.c`, both in the existing report style:
 
@@ -240,6 +246,14 @@ Both sections go out through `app_logf()` / `write_report_partition()`, and the
 verdict block gains `SD_VERDICT_MOUNT` and `SD_VERDICT_FIRSTPASS`. Existing
 probe logic, log formats and partition offsets are untouched: the only edited
 lines in 0229's code capture return values that were previously discarded.
+
+Two peer-review findings were fixed before publishing. The slot is now filled
+from `g_fp_ready` / `g_fp_ok_attempt` / `g_fp_ms_valid`, written only by the
+probe call that *is* the first init pass (`raw_probe(..., record_first)`), so a
+later pull-up probe or the stock mount can no longer turn a failed first pass
+into a recorded PASS. The mounted-file path buffer is 264 bytes (`"/sdcard/"`
+plus a FAT name up to 255), instead of 64, which used to truncate a long root
+filename into a path that could not be opened.
 
 Build check (no upload):
 

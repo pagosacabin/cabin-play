@@ -1043,7 +1043,9 @@ void app_main(void)
     }
     if (ok) {
         app_logf("SD_VERDICT_DRIVER: sdmmc_card_init succeeded\n");
-    } else if (g_seq_ran && g_seq_with == 0x05 && g_seq_without != 0x05 && g_seq_52only != 0x05) {
+    } else if (g_seq_ran && g_seq_with == 0x05
+               && (g_seq_without == 0x00 || g_seq_without == 0x01)      /* control ACCEPTED */
+               && (g_seq_52only  == 0x00 || g_seq_52only  == 0x01)) {   /* CMD52 control ACCEPTED */
         app_logf("SD_VERDICT_DRIVER: sdmmc_card_init fails at sdmmc_init_spi_crc because the "
                  "driver issues an SDIO probe (CMD5) before it: after CMD5 this card answers "
                  "0x05 (illegal command) to CMD59, and to the same CMD59 with no CMD5 in the "

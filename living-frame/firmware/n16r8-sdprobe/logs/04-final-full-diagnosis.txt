@@ -1,7 +1,7 @@
 
 
 ########## 0229 SD DIAGNOSIS ##########
-build: Nov 20 2026 20:53:36
+build: Nov 20 2026 20:57:42
 
 === 1. IDENTITY ===
 CHIP: esp32-s3 cores=2 rev=v0.2
@@ -36,10 +36,6 @@ D (2062) spi: SPI2 use iomux pins.
 D (2082) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
   ATTEMPT 1/5
     CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
-    CMD8  arg=0x000001aa: R1=0x05 payload[4]=ff 05 ff ff ff ff ff ff ff ff ff ff 
-    CMD8 verdict: no valid R7 echo (R1=0x05)
-  ATTEMPT 2/5
-    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 f0 00 01 aa ff ff ff ff ff ff 
     CMD8 verdict: card is v2.00+ (R7 echoes 0x1AA) (R1=0x01)
     CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
@@ -52,7 +48,7 @@ D (2082) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
     OCR: 80 ff 80 00 (CCS/voltage)
     ADDRESSING: BYTE (SDSC: CMD17 arg = LBA x 512) (CCS=0)
     CMD13 arg=0x00000000: R1=0x00 payload[2]=ff 00 00 ff ff ff ff ff ff ff 
-  RAW_INIT: READY on attempt 2 of 5
+  RAW_INIT: READY on attempt 1 of 5
 
 === 2. CARD CONTENTS (RAW, READ-ONLY) ===
   CSD_STRUCTURE: v1
@@ -110,24 +106,24 @@ D (2082) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
     CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD0 repeatability: 10/10 answered R1=0x01 (idle)
-D (3412) gdma: del rx channel (0,0)
-D (3412) gdma: del tx channel (0,0)
-D (3422) gdma: del pair (0,0)
-D (3422) gdma: del group 0
+D (3302) gdma: del rx channel (0,0)
+D (3302) gdma: del tx channel (0,0)
+D (3312) gdma: del pair (0,0)
+D (3312) gdma: del group 0
 
 --- RAW SPI PROBE [internal-pullup], 400 kHz, manual CS, internal pull-ups ON ---
-D (3582) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
-D (3592) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
-D (3602) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
-D (3612) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
-D (3622) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (3472) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (3482) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (3492) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (3502) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (3512) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
 LINES[internal-pullup] pullups=internal-on: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
-D (3632) gdma: new group (0) at 0x3fce9dec
-D (3642) gdma: new pair (0,0) at 0x3fce9c40
-D (3642) gdma: new tx channel (0,0) at 0x3fce9db4
-D (3642) gdma: new rx channel (0,0) at 0x3fce9e78
-D (3652) spi: SPI2 use iomux pins.
-D (3662) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (3522) gdma: new group (0) at 0x3fce9dec
+D (3532) gdma: new pair (0,0) at 0x3fce9c40
+D (3532) gdma: new tx channel (0,0) at 0x3fce9db4
+D (3532) gdma: new rx channel (0,0) at 0x3fce9e78
+D (3542) spi: SPI2 use iomux pins.
+D (3552) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
   ATTEMPT 1/5
     CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 f0 00 01 aa ff ff ff ff ff ff 
@@ -137,7 +133,7 @@ D (3662) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
     ACMD41 initial: R1=0x01
     CMD55 arg=0x00000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
     CMD41 arg=0x40000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
-    ACMD41 final: R1=0x00 after 12 ms (READY)
+    ACMD41 final: R1=0x00 after 13 ms (READY)
     CMD58 arg=0x00000000: R1=0x00 payload[4]=ff 00 80 ff 80 00 ff ff ff ff ff ff 
     OCR: 80 ff 80 00 (CCS/voltage)
     ADDRESSING: BYTE (SDSC: CMD17 arg = LBA x 512) (CCS=0)
@@ -154,201 +150,201 @@ D (3662) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
     CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
     CMD0 repeatability: 10/10 answered R1=0x01 (idle)
-D (3982) gdma: del rx channel (0,0)
-D (3982) gdma: del tx channel (0,0)
-D (3982) gdma: del pair (0,0)
-D (3982) gdma: del group 0
+D (3872) gdma: del rx channel (0,0)
+D (3872) gdma: del tx channel (0,0)
+D (3872) gdma: del pair (0,0)
+D (3872) gdma: del group 0
 
 --- SPI sdmmc_card_init [rung1 400kHz] at 400 kHz ---
-D (4162) gdma: new group (0) at 0x3fce9dec
-D (4162) gdma: new pair (0,0) at 0x3fce9c40
-D (4162) gdma: new tx channel (0,0) at 0x3fce9db4
-D (4172) gdma: new rx channel (0,0) at 0x3fce9e78
-D (4172) spi: SPI2 use iomux pins.
-D (4172) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
-D (4192) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
-D (4202) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
-D (4212) spi_master: device5 locked the bus
-D (4212) spi_master: device5 release bus
-V (4222) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
-I (4222) sdspi_transaction: cmd=52, R1 response: command not supported
-D (4232) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
-D (4232) spi_master: device5 locked the bus
-D (4242) spi_master: device5 release bus
-V (4242) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
-D (4272) spi_master: device5 locked the bus
-D (4272) spi_master: device5 release bus
-V (4272) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
-D (4292) spi_master: device5 locked the bus
-D (4292) spi_master: device5 release bus
-V (4292) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa0100f0
-D (4292) sdmmc_sd: SDHC/SDXC card
-D (4292) spi_master: device5 locked the bus
-D (4292) spi_master: device5 release bus
-D (4302) sdspi_host: sdspi_host_start_command: cmd=5 error=0x107
-D (4302) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x107
-D (4312) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
-D (4322) spi_master: device5 locked the bus
-D (4322) spi_master: device5 release bus
-D (4322) sdspi_host: data CRC set=1
-V (4332) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
-D (4332) sdspi_transaction: cmd=59, R1 response: command not supported
-D (4342) sdmmc_cmd: cmd=59, sdmmc_req_run returned 0x106
-E (4342) sdmmc_sd: sdmmc_init_spi_crc: sdmmc_send_cmd_crc_on_off returned 0x106
-D (4352) sdmmc_init: sdmmc_card_init: sdmmc_init_spi_crc returned 0x106
+D (4052) gdma: new group (0) at 0x3fce9dec
+D (4052) gdma: new pair (0,0) at 0x3fce9c40
+D (4052) gdma: new tx channel (0,0) at 0x3fce9db4
+D (4062) gdma: new rx channel (0,0) at 0x3fce9e78
+D (4062) spi: SPI2 use iomux pins.
+D (4062) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
+D (4082) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (4092) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (4102) spi_master: device5 locked the bus
+D (4102) spi_master: device5 release bus
+V (4112) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+I (4112) sdspi_transaction: cmd=52, R1 response: command not supported
+D (4122) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
+D (4122) spi_master: device5 locked the bus
+D (4132) spi_master: device5 release bus
+V (4132) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (4152) spi_master: device5 locked the bus
+D (4152) spi_master: device5 release bus
+V (4152) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (4172) spi_master: device5 locked the bus
+D (4172) spi_master: device5 release bus
+V (4172) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa0100f0
+D (4172) sdmmc_sd: SDHC/SDXC card
+D (4172) spi_master: device5 locked the bus
+D (4172) spi_master: device5 release bus
+D (4182) sdspi_host: sdspi_host_start_command: cmd=5 error=0x107
+D (4182) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x107
+D (4192) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
+D (4202) spi_master: device5 locked the bus
+D (4202) spi_master: device5 release bus
+D (4202) sdspi_host: data CRC set=1
+V (4212) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+D (4212) sdspi_transaction: cmd=59, R1 response: command not supported
+D (4222) sdmmc_cmd: cmd=59, sdmmc_req_run returned 0x106
+E (4222) sdmmc_sd: sdmmc_init_spi_crc: sdmmc_send_cmd_crc_on_off returned 0x106
+D (4232) sdmmc_init: sdmmc_card_init: sdmmc_init_spi_crc returned 0x106
   SD_CARD_INIT[rung1 400kHz 400 kHz]: FAIL ESP_ERR_NOT_SUPPORTED (262)
-D (4362) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
-D (4372) gdma: del rx channel (0,0)
-D (4372) gdma: del tx channel (0,0)
-D (4382) gdma: del pair (0,0)
-D (4382) gdma: del group 0
+D (4242) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (4252) gdma: del rx channel (0,0)
+D (4252) gdma: del tx channel (0,0)
+D (4262) gdma: del pair (0,0)
+D (4262) gdma: del group 0
 
 --- SPI sdmmc_card_init [rung1 100kHz] at 100 kHz ---
-D (4392) gdma: new group (0) at 0x3fce9dec
-D (4392) gdma: new pair (0,0) at 0x3fce9c40
-D (4402) gdma: new tx channel (0,0) at 0x3fce9db4
-D (4402) gdma: new rx channel (0,0) at 0x3fce9e78
-D (4402) spi: SPI2 use iomux pins.
-D (4412) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
-D (4422) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
-D (4432) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
-D (4442) spi_master: device5 locked the bus
-D (4442) spi_master: device5 release bus
-V (4452) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
-I (4452) sdspi_transaction: cmd=52, R1 response: command not supported
-D (4462) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
-D (4462) spi_master: device5 locked the bus
-D (4472) spi_master: device5 release bus
-V (4472) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
-D (4502) spi_master: device5 locked the bus
-D (4502) spi_master: device5 release bus
-V (4502) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
-D (4522) spi_master: device5 locked the bus
-D (4522) spi_master: device5 release bus
-V (4522) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa0100f0
-D (4522) sdmmc_sd: SDHC/SDXC card
-D (4522) spi_master: device5 locked the bus
-D (4522) spi_master: device5 release bus
-D (4532) sdspi_host: sdspi_host_start_command: cmd=5 error=0x107
-D (4532) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x107
-D (4542) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
-D (4552) spi_master: device5 locked the bus
-D (4552) spi_master: device5 release bus
-D (4552) sdspi_host: data CRC set=1
-V (4562) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
-D (4562) sdspi_transaction: cmd=59, R1 response: command not supported
-D (4572) sdmmc_cmd: cmd=59, sdmmc_req_run returned 0x106
-E (4572) sdmmc_sd: sdmmc_init_spi_crc: sdmmc_send_cmd_crc_on_off returned 0x106
-D (4582) sdmmc_init: sdmmc_card_init: sdmmc_init_spi_crc returned 0x106
+D (4272) gdma: new group (0) at 0x3fce9dec
+D (4272) gdma: new pair (0,0) at 0x3fce9c40
+D (4282) gdma: new tx channel (0,0) at 0x3fce9db4
+D (4282) gdma: new rx channel (0,0) at 0x3fce9e78
+D (4282) spi: SPI2 use iomux pins.
+D (4292) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
+D (4302) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (4312) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (4322) spi_master: device5 locked the bus
+D (4322) spi_master: device5 release bus
+V (4332) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+I (4332) sdspi_transaction: cmd=52, R1 response: command not supported
+D (4342) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
+D (4342) spi_master: device5 locked the bus
+D (4352) spi_master: device5 release bus
+V (4352) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (4382) spi_master: device5 locked the bus
+D (4382) spi_master: device5 release bus
+V (4382) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (4402) spi_master: device5 locked the bus
+D (4402) spi_master: device5 release bus
+V (4402) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa0100f0
+D (4402) sdmmc_sd: SDHC/SDXC card
+D (4402) spi_master: device5 locked the bus
+D (4402) spi_master: device5 release bus
+D (4412) sdspi_host: sdspi_host_start_command: cmd=5 error=0x107
+D (4412) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x107
+D (4422) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
+D (4432) spi_master: device5 locked the bus
+D (4432) spi_master: device5 release bus
+D (4432) sdspi_host: data CRC set=1
+V (4442) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+D (4442) sdspi_transaction: cmd=59, R1 response: command not supported
+D (4452) sdmmc_cmd: cmd=59, sdmmc_req_run returned 0x106
+E (4452) sdmmc_sd: sdmmc_init_spi_crc: sdmmc_send_cmd_crc_on_off returned 0x106
+D (4462) sdmmc_init: sdmmc_card_init: sdmmc_init_spi_crc returned 0x106
   SD_CARD_INIT[rung1 100kHz 100 kHz]: FAIL ESP_ERR_NOT_SUPPORTED (262)
-D (4592) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
-D (4602) gdma: del rx channel (0,0)
-D (4602) gdma: del tx channel (0,0)
-D (4612) gdma: del pair (0,0)
-D (4612) gdma: del group 0
+D (4472) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (4482) gdma: del rx channel (0,0)
+D (4482) gdma: del tx channel (0,0)
+D (4492) gdma: del pair (0,0)
+D (4492) gdma: del group 0
 
 --- SPI sdmmc_card_init [rung1 default] at 20000 kHz ---
-D (4622) gdma: new group (0) at 0x3fce9dec
-D (4622) gdma: new pair (0,0) at 0x3fce9c40
-D (4632) gdma: new tx channel (0,0) at 0x3fce9db4
-D (4632) gdma: new rx channel (0,0) at 0x3fce9e78
-D (4632) spi: SPI2 use iomux pins.
-D (4642) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
-D (4662) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
-D (4662) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
-D (4672) spi_master: device5 locked the bus
-D (4672) spi_master: device5 release bus
-V (4682) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
-I (4682) sdspi_transaction: cmd=52, R1 response: command not supported
-D (4692) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
-D (4692) spi_master: device5 locked the bus
-D (4702) spi_master: device5 release bus
-V (4702) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
-D (4732) spi_master: device5 locked the bus
-D (4732) spi_master: device5 release bus
-V (4732) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
-D (4752) spi_master: device5 locked the bus
-D (4752) spi_master: device5 release bus
-V (4752) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa0100f0
-D (4752) sdmmc_sd: SDHC/SDXC card
-D (4752) spi_master: device5 locked the bus
-D (4752) spi_master: device5 release bus
-D (4762) sdspi_host: sdspi_host_start_command: cmd=5 error=0x107
-D (4762) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x107
-D (4772) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
-D (4782) spi_master: device5 locked the bus
-D (4782) spi_master: device5 release bus
-D (4782) sdspi_host: data CRC set=1
-V (4792) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
-D (4792) sdspi_transaction: cmd=59, R1 response: command not supported
-D (4802) sdmmc_cmd: cmd=59, sdmmc_req_run returned 0x106
-E (4802) sdmmc_sd: sdmmc_init_spi_crc: sdmmc_send_cmd_crc_on_off returned 0x106
-D (4812) sdmmc_init: sdmmc_card_init: sdmmc_init_spi_crc returned 0x106
+D (4502) gdma: new group (0) at 0x3fce9dec
+D (4502) gdma: new pair (0,0) at 0x3fce9c40
+D (4512) gdma: new tx channel (0,0) at 0x3fce9db4
+D (4512) gdma: new rx channel (0,0) at 0x3fce9e78
+D (4512) spi: SPI2 use iomux pins.
+D (4522) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
+D (4542) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (4542) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (4552) spi_master: device5 locked the bus
+D (4552) spi_master: device5 release bus
+V (4562) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+I (4562) sdspi_transaction: cmd=52, R1 response: command not supported
+D (4572) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
+D (4572) spi_master: device5 locked the bus
+D (4582) spi_master: device5 release bus
+V (4582) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (4612) spi_master: device5 locked the bus
+D (4612) spi_master: device5 release bus
+V (4612) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (4632) spi_master: device5 locked the bus
+D (4632) spi_master: device5 release bus
+V (4632) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa0100f0
+D (4632) sdmmc_sd: SDHC/SDXC card
+D (4632) spi_master: device5 locked the bus
+D (4632) spi_master: device5 release bus
+D (4642) sdspi_host: sdspi_host_start_command: cmd=5 error=0x107
+D (4642) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x107
+D (4652) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
+D (4662) spi_master: device5 locked the bus
+D (4662) spi_master: device5 release bus
+D (4662) sdspi_host: data CRC set=1
+V (4672) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+D (4672) sdspi_transaction: cmd=59, R1 response: command not supported
+D (4682) sdmmc_cmd: cmd=59, sdmmc_req_run returned 0x106
+E (4682) sdmmc_sd: sdmmc_init_spi_crc: sdmmc_send_cmd_crc_on_off returned 0x106
+D (4692) sdmmc_init: sdmmc_card_init: sdmmc_init_spi_crc returned 0x106
   SD_CARD_INIT[rung1 default 20000 kHz]: FAIL ESP_ERR_NOT_SUPPORTED (262)
-D (4822) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
-D (4832) gdma: del rx channel (0,0)
-D (4832) gdma: del tx channel (0,0)
-D (4842) gdma: del pair (0,0)
-D (4842) gdma: del group 0
+D (4702) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (4712) gdma: del rx channel (0,0)
+D (4712) gdma: del tx channel (0,0)
+D (4722) gdma: del pair (0,0)
+D (4722) gdma: del group 0
 
 --- SDMMC 1-bit [same pins] at 400 kHz ---
   CLK=12 CMD=11 D0=13 (CS 10 unused in SD mode; card-side DAT3 pull-up assumed)
-D (4852) sdmmc_periph: peripheral version 5342270a, hardware config 03c44c83
-D (4872) sdmmc_periph: using GPIO12 as clk pin
-D (4872) sdmmc_periph: using GPIO11 as cmd pin
-D (4872) sdmmc_periph: using GPIO13 as d0 pin
-D (4882) sdmmc_periph: Slot 1 is not initialized yet, skipping sdmmc_host_change_to_slot
-D (4892) sdmmc_periph: clk_src_freq_hz: 160000000 hz
-D (4892) sdmmc_periph: slot=1 clk_src=6 host_div=10 card_div=20 freq=400kHz (max 400kHz)
-D (4902) sdmmc_periph: Slot 1 is not initialized yet, skipping sdmmc_host_change_to_slot
-D (4912) sdmmc_periph: Slot 1 is not initialized yet, skipping sdmmc_host_change_to_slot
-D (4912) sdmmc_periph: slot=1 width=1
-D (4922) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (4942) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (4942) sdmmc_sd: CMD8 timeout; not an SD v2.00 card
-D (4942) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (4942) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
-D (4952) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (4962) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (4962) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (4972) sdmmc_cmd: sdmmc_send_cmd_send_op_cond: sdmmc_send_app_cmd err=0x107
-D (4982) sdmmc_common: send_op_cond timeout, trying MMC
-D (4982) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (4992) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5002) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5002) sdmmc_cmd: sdmmc_send_cmd_send_op_cond: sdmmc_send_app_cmd err=0x107
-E (5012) sdmmc_common: sdmmc_init_ocr: send_op_cond (1) returned 0x107
-D (5022) sdmmc_init: sdmmc_card_init: sdmmc_init_ocr returned 0x107
+D (4732) sdmmc_periph: peripheral version 5342270a, hardware config 03c44c83
+D (4752) sdmmc_periph: using GPIO12 as clk pin
+D (4752) sdmmc_periph: using GPIO11 as cmd pin
+D (4752) sdmmc_periph: using GPIO13 as d0 pin
+D (4762) sdmmc_periph: Slot 1 is not initialized yet, skipping sdmmc_host_change_to_slot
+D (4772) sdmmc_periph: clk_src_freq_hz: 160000000 hz
+D (4772) sdmmc_periph: slot=1 clk_src=6 host_div=10 card_div=20 freq=400kHz (max 400kHz)
+D (4782) sdmmc_periph: Slot 1 is not initialized yet, skipping sdmmc_host_change_to_slot
+D (4792) sdmmc_periph: Slot 1 is not initialized yet, skipping sdmmc_host_change_to_slot
+D (4792) sdmmc_periph: slot=1 width=1
+D (4802) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4822) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4822) sdmmc_sd: CMD8 timeout; not an SD v2.00 card
+D (4822) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4822) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
+D (4832) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4842) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4842) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4852) sdmmc_cmd: sdmmc_send_cmd_send_op_cond: sdmmc_send_app_cmd err=0x107
+D (4862) sdmmc_common: send_op_cond timeout, trying MMC
+D (4862) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4872) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4882) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4882) sdmmc_cmd: sdmmc_send_cmd_send_op_cond: sdmmc_send_app_cmd err=0x107
+E (4892) sdmmc_common: sdmmc_init_ocr: send_op_cond (1) returned 0x107
+D (4902) sdmmc_init: sdmmc_card_init: sdmmc_init_ocr returned 0x107
   SDMMC_CARD_INIT[1-bit 400 kHz]: FAIL ESP_ERR_TIMEOUT (263)
-D (5032) sdmmc_periph: SDMMC host deinitialized
+D (4912) sdmmc_periph: SDMMC host deinitialized
 
 --- SDMMC 1-bit [same pins] at 20000 kHz ---
   CLK=12 CMD=11 D0=13 (CS 10 unused in SD mode; card-side DAT3 pull-up assumed)
-D (5042) sdmmc_periph: peripheral version 5342270a, hardware config 03c44c83
-D (5052) sdmmc_periph: using GPIO12 as clk pin
-D (5062) sdmmc_periph: using GPIO11 as cmd pin
-D (5062) sdmmc_periph: using GPIO13 as d0 pin
-D (5072) sdmmc_periph: clk_src_freq_hz: 160000000 hz
-D (5072) sdmmc_periph: slot=1 clk_src=6 host_div=10 card_div=20 freq=400kHz (max 400kHz)
-D (5082) sdmmc_periph: slot=1 width=1
-D (5082) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5112) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5112) sdmmc_sd: CMD8 timeout; not an SD v2.00 card
-D (5112) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5112) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
-D (5122) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5132) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5132) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5142) sdmmc_cmd: sdmmc_send_cmd_send_op_cond: sdmmc_send_app_cmd err=0x107
-D (5152) sdmmc_common: send_op_cond timeout, trying MMC
-D (5152) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5162) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5172) sdmmc_req: process_command_response: error 0x107  (status=00000100)
-D (5172) sdmmc_cmd: sdmmc_send_cmd_send_op_cond: sdmmc_send_app_cmd err=0x107
-E (5182) sdmmc_common: sdmmc_init_ocr: send_op_cond (1) returned 0x107
-D (5192) sdmmc_init: sdmmc_card_init: sdmmc_init_ocr returned 0x107
+D (4922) sdmmc_periph: peripheral version 5342270a, hardware config 03c44c83
+D (4932) sdmmc_periph: using GPIO12 as clk pin
+D (4942) sdmmc_periph: using GPIO11 as cmd pin
+D (4942) sdmmc_periph: using GPIO13 as d0 pin
+D (4952) sdmmc_periph: clk_src_freq_hz: 160000000 hz
+D (4952) sdmmc_periph: slot=1 clk_src=6 host_div=10 card_div=20 freq=400kHz (max 400kHz)
+D (4962) sdmmc_periph: slot=1 width=1
+D (4962) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4992) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4992) sdmmc_sd: CMD8 timeout; not an SD v2.00 card
+D (4992) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (4992) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x107; not IO card
+D (5002) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (5012) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (5012) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (5022) sdmmc_cmd: sdmmc_send_cmd_send_op_cond: sdmmc_send_app_cmd err=0x107
+D (5032) sdmmc_common: send_op_cond timeout, trying MMC
+D (5032) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (5042) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (5052) sdmmc_req: process_command_response: error 0x107  (status=00000100)
+D (5052) sdmmc_cmd: sdmmc_send_cmd_send_op_cond: sdmmc_send_app_cmd err=0x107
+E (5062) sdmmc_common: sdmmc_init_ocr: send_op_cond (1) returned 0x107
+D (5072) sdmmc_init: sdmmc_card_init: sdmmc_init_ocr returned 0x107
   SDMMC_CARD_INIT[1-bit 20000 kHz]: FAIL ESP_ERR_TIMEOUT (263)
-D (5202) sdmmc_periph: SDMMC host deinitialized
+D (5082) sdmmc_periph: SDMMC host deinitialized
 
 === 3. VERDICTS ===
 SD_VERDICT_RAW: the card ANSWERS on SPI (raw init READY)

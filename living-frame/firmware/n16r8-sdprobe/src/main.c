@@ -37,6 +37,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <inttypes.h>
@@ -50,11 +51,16 @@
 #include "esp_partition.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_vfs_fat.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "driver/sdspi_host.h"
 #include "driver/sdmmc_host.h"
 #include "sdmmc_cmd.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "dirent.h"
+#include "sys/stat.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -74,6 +80,7 @@ static bool g_raw_ready;            /* raw SPI init reached READY */
 static int  g_raw_attempt;
 static bool g_inspect_ok;           /* no read error during inspection */
 static bool g_have_card_id;         /* CSD decoded */
+static uint8_t g_csd[16];           /* CSD as read (CID is read into the same buffer) */
 /* CMD59 in idle state: 0 accepted, 1 rejected with a real R1, 2 unknown (no
  * response / transfer failure -- which must NOT be reported as a rejection). */
 static int  g_cmd59_idle = -1;      /* -1 not probed */
@@ -81,6 +88,13 @@ static uint8_t g_seq_with = 0xFF;   /* CMD59 after CMD52+CMD5, like the driver *
 static uint8_t g_seq_without = 0xFF;/* CMD59 without CMD5 (control) */
 static uint8_t g_seq_52only = 0xFF; /* CMD59 after CMD52 alone (control) */
 static bool g_seq_ran;
+
+/* First-pass evidence for 0234's cross-reset table: the very first responses
+ * of this boot, captured before any retry — the same quantity 0229 measured at
+ * 11 failures in 12 runs on the old card. */
+static uint8_t  g_fp_first_r1   = 0xFF;
+static uint8_t  g_fp_cmd0_first = 0xFF;
+static uint16_t g_fp_acmd41_ms;
 
 /* ---- report sink (same discipline as 0225) ------------------------------ */
 static char  g_report[60000];
@@ -99,6 +113,111 @@ static void app_logf(const char *fmt, ...)
     if (g_report_len + (size_t)n < sizeof(g_report)) {
         memcpy(g_report + g_report_len, line, (size_t)n);
         g_report_len += (size_t)n;
+    }
+}
+
+/* ---- first-pass counter, persisted across board resets (task 0234) -------
+ * 0229 measured "first init pass after a reset fails 11 of 12" by hand, from
+ * 12 hand-driven runs.  The question this task asks is whether that flakiness
+ * followed the card, so it has to be measured on this card by the board
+ * itself, over at least 10 resets.  Each boot appends one slot to NVS (the
+ * `nvs` partition, untouched by the report read-back) so the table survives
+ * the reset that produced it, and prints the whole table into the report.
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t  magic;        /* 0xA5: a slot that was actually written */
+    uint8_t  ready;        /* 1 = raw SPI init reached READY this boot */
+    uint8_t  first_r1;     /* CMD8 R1 on attempt 1 (0xFF = no response) */
+    uint8_t  ok_attempt;   /* attempt that reached READY, 0 = none */
+    uint16_t acmd41_ms;    /* time to READY on the winning attempt */
+    uint16_t cmd0_first;   /* CMD0 R1 on the very first try this boot */
+} fp_slot_t;
+
+#define FP_SLOTS 24
+static fp_slot_t g_slots[FP_SLOTS];
+static int       g_slot_n;
+static bool      g_fp_nvs_ok;
+static uint32_t  g_build_id;
+static nvs_handle_t g_nvs;
+
+static void fp_load(void)
+{
+    esp_err_t err = nvs_flash_init();
+    if (err != ESP_OK && err != ESP_ERR_NVS_NO_FREE_PAGES) {
+        app_logf("FIRSTPASS: nvs_flash_init failed (%s) - counter will not survive resets\n",
+                 esp_err_to_name(err));
+        return;
+    }
+    err = nvs_open("sdprobe0234", NVS_READWRITE, &g_nvs);
+    if (err != ESP_OK) {
+        app_logf("FIRSTPASS: nvs_open failed (%s) - counter will not survive resets\n",
+                 esp_err_to_name(err));
+        return;
+    }
+    g_fp_nvs_ok = true;
+
+    /* A table belongs to the build that produced it: a reflash starts a new
+     * run, so the slots are keyed by a hash of the build stamp.  NVS itself is
+     * NOT erased (the accepted 800x600 build's own settings live there). */
+    char stamp[64];
+    snprintf(stamp, sizeof stamp, "%s %s", __DATE__, __TIME__);
+    uint32_t bid = 2166136261u;
+    for (const char *c = stamp; *c; c++) { bid ^= (uint8_t)*c; bid *= 16777619u; }
+    g_build_id = bid;
+    uint32_t stored = 0;
+    bool same = (nvs_get_u32(g_nvs, "bid", &stored) == ESP_OK && stored == bid);
+
+    size_t len = sizeof(g_slots);
+    err = nvs_get_blob(g_nvs, "fp", g_slots, &len);
+    if (err == ESP_OK && same) {
+        g_slot_n = (int)(len / sizeof(fp_slot_t));
+        if (g_slot_n > FP_SLOTS) g_slot_n = FP_SLOTS;
+    } else {
+        g_slot_n = 0;
+        nvs_set_u32(g_nvs, "bid", bid);
+        nvs_commit(g_nvs);
+        app_logf("FIRSTPASS: new build stamp, table starts empty\n");
+    }
+}
+
+static void fp_append(uint8_t ready, uint8_t first_r1, uint8_t ok_attempt,
+                      uint16_t acmd41_ms, uint16_t cmd0_first)
+{
+    fp_slot_t s = { 0xA5, ready, first_r1, ok_attempt, acmd41_ms, cmd0_first };
+    if (g_slot_n >= FP_SLOTS) {
+        /* keep the newest FP_SLOTS runs: drop the oldest */
+        memmove(&g_slots[0], &g_slots[1], sizeof(fp_slot_t) * (FP_SLOTS - 1));
+        g_slot_n = FP_SLOTS - 1;
+    }
+    g_slots[g_slot_n++] = s;
+    if (g_fp_nvs_ok) {
+        esp_err_t err = nvs_set_blob(g_nvs, "fp", g_slots, sizeof(fp_slot_t) * (size_t)g_slot_n);
+        if (err == ESP_OK) err = nvs_commit(g_nvs);
+        if (err != ESP_OK) app_logf("FIRSTPASS: persisting slot failed (%s)\n", esp_err_to_name(err));
+    }
+}
+
+static void fp_report(void)
+{
+    int pass_first = 0, ready_n = 0;
+    app_logf("\n=== 4. FIRST-PASS TABLE (persisted across resets, NVS) ===\n");
+    app_logf("FIRSTPASS_SLOTS: %d (of %d kept), build_id=%08x\n", g_slot_n, FP_SLOTS, g_build_id);
+    for (int i = 0; i < g_slot_n; i++) {
+        const fp_slot_t *s = &g_slots[i];
+        app_logf("  boot %2d: CMD0_first=0x%02x CMD8_r1=0x%02x RAW=%s ok_attempt=%u acmd41=%u ms\n",
+                 i + 1, s->cmd0_first, s->first_r1, s->ready ? "READY" : "FAILED",
+                 s->ok_attempt, s->acmd41_ms);
+        if (s->ready) ready_n++;
+        if (s->ready && s->ok_attempt == 1) pass_first++;
+    }
+    app_logf("FIRSTPASS_SUMMARY: raw_init_ready=%d/%d first_pass_ok=%d/%d\n",
+             ready_n, g_slot_n, pass_first, g_slot_n);
+    if (g_slot_n > 0) {
+        app_logf("FIRSTPASS_VERDICT: %s\n",
+                 pass_first == g_slot_n
+                   ? "every boot's FIRST init pass succeeded (no reset-dependent flakiness)"
+                   : "the first init pass after a reset failed on this card too -- the "
+                     "flakiness does NOT follow the old card");
     }
 }
 
@@ -338,6 +457,10 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
     bool v2 = false;
     int  ok_attempt = 0;
 
+    /* First-pass evidence for the cross-reset table (0234): the very first
+     * CMD0 and CMD8 responses of this boot, before any retry. */
+    bool capture_first = (strcmp(tag, "no-internal-pullup") == 0);
+
     /* The first init exchange after a reset sometimes comes back R1=0x05
      * (illegal command) and succeeds on the next pass, so the sequence is
      * repeated and the attempt number recorded.  Counting it is the honest
@@ -356,9 +479,13 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
             spi_device_transmit(dev, &t);
         }
 
-        sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);   /* GO_IDLE */
+        uint8_t r0 = sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);   /* GO_IDLE */
         vTaskDelay(pdMS_TO_TICKS(5));
         uint8_t r8 = sd_raw_cmd(dev, 8, 0x000001AA, 0x87, 4, pl, sizeof pl);   /* IF_COND */
+        if (capture_first && attempt == 1) {
+            g_fp_first_r1 = r8;
+            g_fp_cmd0_first = r0;
+        }
         v2 = (r8 == 0x01 && pl[2] == 0x01 && pl[3] == 0xAA);
         app_logf("    CMD8 verdict: %s (R1=0x%02x)\n",
                  v2 ? "card is v2.00+ (R7 echoes 0x1AA)" : "no valid R7 echo", r8);
@@ -375,9 +502,13 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
                 sd_raw_cmd(dev, 55, 0, 0x65, 0, pl, sizeof pl);
                 a41 = sd_raw_cmd(dev, 41, 0x40000000u, 0x77, 0, pl, sizeof pl);
             }
+            uint32_t ms41 = (uint32_t)(esp_timer_get_time() / 1000) - t0;
             app_logf("    ACMD41 final: R1=0x%02x after %" PRIu32 " ms (%s)\n", a41,
-                     (uint32_t)(esp_timer_get_time() / 1000) - t0,
+                     ms41,
                      a41 == 0x00 ? "READY" : "not ready");
+            if (capture_first && (ok_attempt == 0 || attempt == ok_attempt)) {
+                g_fp_acmd41_ms = (uint16_t)(ms41 > 65535 ? 65535 : ms41);
+            }
             if (a41 == 0x00) {
                 ready = true;
                 ok_attempt = attempt;
@@ -651,6 +782,7 @@ static void raw_inspect(spi_device_handle_t dev)
             app_logf("  CSD: read returned 16 x 0xFF -- treated as a failed read, not as a card\n");
         } else {
         uint64_t bytes = csd_capacity_bytes(reg);
+        memcpy(g_csd, reg, sizeof g_csd);
         app_logf("  CSD_STRUCTURE: v%u\n", (reg[0] >> 6) == 0 ? 1u : 2u);
         app_logf("  CSD: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
                  reg[0], reg[1], reg[2], reg[3], reg[4], reg[5], reg[6], reg[7],
@@ -668,14 +800,35 @@ static void raw_inspect(spi_device_handle_t dev)
         if (blank) {
             app_logf("  CID: read returned 16 x 0xFF -- failed read\n");
         } else {
-        char name[6] = {0};
-        /* CID in SPI: 16 bytes, byte0 = CRC+reserved; PNM is bytes 4..8 */
-        memcpy(name, reg + 4, 5);
+        /* CID in SPI: 16 bytes.  The SPI read may or may not carry one extra
+         * leading byte, so the fields are decoded at both alignments and the
+         * one whose PNM is printable ASCII is named -- 0229 decoded a name from
+         * bytes 4..8, which is the offset-1 alignment. */
         app_logf("  CID: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
                  reg[0], reg[1], reg[2], reg[3], reg[4], reg[5], reg[6], reg[7],
                  reg[8], reg[9], reg[10], reg[11], reg[12], reg[13], reg[14], reg[15]);
-        app_logf("  SD_CID_NAME: %.5s  serial=%02x%02x%02x%02x\n", name,
-                 reg[9], reg[10], reg[11], reg[12]);
+        for (int sh = 0; sh <= 1; sh++) {
+            char pnm[6] = {0};
+            bool printable = true;
+            for (int i = 0; i < 5; i++) {
+                pnm[i] = (char)reg[3 + sh + i];
+                if (pnm[i] < 0x20 || pnm[i] > 0x7E) printable = false;
+            }
+            app_logf("  SD_CID[align %d]: MID=0x%02x OID=%c%c PNM=%s PRV=%u.%u "
+                     "PSN=%02x%02x%02x%02x MDT=%u/%u%s\n",
+                     sh, reg[0 + sh], reg[1 + sh], reg[2 + sh], printable ? pnm : "?????",
+                     reg[8 + sh] >> 4, reg[8 + sh] & 0x0F,
+                     reg[9 + sh], reg[10 + sh], reg[11 + sh], reg[12 + sh],
+                     2000 + ((reg[13 + sh] >> 4) & 0x0F), reg[14 + sh] & 0x0F,
+                     printable ? "  <- printable PNM at this alignment" : "");
+        }
+        {
+            int sh = (reg[4] >= 0x20 && reg[4] <= 0x7E) ? 1 : 0;
+            char pnm[6] = {0};
+            memcpy(pnm, reg + 3 + sh, 5);
+            app_logf("  SD_CID_NAME: %.5s  serial=%02x%02x%02x%02x\n", pnm,
+                     reg[10 + sh], reg[11 + sh], reg[12 + sh], reg[13 + sh]);
+        }
         }
     } else {
         g_inspect_ok = false;   /* a failed CID read is a failed inspection */
@@ -713,6 +866,43 @@ static void raw_inspect(spi_device_handle_t dev)
         return;
     }
     app_logf("  SD_PARTITION: type=0x%02" PRIx32 " lba=%" PRIu32 "\n", part_type, part_lba);
+
+    /* Every MBR entry, with its own boot sector's label and root cluster: this
+     * card's raw root read returned zeros while FATFS mounted a populated
+     * volume, so the walk has to prove which volume is which. */
+    {
+        uint8_t mbr[512], bsx[512];
+        if (raw_read_block(dev, 0, mbr) == 0) {
+            for (int i = 0; i < 4; i++) {
+                const uint8_t *pe = mbr + 446 + 16 * i;
+                if (pe[4] == 0) continue;
+                uint32_t lba = rd32(pe, 8);
+                uint32_t nsec = rd32(pe, 12);
+                char lab[12] = {0};
+                uint32_t rclus = 0, fatsz_x = 0, resv_x = 0, nfats_x = 0;
+                bool bs_ok = (raw_read_block(dev, lba, bsx) == 0);
+                if (bs_ok) {
+                    memcpy(lab, bsx + 71, 11);
+                    resv_x = rd16(bsx, 14);
+                    nfats_x = bsx[16];
+                    fatsz_x = rd16(bsx, 22) ? rd16(bsx, 22) : rd32(bsx, 36);
+                    rclus = rd32(bsx, 44);
+                }
+                app_logf("  MBR_ENTRY%d: type=0x%02x lba=%" PRIu32 " sectors=%" PRIu32
+                         " boot=%s label='%.11s' root_clus=%" PRIu32 "\n",
+                         i, pe[4], lba, nsec, bs_ok ? "OK" : "READ FAILED", lab, rclus);
+                if (bs_ok) {
+                    uint32_t dlba = resv_x + nfats_x * fatsz_x + (rclus > 1 ? (rclus - 2) * bsx[13] : 0);
+                    uint8_t rb[512];
+                    int rrc = raw_read_block(dev, dlba, rb);
+                    app_logf("    -> data_lba=%" PRIu32 " first bytes %s: %02x %02x %02x %02x\n",
+                             dlba, rrc == 0 ? "OK" : "READ FAILED",
+                             rrc == 0 ? rb[0] : 0, rrc == 0 ? rb[1] : 0,
+                             rrc == 0 ? rb[2] : 0, rrc == 0 ? rb[3] : 0);
+                }
+            }
+        }
+    }
 
     if (raw_read_block(dev, part_lba, blk) != 0) {
         app_logf("  SD_RESULT: FAIL cannot read boot sector at LBA %" PRIu32 "\n", part_lba);
@@ -787,7 +977,38 @@ static void raw_inspect(spi_device_handle_t dev)
              (unsigned long long)total_sectors, bps);
     app_logf("  SD_LABEL: %.11s\n", label);
 
-    uint32_t data_lba = reserved + nfats * fatsz + (root_entries * 32) / bps;
+    /* Capacity cross-check (0234), read-only: if the CSD claims a capacity far
+     * larger than the volume, the two must agree with each other or one of
+     * them is fiction -- a classic counterfeit-card signature.  Read the last
+     * block the CSD declares and a block past a 512 MB card. */
+    {
+        uint64_t csd_bytes = csd_capacity_bytes(g_csd);
+        uint32_t last_lba = (uint32_t)(csd_bytes / 512ull) - 1u;
+        uint8_t tb[512];
+        int rc1 = raw_read_block(dev, 1000000u, tb);        /* past 512 MB */
+        app_logf("  CAPACITY_PROBE: LBA 1000000 (past 512 MB) -> %s%s\n",
+                 rc1 == 0 ? "read OK, first bytes" : "read FAILED",
+                 rc1 == 0 ? ":" : "");
+        if (rc1 == 0) {
+            app_logf("    [%02x %02x %02x %02x %02x %02x %02x %02x]\n",
+                     tb[0], tb[1], tb[2], tb[3], tb[4], tb[5], tb[6], tb[7]);
+        }
+        int rc2 = raw_read_block(dev, last_lba, tb);        /* CSD's last block */
+        app_logf("  CAPACITY_PROBE: CSD last LBA %" PRIu32 " (%llu MB) -> %s\n",
+                 last_lba, (unsigned long long)(csd_bytes / (1024 * 1024)),
+                 rc2 == 0 ? "read OK" : "read FAILED");
+        if (rc2 == 0) {
+            app_logf("    [%02x %02x %02x %02x %02x %02x %02x %02x]\n",
+                     tb[0], tb[1], tb[2], tb[3], tb[4], tb[5], tb[6], tb[7]);
+        }
+    }
+
+    /* 0234 fix: every offset below is PARTITION-relative, so the volume's base
+     * LBA has to be added back before it is used as an absolute sector number.
+     * 0229 omitted part_lba: on a card whose partition starts at 2048 the FAT32
+     * root was read 2048 sectors too low (12320 instead of 14368) and returned
+     * zeros -- which the read-back reported as "root empty". */
+    uint32_t data_lba = part_lba + reserved + nfats * fatsz + (root_entries * 32) / bps;
     app_logf("  SD_BPB: reserved=%" PRIu32 " nfats=%" PRIu32 " fatsz=%" PRIu32
              " root_entries=%" PRIu32 " total=%llu\n",
              reserved, nfats, fatsz, root_entries, (unsigned long long)total_sectors);
@@ -795,7 +1016,7 @@ static void raw_inspect(spi_device_handle_t dev)
 
     int shown = 0;
     bool first_file_saved = false;
-    uint32_t dir_lba = (clusters < 65525) ? (reserved + nfats * fatsz) : 0;
+    uint32_t dir_lba = (clusters < 65525) ? (part_lba + reserved + nfats * fatsz) : 0;
     if (clusters >= 65525) {
         /* FAT32: the root directory is a cluster chain in the DATA area, so its
          * first sector is data_lba + (root_clus-2)*spc -- not reserved-area
@@ -804,8 +1025,8 @@ static void raw_inspect(spi_device_handle_t dev)
         uint32_t root_clus = rd32(bs, 44);
         dir_lba = data_lba + (root_clus - 2) * spc;
         app_logf("  SD_ROOT_CLUSTER: %" PRIu32 " -> dir_lba %" PRIu32
-                 " (data_lba %" PRIu32 ", spc %" PRIu32 ")\n",
-                 root_clus, dir_lba, data_lba, spc);
+                 " (part_lba %" PRIu32 ", data_lba %" PRIu32 ", spc %" PRIu32 ")\n",
+                 root_clus, dir_lba, part_lba, data_lba, spc);
     }
     uint32_t dir_sectors = (clusters < 65525)
                          ? ((root_entries * 32 + bps - 1) / bps)
@@ -821,6 +1042,23 @@ static void raw_inspect(spi_device_handle_t dev)
             app_logf("    ROOT_RAW[%02x %02x %02x %02x %02x %02x %02x %02x | %02x %02x %02x %02x %02x %02x %02x %02x]\n",
                      blk[0], blk[1], blk[2], blk[3], blk[4], blk[5], blk[6], blk[7],
                      blk[8], blk[9], blk[10], blk[11], blk[12], blk[13], blk[14], blk[15]);
+            /* Read stability at this LBA (0234): the mount path listed a
+             * populated root while this raw read returned zeros on the first
+             * run, so the same LBA is re-read five times and compared. */
+            uint8_t blk2[512];
+            for (int k = 0; k < 5; k++) {
+                if (raw_read_block(dev, dir_lba, blk2) != 0) {
+                    app_logf("    ROOT_REREAD %d: read failed\n", k);
+                    g_inspect_ok = false;
+                    continue;
+                }
+                if (memcmp(blk, blk2, 512) != 0) {
+                    app_logf("    ROOT_REREAD %d: DIFFERS (first %02x %02x %02x %02x)\n", k,
+                             blk2[0], blk2[1], blk2[2], blk2[3]);
+                } else {
+                    app_logf("    ROOT_REREAD %d: identical to the first read\n", k);
+                }
+            }
         }
         bool stop = false;
         for (int off = 0; off < 512 && shown < 16; off += 32) {
@@ -937,6 +1175,107 @@ done:
     return false;
 }
 
+/* ---------------------------------------------------- stock driver + mount
+ * 0234 step 4: the question 0229 left open is whether THIS card tolerates the
+ * driver's CMD5 probe, so the stock path is walked all the way to a mounted
+ * volume, not just sdmmc_card_init.  The card is READ-ONLY this run (Stephen
+ * has not designated it scratch): mount with format_if_mount_failed=false and
+ * only ever read -- opendir/readdir and f_open(..., "rb").
+ */
+static bool try_spi_mount(const char *tag, uint32_t khz)
+{
+    app_logf("\n--- STOCK DRIVER + MOUNT [%s] at %" PRIu32 " kHz ---\n", tag, khz);
+
+    spi_bus_config_t bus = {
+        .mosi_io_num = PIN_MOSI,
+        .miso_io_num = PIN_MISO,
+        .sclk_io_num = PIN_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) { app_logf("  MOUNT_FAIL spi_bus_initialize=%s\n", esp_err_to_name(err)); return false; }
+
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot.host_id = SPI2_HOST;
+    slot.gpio_cs = PIN_CS;
+
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = SPI2_HOST;
+    host.max_freq_khz = khz;
+
+    esp_vfs_fat_mount_config_t mcfg = {
+        .format_if_mount_failed = false,   /* READ-ONLY run: never format */
+        .max_files = 4,
+        .allocation_unit_size = 0,
+    };
+    sdmmc_card_t *card = NULL;
+    err = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot, &mcfg, &card);
+    if (err != ESP_OK) {
+        app_logf("  MOUNT[%s %" PRIu32 " kHz]: FAIL %s (%d)\n", tag, khz,
+                 esp_err_to_name(err), (int)err);
+        spi_bus_free(SPI2_HOST);
+        return false;
+    }
+
+    app_logf("  MOUNT[%s %" PRIu32 " kHz]: OK card=%s speed=%" PRIu32 " kHz size=%llu MB\n",
+             tag, khz, card->cid.name, card->real_freq_khz,
+             (unsigned long long)((uint64_t)card->csd.capacity * card->csd.sector_size / (1024 * 1024)));
+
+    int entries = 0;
+    DIR *d = opendir("/sdcard");
+    if (d) {
+        struct dirent *de;
+        while ((de = readdir(d)) != NULL) {
+            app_logf("  ROOT_ENTRY: %s\n", de->d_name);
+            if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+            entries++;
+        }
+        closedir(d);
+        app_logf("  ROOT_ENTRIES: %d\n", entries);
+    } else {
+        app_logf("  ROOT_ENTRIES: opendir failed (errno %d)\n", errno);
+    }
+
+    /* First bytes of the first file present, read-only. */
+    if (entries > 0) {
+        char path[300] = {0};
+        d = opendir("/sdcard");
+        if (d) {
+            struct dirent *de;
+            while ((de = readdir(d)) != NULL) {
+                if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+                char cand[280];
+                snprintf(cand, sizeof cand, "/sdcard/%s", de->d_name);
+                struct stat st;
+                if (stat(cand, &st) != 0 || !S_ISREG(st.st_mode)) continue;   /* skip dirs */
+                snprintf(path, sizeof path, "%s", cand);
+                app_logf("  FIRST_FILE_PICK: %s (%ld bytes)\n", path, (long)st.st_size);
+                break;
+            }
+            closedir(d);
+        }
+        if (path[0]) {
+            FILE *f = fopen(path, "rb");     /* read-only */
+            if (f) {
+                uint8_t head[32];
+                size_t got = fread(head, 1, sizeof head, f);
+                app_logf("  FIRST_FILE: %s first %u byte(s):", path, (unsigned)got);
+                for (size_t i = 0; i < got; i++) app_logf(" %02x", head[i]);
+                app_logf("\n");
+                fclose(f);
+            } else {
+                app_logf("  FIRST_FILE: %s open for read failed (errno %d)\n", path, errno);
+            }
+        }
+    }
+
+    esp_vfs_fat_sdcard_unmount("/sdcard", card);
+    spi_bus_free(SPI2_HOST);
+    return true;
+}
+
 /* --------------------------------------------------------------- rung 4 */
 static bool try_sdmmc_1bit(uint32_t khz)
 {
@@ -1000,8 +1339,12 @@ void app_main(void)
     esp_log_level_set("sdspi_host", ESP_LOG_DEBUG);
     esp_log_level_set("sdspi_transaction", ESP_LOG_VERBOSE);
 
-    app_logf("\n\n########## 0229 SD DIAGNOSIS ##########\n");
+    app_logf("\n\n########## 0234 SD RETEST (0229 probe extended) ##########\n");
     app_logf("build: %s %s\n", __DATE__, __TIME__);
+
+    /* Cross-reset first-pass table (0234 step 3). */
+    fp_load();
+    app_logf("FIRSTPASS_BOOT: %d (slot index for this boot)\n", g_slot_n + 1);
 
     report_identity();
     write_report_partition();   /* partial flush: a later fault still leaves this */
@@ -1017,8 +1360,26 @@ void app_main(void)
 
     raw_probe("no-internal-pullup", false, true);
     write_report_partition();
+
+    /* Record this boot's first-pass evidence before anything that can hang or
+     * fault: the slot has to survive the reset that produced it. */
+    fp_append((uint8_t)(g_raw_ready ? 1 : 0), g_fp_first_r1,
+              (uint8_t)g_raw_attempt, g_fp_acmd41_ms, g_fp_cmd0_first);
+    write_report_partition();
     raw_probe("internal-pullup", true, false);
     write_report_partition();
+
+    /* 0234 step 4: the stock driver all the way to a mounted volume. */
+    bool mounted = false;
+    mounted |= try_spi_mount("mount 400kHz", 400);
+    write_report_partition();
+    if (!mounted) {
+        mounted |= try_spi_mount("mount default", 20000);
+        write_report_partition();
+    }
+    app_logf("MOUNT_VERDICT: %s\n",
+             mounted ? "the stock driver MOUNTS this card (read-only listing above)"
+                     : "the stock driver does not mount this card -- see the MOUNT lines");
 
     bool ok = false;
     ok |= try_spi("rung1 400kHz", 400);
@@ -1032,6 +1393,8 @@ void app_main(void)
     /* Verdicts are separated on purpose: a card that answers at command level but
      * cannot go through sdmmc_card_init is exactly this task's finding, and a
      * single FAIL line would erase it. */
+    fp_report();
+
     app_logf("\n=== 3. VERDICTS ===\n");
     app_logf("SD_VERDICT_RAW: %s\n", g_raw_ready
              ? "the card ANSWERS on SPI (raw init READY)"

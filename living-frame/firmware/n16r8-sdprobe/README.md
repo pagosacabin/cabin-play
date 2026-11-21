@@ -1,4 +1,4 @@
-# n16r8-sdprobe — task 0229
+# n16r8-sdprobe — tasks 0229 and 0234
 
 SD-card diagnosis on the living frame's one wired board (YD-ESP32-23 / N16R8,
 ESP32-S3, MAC `c4:9e:7e:08:6d:f4`) after Stephen resoldered the holder's pins
@@ -200,3 +200,88 @@ proof reproduced, `362 vsync in 5.998 s` (one frame of measurement grain).
   (the read-back then shows the *previous* run's report, which reads as "no
   change"). `CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384`, plus a partial report
   flush after each section.
+
+---
+
+# 0234 — retest with Stephen's new card (2026-11-21)
+
+Stephen seated a different card on the morning of 2026-11-21 (~07:17 MST) and
+said it is "a 512 MB card, one he hadn't used for a bit". The probe was extended
+(not rewritten) and re-flashed; the card was treated as **read-only** — Stephen
+did not designate it scratch, so step 5's write test was skipped.
+
+## Extensions added for this task
+
+- **First-pass table, persisted across resets** (`nvs` partition, key
+  namespace `sdprobe0234`, blob `fp`): each boot appends one slot — the first
+  CMD0/CMD8 responses *before any retry*, the attempt that reached READY, and
+  the ACMD41 time. The table is keyed by a hash of the build stamp, so a
+  reflash starts a new run without erasing NVS (the accepted 800x600 build's
+  own settings live there). `bench/reset-loop.sh` drives 12 resets and reads
+  the report after each.
+- **Stock driver to a mounted volume**: `esp_vfs_fat_sdspi_mount` at 400 kHz
+  (then the default clock if that fails) with `format_if_mount_failed = false`,
+  a root listing, and the first 32 bytes of the first regular file, opened
+  `"rb"`. No write API is called anywhere.
+- **CID decoded at both byte alignments** (the SPI read may carry one extra
+  leading byte) plus **capacity cross-checks**: a read past 512 MB and a read
+  at the CSD-declared last block.
+- **Every MBR entry walked**, with its own boot sector's label and root
+  cluster, and the root sector re-read five times.
+
+## Bug found and fixed in the 0229 probe (it changes one 0229 conclusion)
+
+`raw_inspect()` computed the FAT32 root LBA from **partition-relative** offsets
+and never added the partition's base LBA, so on a card whose partition starts at
+2048 the root was read 2048 sectors too low (12320 instead of 14368) and came
+back as zeros. 0229 reported that as "root directory ... first sector all
+`0x00`: empty". With the fix the same reads list the directory. **The old
+card's "root empty" line is therefore not evidence that the card was blank** —
+it was a probe bug. This card's root is populated and reads correctly, and the
+raw path now agrees with the driver path (23 entries, and `START4.ELF` starts
+with the ELF magic).
+
+## Result of the 2026-11-21 07:32–07:52 MST run
+
+| Item | Measured |
+| --- | --- |
+| Card answers | **YES** — CMD0 10/10 `R1=0x01`, CMD8 R7 echoes `0x1AA`, ACMD41 READY in 38–59 ms |
+| Card identity | `MID=0x03` (SanDisk), `OID="SD"`, `PNM="SR512"`, `PSN=e4845e78`, PRV 8.6, CSD v2 |
+| Capacity (CSD v2) | **511,868,665,856 B = 488 GiB ≈ 512 GB** — not the 512 MB Stephen expected |
+| Addressing | **block** (CCS=1, SDHC/SDXC class) |
+| Volume | MBR 3 partitions: `0x0c` FAT32 `RECALBOX` at LBA 2048 (6,301,696 s), `0x07` at 6,305,792 (991,338,497 s), `0x83` at 997,646,336 (2,097,152 s) — a Raspberry-Pi Recalbox image written for this card's size |
+| FAT32 | 512 B sectors, 4096 B clusters, 3.0 GiB volume, label `RECALBOX` |
+| Root directory | **23 entries** (CRT, START4.ELF, FIXUP4.DAT, config.txt, overlays, …) |
+| First file read | `START4.ELF`, 2,258,496 B, first bytes `7f 45 4c 46` (ELF) |
+| Read stability | root sector identical on 6 consecutive reads; a 1,000,000 LBA read and the CSD last LBA both succeed |
+| **CMD59 in idle state** | **R1=0x01 — ACCEPTED**, also after the driver's CMD52+CMD5 probe (CMD5 itself answers 0x05 = no response) |
+| `sdmmc_card_init` (SPI) | **OK at 400 kHz, 100 kHz and 20 MHz** |
+| **`esp_vfs_fat_sdspi_mount`** | **OK at 400 kHz** — the stock ESP-IDF path works on this card |
+| First-pass behaviour | **14/14 boots failed the FIRST raw init pass** (CMD8 `R1=0x00`, first CMD0 garbage `0x3f`/`0x47`), READY on attempt 2 every time |
+
+### What followed the card and what stayed with the board
+
+- **Followed the OLD card**: the CMD59-rejected-in-idle-state quirk and the
+  resulting `sdmmc_card_init` failure at `sdmmc_init_spi_crc`. This card
+  accepts CMD59 (idle bit only) even after CMD5, so the stock driver both
+  initialises and mounts it.
+- **Stayed with the board**: the first-pass flakiness. 0229 saw it as "CMD8
+  `R1=0x05` in 11 of 12 runs"; on this card it is 14/14 with a different
+  signature (`R1=0x00` and a garbage first CMD0). Same *shape* — the first SPI
+  exchange after a reset is not understood and the second is clean — so it is
+  the board's power-up/contact behaviour, not either card's.
+
+### Working configuration for task 0230's write path
+
+SPI mode, CS GPIO10, 400 kHz through `esp_vfs_fat_sdspi_mount` (20 MHz
+`sdmmc_card_init` also verified). The write test itself was not run: the card is
+read-only for this task. The card is a 512 GB card carrying a Recalbox image,
+so any write-path work needs Stephen to name this card scratch first.
+
+## Restore
+
+The 800x600 build went back on and is byte-identical to the accepted build:
+read-back of `0x10000..0xB5000` = `a2829d610cd2be6fa7455b18cc3e1b378248864f975b370e2eb949e862cdf0fc`,
+the same hash as `.pio/build/n16r8-photo-800x600/firmware.bin` and as the
+pre-flash read-back. The board's own report (`logs/07-...`) shows
+`mode 800x600`, framebuffer `sha256 204578cc…`, `MATCH`, `362 vsync in 5.998 s`.

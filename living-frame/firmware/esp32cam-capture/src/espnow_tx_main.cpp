@@ -123,7 +123,13 @@ void setup()
             g_inflight_seq = seq;
             esp_err_t e = esp_now_send(FRAME_MAC, g_buf + seq * PKT_LEN, PKT_LEN);
             if (e != ESP_OK) { g_sent_fail++; g_ack_fail[seq] = 1; }
-            delay(30);
+            /* Wait for THIS sequence's callback before moving on: esp_now_send is
+             * asynchronous, so a fixed delay could let a late callback for seq n be
+             * credited to seq n+1 (peer review 2026-11-20, second pass). */
+            uint32_t t0 = millis();
+            while (!g_ack_ok[seq] && !g_ack_fail[seq] && (millis() - t0) < 80) delay(1);
+            if (!g_ack_ok[seq]) g_ack_fail[seq] = 1;   /* no callback = not ACKed */
+            delay(5);
         }
         g_inflight_seq = -1;
         delay(300);

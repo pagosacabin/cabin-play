@@ -55,11 +55,12 @@ REPORT: bad_pattern=0 dup=32 out_of_range=0
 REPORT: tfer_id=0x0230beef expected_packets=32 first_seq=0 last_seq=31
 REPORT: sha256_rx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
 REPORT: result=espnow_rx_complete
+REPORT: report_write_errors=0
 ```
 
-CAM console, re-run with the reviewed firmware
-(`../esp32cam-capture/bench/run-2026-11-20-reseat/espnow-tx-p2/report.txt`; the
-first pass is in `.../espnow-tx/report.txt` with the same hash):
+CAM console, third run — the one that matches this commit
+(`../esp32cam-capture/bench/run-2026-11-20-reseat/espnow-tx-p3/report.txt`; the
+earlier passes are `.../espnow-tx/` and `.../espnow-tx-p2/`, same hash each time):
 
 ```
 REPORT: mac=f0:16:1d:ae:2b:20 channel=1 peer=c4:9e:7e:08:6d:f4
@@ -86,10 +87,10 @@ inferred from the report it wrote; ESP-NOW delivery beyond 7,680 B, encryption,
 and RSSI at range are untested. Rung 3 (a real JPEG over this link) is still
 open on the camera.
 
-## Peer review (Copilot, 2026-11-20, reviewed at fb336ec)
+## Peer review (Copilot, 2026-11-20, two passes)
 
-Two findings, both fixed in the follow-up commit; the transfer was then re-run
-with the fixed firmware and reproduced the identical hash.
+First pass at `fb336ec`, second pass at `99960cd`; five findings in total, all
+fixed, and the transfer was re-run after each fix with the identical hash each time.
 
 1. **Medium — the sender's success condition could report a false success.** It
    counted ACK callbacks in aggregate (`send_ok >= 32`), which two passes over the
@@ -102,6 +103,28 @@ with the fixed firmware and reproduced the identical hash.
    is that partition, a failed write would have looked like a short report. Fixed:
    every erase/write is checked, the header is read back and compared, and the
    outcome is reported as `report_write_errors` (0 here).
+
+### Second review pass (same commit pair, re-reviewed at 99960cd)
+
+Copilot re-reviewed the fixes and found the fixes themselves incomplete. All three
+were real, and all three are fixed in the next commit; the transfer was run a third
+time and reproduced the identical hash:
+
+3. **Medium — the ACK attribution was still racy.** The fix waited a fixed 30 ms;
+   `esp_now_send` is asynchronous, so a late callback for sequence *n* could be
+   credited to *n+1*. Fixed: the sender now **waits for that sequence's callback**
+   (80 ms cap, per sequence) before advancing, and a sequence with no callback is
+   marked failed rather than skipped. `seq_acked=32 seq_missing=0` is now a
+   per-sequence fact, not an aggregate coincidence.
+4. **Low — the report read-back compared only the header.** Fixed: the whole body
+   is read back and `memcmp`'d against what was written.
+5. **Low — `report_write_errors` was logged before the final write**, so an error in
+   that last write could only reach the dead console. Fixed: `finalize_report()`
+   re-labels the line with the updated count and rewrites until one write completes
+   with no new error (max 3 attempts).
+
+That is why the stored report now ends with `REPORT: report_write_errors=0` **after**
+`result=` — the ordering is the fix.
 
 ## Frame board end state
 
@@ -117,7 +140,7 @@ sha256     : runtime 204578cc3339baf944345090680c7178f653be7fa79f8fcb83cf82b8ff3
 sha256     : tool    204578cc3339baf944345090680c7178f653be7fa79f8fcb83cf82b8ff3bd306
 sha256     : MATCH - streamed framebuffer is the converted photograph
 resolution : 800x600 native, 1 fb pixel = 1 DAC byte = 1 output pixel
-measured   : 361 vsync in 5.998 s -> 60.19 Hz refresh
+measured   : 362 vsync in 5.998 s -> 60.36 Hz refresh
 fills      : 14475 bounce fills -> 40.1 per frame (expected 40.0)
 ```
 

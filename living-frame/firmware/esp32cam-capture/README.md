@@ -120,11 +120,11 @@ REPORT: result=espnow_tx_sent
 ```
 
 The frame board reassembled the same 7,680 bytes with the same hash — full result
-in `../n16r8-espnow-rx/README.md`. Logs:
-`bench/run-2026-11-20-reseat/espnow-tx-p2/` (the reviewed firmware; the first run
-is in `.../espnow-tx/` with the same hash). `seq_acked=32 seq_missing=0` is the
-success criterion — every sequence individually ACKed, not just 32 ACKs counted in
-aggregate, which is what Copilot's review asked for.
+in `../n16r8-espnow-rx/README.md`. Logs: `bench/run-2026-11-20-reseat/espnow-tx-p3/` (the reviewed firmware; the
+earlier runs are `.../espnow-tx/` and `.../espnow-tx-p2/`, same hash each time).
+`seq_acked=32 seq_missing=0` is the success criterion — every sequence
+individually ACKed, with the sender waiting for that sequence's own callback
+before advancing, which is what Copilot's two review passes asked for.
 
 ## Next actions at the bench (in order)
 

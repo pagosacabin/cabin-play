@@ -106,10 +106,14 @@ static void write_report(void)
     if ((e = esp_partition_write(part, sizeof(header), g_report, g_report_len)) != ESP_OK) {
         g_report_errors++; fputs("REPORT: report_body_write_failed\n", stdout); return;
     }
-    /* read back the length field: proves the header the host parses is on flash */
-    uint32_t check[2] = { 0, 0 };
-    if ((e = esp_partition_read(part, 0, check, sizeof(check))) != ESP_OK ||
-        check[0] != header[0] || check[1] != header[1]) {
+    /* read the header AND the whole body back: the text is the authoritative log,
+     * so the check has to cover the bytes the host will parse, not just the length */
+    static uint8_t check[sizeof(header) + sizeof(g_report)];
+    if ((e = esp_partition_read(part, 0, check, sizeof(header) + g_report_len)) != ESP_OK) {
+        g_report_errors++; fputs("REPORT: report_readback_failed\n", stdout); return;
+    }
+    if (memcmp(check, header, sizeof(header)) != 0 ||
+        memcmp(check + sizeof(header), g_report, g_report_len) != 0) {
         g_report_errors++; fputs("REPORT: report_readback_mismatch\n", stdout);
     }
 }
@@ -150,6 +154,22 @@ static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int le
     g_dirty = true;
 
     (void)info;
+}
+
+/* Write the report until a write completes with no new error, so the
+ * report_write_errors line stored on flash is not one write stale. */
+static void finalize_report(void)
+{
+    size_t marker = g_report_len;
+    app_logf("REPORT: report_write_errors=%d\n", g_report_errors);
+    for (int i = 0; i < 3; i++) {
+        int before = g_report_errors;
+        write_report();
+        if (g_report_errors == before) return;      /* the write that just happened was clean */
+        g_report_len = marker;                      /* re-label with the new count */
+        app_logf("REPORT: report_write_errors=%d\n", g_report_errors);
+    }
+    write_report();
 }
 
 static void sha256_hex(const uint8_t *data, size_t len, char out[65])
@@ -223,11 +243,10 @@ void app_main(void)
     app_logf("REPORT: tfer_id=0x%08x expected_packets=%d first_seq=%d last_seq=%d\n",
              (unsigned)g_tfer_id, (int)g_expect_pkts, g_first_seq, g_last_seq);
     app_logf("REPORT: sha256_rx=%s\n", sha);
-    app_logf("REPORT: report_write_errors=%d\n", g_report_errors);
     app_logf("REPORT: result=%s\n",
              (expected_pkts == PKT_COUNT && g_bad_pattern == 0) ? "espnow_rx_complete"
                                                                 : "espnow_rx_incomplete");
-    write_report();
+    finalize_report();
 
     while (1) vTaskDelay(pdMS_TO_TICKS(1000));
 }

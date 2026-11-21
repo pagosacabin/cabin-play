@@ -200,3 +200,49 @@ proof reproduced, `362 vsync in 5.998 s` (one frame of measurement grain).
   (the read-back then shows the *previous* run's report, which reads as "no
   change"). `CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384`, plus a partial report
   flush after each section.
+
+---
+
+# 0235 — stock driver to a mount, and a first-pass counter (build-only)
+
+This task extends the probe; it does not re-diagnose the card, and it did not
+touch the hardware: the firmware was **built, not flashed** (the board and the
+seated card were off-limits for this task). So no run is claimed here — the
+numbers in the 0229 section above remain the last measured ones, and re-running
+the probe is what produces 0235's own report through the read-back procedure at
+the top of this file, unchanged.
+
+Two additions to `src/main.c`, both in the existing report style:
+
+1. **`=== 2A. STOCK DRIVER: sdmmc_card_init + read-only FAT mount ===`**
+   `esp_vfs_fat_sdspi_mount()` at 400 kHz — the clock the raw probe proved —
+   with `format_if_mount_failed = false`, a root listing (first 16 entries) and
+   the first 32 bytes of the first regular file, opened `"rb"`. No write API is
+   called anywhere (no `f_write`, rename, unlink or mkfs). Because 0229's CMD5
+   replay (`DRIVER SEQUENCE REPLAY`: `g_seq_with`, `g_seq_without`,
+   `g_seq_52only`) already runs inside the first `raw_probe()`, a failure here
+   is **attributed** rather than merely reported: `SD_VERDICT_MOUNT` names the
+   driver's SDIO probe only when the replay's controls actually isolate CMD5
+   (0x05 after CMD5, accepted without it, CMD52 alone harmless), and says
+   `NOT attributed` otherwise.
+2. **`=== 2B. FIRST-PASS INIT COUNTER ===`** — one slot per boot, kept in the
+   `nvs` partition (namespace `sdprobe0235`, blob `fp`, 16 slots) so the table
+   survives the resets that produce it. Each slot records `FIRST=PASS/FAIL`,
+   the first CMD0 and CMD8 R1 of the boot (captured on attempt 1, before any
+   retry), the attempt that reached READY and its ACMD41 time. The table is
+   keyed by a hash of the build stamp, so a reflash starts a new run instead of
+   mixing builds, and NVS is never erased here (the 800x600 build's settings
+   live in the same partition). Ten or more resets make 0229's hand-measured
+   question — *does the first init pass after a reset fail?* — answerable by the
+   board itself.
+
+Both sections go out through `app_logf()` / `write_report_partition()`, and the
+verdict block gains `SD_VERDICT_MOUNT` and `SD_VERDICT_FIRSTPASS`. Existing
+probe logic, log formats and partition offsets are untouched: the only edited
+lines in 0229's code capture return values that were previously discarded.
+
+Build check (no upload):
+
+```bash
+cd living-frame/firmware/n16r8-sdprobe && pio run      # exit 0
+```

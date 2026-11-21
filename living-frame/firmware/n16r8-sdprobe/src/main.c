@@ -50,6 +50,11 @@
 #include "esp_partition.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_vfs_fat.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "dirent.h"
+#include "errno.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "driver/sdspi_host.h"
@@ -81,6 +86,14 @@ static uint8_t g_seq_with = 0xFF;   /* CMD59 after CMD52+CMD5, like the driver *
 static uint8_t g_seq_without = 0xFF;/* CMD59 without CMD5 (control) */
 static uint8_t g_seq_52only = 0xFF; /* CMD59 after CMD52 alone (control) */
 static bool g_seq_ran;
+
+/* First-pass evidence (0235): the very first CMD0/CMD8 responses of this boot,
+ * captured before any retry, so the per-reset counter records the first init
+ * pass itself and not the pass that eventually succeeded. */
+static bool     g_fp_captured;      /* first pass already captured this boot */
+static uint8_t  g_fp_cmd0_first = 0xFF;
+static uint8_t  g_fp_first_r1   = 0xFF;
+static uint16_t g_fp_acmd41_ms;
 
 /* ---- report sink (same discipline as 0225) ------------------------------ */
 static char  g_report[60000];
@@ -356,9 +369,15 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
             spi_device_transmit(dev, &t);
         }
 
-        sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);   /* GO_IDLE */
+        uint8_t r0 = sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);   /* GO_IDLE */
         vTaskDelay(pdMS_TO_TICKS(5));
         uint8_t r8 = sd_raw_cmd(dev, 8, 0x000001AA, 0x87, 4, pl, sizeof pl);   /* IF_COND */
+        /* 0235: keep the FIRST pass of this boot, before any retry */
+        if (!g_fp_captured && attempt == 1) {
+            g_fp_cmd0_first = r0;
+            g_fp_first_r1   = r8;
+            g_fp_captured   = true;
+        }
         v2 = (r8 == 0x01 && pl[2] == 0x01 && pl[3] == 0xAA);
         app_logf("    CMD8 verdict: %s (R1=0x%02x)\n",
                  v2 ? "card is v2.00+ (R7 echoes 0x1AA)" : "no valid R7 echo", r8);
@@ -375,9 +394,13 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
                 sd_raw_cmd(dev, 55, 0, 0x65, 0, pl, sizeof pl);
                 a41 = sd_raw_cmd(dev, 41, 0x40000000u, 0x77, 0, pl, sizeof pl);
             }
+            uint32_t ms41 = (uint32_t)(esp_timer_get_time() / 1000) - t0;
             app_logf("    ACMD41 final: R1=0x%02x after %" PRIu32 " ms (%s)\n", a41,
-                     (uint32_t)(esp_timer_get_time() / 1000) - t0,
+                     ms41,
                      a41 == 0x00 ? "READY" : "not ready");
+            if (a41 == 0x00 && ok_attempt == 0) {
+                g_fp_acmd41_ms = (uint16_t)(ms41 > 65535 ? 65535 : ms41);
+            }
             if (a41 == 0x00) {
                 ready = true;
                 ok_attempt = attempt;
@@ -869,6 +892,311 @@ static void raw_inspect(spi_device_handle_t dev)
              g_inspect_ok ? "read-only inspection OK" : "inspection INCOMPLETE - a read failed");
 }
 
+/* ======================================================================
+ * 0235 -- two questions 0229 left open, answered in firmware
+ * ======================================================================
+ * (1) Does the STOCK driver path work on this card, and if it fails, is the
+ *     failure attributable?  0229 named the driver's SDIO probe (CMD5) as the
+ *     cause of sdmmc_card_init's failure from a controlled replay.  That replay
+ *     (g_seq_with / g_seq_without / g_seq_52only, run in raw_probe()) executes
+ *     BEFORE this section, so the mount result below is attributed against it
+ *     rather than merely reported.
+ *
+ * (2) Is the first-init-pass flakiness a property of the board/reset or of a
+ *     card?  0229 measured "first pass after a reset fails" by hand across 12
+ *     runs; that needs to come from the board itself, so each boot appends one
+ *     slot to a counter in NVS and the whole table is printed into the report.
+ *
+ * The card is READ-ONLY for this task: esp_vfs_fat_sdspi_mount is called with
+ * format_if_mount_failed = false, the volume is only listed and one file is
+ * opened "rb", and no write API is called anywhere (no f_write, no rename, no
+ * unlink, no mkfs).  Nothing here changes existing probe logic, log formats or
+ * partition offsets: both results go out through app_logf() and
+ * write_report_partition() like every other line.
+ */
+
+/* ---- (2) first-pass counter, persisted across board resets --------------
+ * One slot per boot, appended after the first raw probe of the boot has run.
+ * The slots live in NVS under their own namespace, so they survive the resets
+ * that produce them; the table is keyed by a hash of the build stamp, so a
+ * reflash starts a new run instead of mixing two builds' numbers.  NVS is NOT
+ * erased here: the accepted 800x600 build keeps its own settings there.
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t  magic;        /* 0xA5: a slot that was actually written */
+    uint8_t  ready;        /* 1 = raw SPI init reached READY somewhere this boot */
+    uint8_t  first_r1;     /* CMD8 R1 on attempt 1 (0xFF = no response) */
+    uint8_t  ok_attempt;   /* attempt that reached READY, 0 = never */
+    uint8_t  cmd0_first;   /* CMD0 R1 on the very first try this boot */
+    uint16_t acmd41_ms;    /* time to READY on the winning attempt */
+} fp_slot_t;
+
+#define FP_SLOTS 16        /* >= the 10 resets the flakiness question needs */
+
+static fp_slot_t    g_slots[FP_SLOTS];
+static int          g_slot_n;
+static bool         g_fp_nvs_ok;
+static uint32_t     g_build_id;
+static nvs_handle_t g_nvs;
+
+static void fp_load(void)
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        /* The partition is in a state only an erase would fix, and erasing it
+         * would take the 800x600 build's settings with it.  Keep this boot's
+         * slot in RAM and say why it will not survive. */
+        app_logf("FIRSTPASS: NVS unusable (%s); not erasing it - the counter will NOT survive "
+                 "resets this boot\n", esp_err_to_name(err));
+        return;
+    }
+    if (err != ESP_OK) {
+        app_logf("FIRSTPASS: nvs_flash_init failed (%s) - the counter will NOT survive resets\n",
+                 esp_err_to_name(err));
+        return;
+    }
+    err = nvs_open("sdprobe0235", NVS_READWRITE, &g_nvs);
+    if (err != ESP_OK) {
+        app_logf("FIRSTPASS: nvs_open failed (%s) - the counter will NOT survive resets\n",
+                 esp_err_to_name(err));
+        return;
+    }
+    g_fp_nvs_ok = true;
+
+    char stamp[64];
+    snprintf(stamp, sizeof stamp, "%s %s", __DATE__, __TIME__);
+    uint32_t bid = 2166136261u;
+    for (const char *c = stamp; *c; c++) { bid ^= (uint8_t)*c; bid *= 16777619u; }
+    g_build_id = bid;
+
+    uint32_t stored = 0;
+    bool same = (nvs_get_u32(g_nvs, "bid", &stored) == ESP_OK && stored == bid);
+    size_t len = sizeof(g_slots);
+    err = nvs_get_blob(g_nvs, "fp", g_slots, &len);
+    if (err == ESP_OK && same) {
+        g_slot_n = (int)(len / sizeof(fp_slot_t));
+        if (g_slot_n > FP_SLOTS) g_slot_n = FP_SLOTS;
+        app_logf("FIRSTPASS: %d previous slot(s) restored from NVS (build_id=%08" PRIx32 ")\n",
+                 g_slot_n, g_build_id);
+    } else {
+        g_slot_n = 0;
+        nvs_set_u32(g_nvs, "bid", bid);
+        nvs_commit(g_nvs);
+        app_logf("FIRSTPASS: new build stamp - counter starts empty (build_id=%08" PRIx32 ")\n",
+                 g_build_id);
+    }
+}
+
+static void fp_append(void)
+{
+    fp_slot_t s;
+    memset(&s, 0, sizeof s);
+    s.magic       = 0xA5;
+    s.ready       = g_raw_ready ? 1 : 0;
+    s.first_r1    = g_fp_first_r1;
+    s.ok_attempt  = (uint8_t)(g_raw_ready ? g_raw_attempt : 0);
+    s.cmd0_first  = g_fp_cmd0_first;
+    s.acmd41_ms   = g_fp_acmd41_ms;
+
+    if (g_slot_n >= FP_SLOTS) {                 /* keep the newest FP_SLOTS boots */
+        memmove(&g_slots[0], &g_slots[1], sizeof(fp_slot_t) * (FP_SLOTS - 1));
+        g_slot_n = FP_SLOTS - 1;
+    }
+    g_slots[g_slot_n++] = s;
+
+    if (g_fp_nvs_ok) {
+        esp_err_t err = nvs_set_blob(g_nvs, "fp", g_slots, sizeof(fp_slot_t) * (size_t)g_slot_n);
+        if (err == ESP_OK) err = nvs_commit(g_nvs);
+        if (err != ESP_OK) {
+            app_logf("FIRSTPASS: persisting this slot failed (%s) - table is RAM-only this boot\n",
+                     esp_err_to_name(err));
+            g_fp_nvs_ok = false;
+        }
+    }
+}
+
+static void fp_report(void)
+{
+    int ready_n = 0, first_pass_n = 0;
+
+    app_logf("\n=== 2B. FIRST-PASS INIT COUNTER (persisted across resets, NVS) ===\n");
+    app_logf("FIRSTPASS_SLOTS: %d of %d kept, build_id=%08" PRIx32 ", storage=%s\n",
+             g_slot_n, FP_SLOTS, g_build_id,
+             g_fp_nvs_ok ? "NVS (survives reset)" : "RAM only");
+
+    for (int i = 0; i < g_slot_n; i++) {
+        const fp_slot_t *s = &g_slots[i];
+        app_logf("  reset %2d: FIRST=%s CMD0_first=0x%02x CMD8_r1=0x%02x RAW=%s ok_attempt=%u "
+                 "acmd41=%u ms%s\n",
+                 i + 1, (s->ready && s->ok_attempt == 1) ? "PASS" : "FAIL",
+                 s->cmd0_first, s->first_r1, s->ready ? "READY" : "FAILED",
+                 s->ok_attempt, s->acmd41_ms, s->magic == 0xA5 ? "" : " (unwritten slot)");
+        if (s->ready) ready_n++;
+        if (s->ready && s->ok_attempt == 1) first_pass_n++;
+    }
+
+    app_logf("FIRSTPASS_SUMMARY: first_pass_ok=%d/%d, ready_at_some_pass=%d/%d\n",
+             first_pass_n, g_slot_n, ready_n, g_slot_n);
+    if (g_slot_n == 0) {
+        app_logf("FIRSTPASS_NOTE: this boot's slot is appended after the first probe pass\n");
+    } else if (first_pass_n == g_slot_n) {
+        app_logf("FIRSTPASS_NOTE: every recorded reset succeeded on its FIRST init pass\n");
+    } else {
+        app_logf("FIRSTPASS_NOTE: %d of %d recorded resets failed their FIRST init pass and "
+                 "recovered on a later one - the same shape 0229 saw, now measured by the "
+                 "board itself\n", g_slot_n - first_pass_n, g_slot_n);
+    }
+    write_report_partition();
+}
+
+/* ---- (1) stock driver: sdmmc_card_init + read-only FAT mount ----------- */
+static bool      g_mount_ran;
+static bool      g_mount_ok;
+static esp_err_t g_mount_err;
+static int       g_mount_entries;
+static char      g_mount_first[64];
+static bool      g_mount_file_ok;
+
+/* Why did the driver path fail?  0229's replay (already run by raw_probe()
+ * before this section) is the control: CMD59 answers 0x05 after the driver's
+ * CMD52+CMD5 probe and is accepted without it, while CMD52 alone is harmless.
+ * Only that combination names CMD5; anything else is reported as unattributed
+ * rather than blamed on a mechanism the measurements do not show. */
+static const char *driver_failure_attribution(void)
+{
+    if (g_seq_ran && g_seq_with == 0x05
+        && (g_seq_without == 0x00 || g_seq_without == 0x01)      /* control ACCEPTED */
+        && (g_seq_52only  == 0x00 || g_seq_52only  == 0x01)) {   /* CMD52 control ACCEPTED */
+        return "attributed to the driver's SDIO probe: CMD59 answers 0x05 after CMD5 and is "
+               "accepted without it (CMD52 alone is harmless) - the replay controls isolate CMD5";
+    }
+    return "NOT attributed - the CMD5 replay above did not isolate a cause";
+}
+
+/* Release the bus without hiding a failure: if the device is still registered the
+ * free fails, and the sections after this one would report it as their own
+ * problem.  Saying so here keeps that attribution honest. */
+static void mount_release_bus(void)
+{
+    esp_err_t ferr = spi_bus_free(SPI2_HOST);
+    if (ferr != ESP_OK) {
+        app_logf("  MOUNT_NOTE: SPI bus not released (%s) - later SPI sections will report it\n",
+                 esp_err_to_name(ferr));
+    }
+}
+
+static void try_stock_mount(uint32_t khz)
+{
+    app_logf("\n=== 2A. STOCK DRIVER: sdmmc_card_init + read-only FAT mount (%" PRIu32
+             " kHz) ===\n", khz);
+    g_mount_ran = true;
+
+    spi_bus_config_t bus = {
+        .mosi_io_num = PIN_MOSI,
+        .miso_io_num = PIN_MISO,
+        .sclk_io_num = PIN_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) {
+        g_mount_err = err;
+        app_logf("  MOUNT: SPI bus init failed (%s) - mount not attempted\n", esp_err_to_name(err));
+        write_report_partition();
+        return;
+    }
+    gpio_set_direction(PIN_CS, GPIO_MODE_OUTPUT);
+    gpio_set_level(PIN_CS, 1);
+
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.max_freq_khz = khz;                  /* the clock the raw probe proved */
+
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot.host_id = SPI2_HOST;
+    slot.gpio_cs = PIN_CS;
+
+    esp_vfs_fat_mount_config_t mcfg = {0};
+    mcfg.format_if_mount_failed = false;      /* read-only task: never format */
+    mcfg.max_files = 4;
+    mcfg.allocation_unit_size = 0;            /* FATFS default (cluster size) */
+
+    sdmmc_card_t *card = NULL;
+    err = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot, &mcfg, &card);
+    g_mount_err = err;
+
+    if (err != ESP_OK) {
+        app_logf("  MOUNT: FAILED %s (%d) - %s\n", esp_err_to_name(err), (int)err,
+                 "no volume mounted, nothing written (format_if_mount_failed=false)");
+        app_logf("  MOUNT_ATTRIBUTION: %s\n", driver_failure_attribution());
+        mount_release_bus();
+        write_report_partition();
+        return;
+    }
+
+    g_mount_ok = true;
+    app_logf("  MOUNT: OK at /sdcard, read-only visit (%s, %llu MB, %" PRIu32 " B sectors)\n",
+             card->is_mmc ? "MMC" : (card->is_sdio ? "SDIO" : "SD"),
+             (unsigned long long)((uint64_t)card->csd.capacity * card->csd.sector_size /
+                                  (1024ull * 1024ull)),
+             card->csd.sector_size);
+
+    DIR *dir = opendir("/sdcard");
+    if (dir == NULL) {
+        app_logf("  MOUNT_ROOT: opendir failed (errno=%d)\n", errno);
+    } else {
+        struct dirent *de;
+        app_logf("  MOUNT_ROOT: first 16 entries\n");
+        while ((de = readdir(dir)) != NULL && g_mount_entries < 16) {
+            app_logf("    %-32s %s\n", de->d_name, (de->d_type == DT_DIR) ? "<DIR>" : "");
+            if (de->d_type != DT_DIR && g_mount_first[0] == 0) {
+                /* d_name can be longer than the buffer: copy it bounded by hand
+                 * rather than let snprintf silently truncate into a warning. */
+                size_t n = strlen(de->d_name);
+                if (n > sizeof g_mount_first - 9) n = sizeof g_mount_first - 9;
+                memcpy(g_mount_first, "/sdcard/", 8);
+                memcpy(g_mount_first + 8, de->d_name, n);
+                g_mount_first[8 + n] = 0;
+            }
+            g_mount_entries++;
+        }
+        closedir(dir);
+        if (g_mount_entries == 0) app_logf("    (empty)\n");
+    }
+
+    /* One file opened read-only: a mount handle is not the same claim as file
+     * data through the library, and the frame's slideshow needs the latter. */
+    if (g_mount_first[0] != 0) {
+        FILE *f = fopen(g_mount_first, "rb");
+        if (f == NULL) {
+            app_logf("  MOUNT_FILE: %s open failed (errno=%d)\n", g_mount_first, errno);
+        } else {
+            uint8_t head[32];
+            size_t n = fread(head, 1, sizeof head, f);
+            char txt[33];
+            int k = 0;
+            for (size_t i = 0; i < n; i++)
+                txt[k++] = (head[i] >= 32 && head[i] < 127) ? (char)head[i] : '.';
+            txt[k] = 0;
+            app_logf("  MOUNT_FILE: %s -> %u byte(s) read\n", g_mount_first, (unsigned)n);
+            app_logf("  MOUNT_FILE_HEAD: %s\n", txt);
+            app_logf("  MOUNT_FILE_HEX: ");
+            for (size_t i = 0; i < n && i < 16; i++) app_logf("%02x ", head[i]);
+            app_logf("\n");
+            g_mount_file_ok = (n > 0);
+            fclose(f);
+        }
+    }
+
+    {
+        esp_err_t uerr = esp_vfs_fat_sdcard_unmount("/sdcard", card);
+        app_logf("  UNMOUNT: %s\n",
+                 uerr == ESP_OK ? "OK - read-only visit complete" : esp_err_to_name(uerr));
+    }
+    mount_release_bus();
+    write_report_partition();
+}
+
 /* ------------------------------------------------------------ rung 1 + 3 */
 static bool try_spi(const char *tag, uint32_t khz)
 {
@@ -1004,6 +1332,7 @@ void app_main(void)
     app_logf("build: %s %s\n", __DATE__, __TIME__);
 
     report_identity();
+    fp_load();                  /* 0235: counter storage, before anything is recorded */
     write_report_partition();   /* partial flush: a later fault still leaves this */
 
     /* SD spec: the card needs its own power-up time before the first command. */
@@ -1019,6 +1348,15 @@ void app_main(void)
     write_report_partition();
     raw_probe("internal-pullup", true, false);
     write_report_partition();
+
+    /* 0235 (1): the stock driver all the way to a mounted, read-only volume.
+     * 0229's CMD5 replay has already run (inside the first raw_probe), which is
+     * what lets a failure here be attributed to a mechanism. */
+    try_stock_mount(400);
+
+    /* 0235 (2): one slot per boot, from this boot's first init pass. */
+    fp_append();
+    fp_report();
 
     bool ok = false;
     ok |= try_spi("rung1 400kHz", 400);
@@ -1077,6 +1415,27 @@ void app_main(void)
     app_logf("SD_VERDICT_READ: %s\n", g_inspect_ok
              ? "read-only inspection completed through CMD17"
              : "read-only inspection did not complete - a read failed");
+    if (g_mount_ran) {
+        if (g_mount_ok) {
+            app_logf("SD_VERDICT_MOUNT: esp_vfs_fat_sdspi_mount succeeded at 400 kHz -- the stock "
+                     "driver mounted a read-only volume and returned %d root entr%s; first file read "
+                     "%s\n", g_mount_entries, g_mount_entries == 1 ? "y" : "ies",
+                     g_mount_file_ok ? "returned data" : "did not return data");
+        } else {
+            app_logf("SD_VERDICT_MOUNT: esp_vfs_fat_sdspi_mount failed (%s) -- %s\n",
+                     esp_err_to_name(g_mount_err), driver_failure_attribution());
+        }
+    }
+    if (g_slot_n > 0) {
+        int fp_first = 0, fp_ready = 0;
+        for (int i = 0; i < g_slot_n; i++) {
+            if (g_slots[i].ready) fp_ready++;
+            if (g_slots[i].ready && g_slots[i].ok_attempt == 1) fp_first++;
+        }
+        app_logf("SD_VERDICT_FIRSTPASS: the first init pass succeeded on %d of %d recorded resets "
+                 "(%d reached READY on some pass) -- table in section 2B\n",
+                 fp_first, g_slot_n, fp_ready);
+    }
     if (!g_raw_ready) {
         app_logf("NEXT: rung 2 (meter) - 3.3 V at the holder's VCC with the card seated and "
                  "init attempted; continuity from each holder pad to its ESP32 pin; shorts "

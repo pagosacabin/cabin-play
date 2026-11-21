@@ -74,6 +74,7 @@ static bool g_raw_ready;            /* raw SPI init reached READY */
 static int  g_raw_attempt;
 static bool g_inspect_ok;           /* no read error during inspection */
 static bool g_have_card_id;         /* CSD decoded */
+static int  g_cmd59_idle = -1;      /* -1 not probed, 0 accepted, 1 rejected */
 
 /* ---- report sink (same discipline as 0225) ------------------------------ */
 static char  g_report[60000];
@@ -349,7 +350,7 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
             spi_device_transmit(dev, &t);
         }
 
-        uint8_t r1 = sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);   /* GO_IDLE */
+        sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);   /* GO_IDLE */
         vTaskDelay(pdMS_TO_TICKS(5));
         uint8_t r8 = sd_raw_cmd(dev, 8, 0x000001AA, 0x87, 4, pl, sizeof pl);   /* IF_COND */
         v2 = (r8 == 0x01 && pl[2] == 0x01 && pl[3] == 0xAA);
@@ -402,6 +403,7 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
          * sdmmc_init_spi_crc sends it. */
         uint8_t ridle = sd_raw_cmd(dev, 0, 0, 0x95, 0, pl, sizeof pl);
         uint8_t r59 = sd_raw_cmd(dev, 59, 0x00000001, 0xFF, 0, pl, sizeof pl);
+        g_cmd59_idle = (r59 == 0x00) ? 0 : 1;
         app_logf("    CMD59 probe in IDLE state (after CMD0 R1=0x%02x): R1=0x%02x %s\n",
                  ridle, r59, r59 == 0x00 ? "accepted" : "REJECTED");
     }
@@ -582,189 +584,6 @@ static void print_fat_name(const uint8_t *e)
              rd16(e, 26) | ((uint32_t)rd16(e, 20) << 16));
 }
 
-/* Lists root entries and, on the first regular file it meets, reads the first
- * 32 bytes of its data (read-only; nothing written, nothing mounted rw). */
-static void read_root(sdmmc_card_t *card, uint8_t *buf, uint32_t dir_lba,
-                      uint32_t dir_sectors, uint32_t spc, uint32_t bps,
-                      uint32_t data_lba, bool fat32, int max_entries)
-{
-    int shown = 0;
-    uint32_t lba = dir_lba;
-    uint32_t remaining = dir_sectors;
-    bool saved = false;
-
-    while (remaining > 0 && shown < max_entries) {
-        uint32_t chunk = remaining >= 4 ? 4 : remaining;
-        if (sdmmc_read_sectors(card, buf, lba, chunk) != ESP_OK) {
-            app_logf("    (read error at LBA %" PRIu32 ")\n", lba);
-            return;
-        }
-        for (uint32_t s = 0; s < chunk; s++) {
-            for (int off = 0; off < 512; off += 32) {
-                const uint8_t *e = buf + s * 512 + off;
-                if (e[0] == 0x00) return;
-                if (e[0] == 0xE5) continue;
-                if ((e[11] & 0x3F) == 0x0F) continue;  /* LFN fragment */
-                if (e[11] & 0x08) continue;            /* volume label */
-                print_fat_name(e);
-                shown++;
-                if (!saved && !(e[11] & 0x10)) {
-                    uint32_t clus = rd16(e, 26) | ((uint32_t)rd16(e, 20) << 16);
-                    uint32_t file_lba = data_lba + (clus - 2) * spc;
-                    uint32_t size = rd32(e, 28);
-                    if (clus >= 2 && sdmmc_read_sectors(card, buf, file_lba, 1) == ESP_OK) {
-                        char head[33];
-                        int k = 0;
-                        for (int i = 0; i < 32 && i < (int)size; i++) {
-                            uint8_t c = buf[i];
-                            head[k++] = (c >= 32 && c < 127) ? (char)c : '.';
-                        }
-                        head[k] = 0;
-                        app_logf("    FIRST FILE HEAD (read-only, %" PRIu32 " B): %s\n",
-                                 size > 32 ? (uint32_t)32 : size, head);
-                        app_logf("    FIRST FILE HEX: ");
-                        for (int i = 0; i < 16 && i < (int)size; i++) app_logf("%02x ", buf[i]);
-                        app_logf("\n");
-                    }
-                    saved = true;
-                }
-                if (shown >= max_entries) return;
-            }
-        }
-        lba += chunk;
-        remaining -= chunk;
-    }
-    (void)fat32; (void)bps;
-}
-
-static void inspect_card(sdmmc_card_t *card, const char *how)
-{
-    app_logf("\n  CARD IS TALKING via %s\n", how);
-    app_logf("  SD_CARD: name=%.*s type=%s speed=%" PRIu32 " kHz size=%llu MB\n",
-             8, card->cid.name, (card->is_mmc ? "MMC" : (card->is_sdio ? "SDIO" : "SD")),
-             card->real_freq_khz,
-             (unsigned long long)((uint64_t)card->csd.capacity * card->csd.sector_size / (1024 * 1024)));
-    app_logf("  SD_CID: mid=0x%02x oid=0x%04x pnm=%.*s rev=%u.%u psn=0x%08" PRIx32
-             " mdt=%u/%u\n",
-             card->cid.mfg_id, card->cid.oem_id, 8, card->cid.name,
-             card->cid.revision / 100, card->cid.revision % 100, card->cid.serial,
-             card->cid.date / 100, card->cid.date % 100);
-    app_logf("  SD_CSD: sector_size=%u capacity_sectors=%u csd_ver=%u\n",
-             card->csd.sector_size, card->csd.capacity, card->csd.csd_ver);
-
-    uint8_t *buf = heap_caps_malloc(4096, MALLOC_CAP_DMA);
-    if (!buf) { app_logf("  no DMA buffer\n"); return; }
-
-    if (sdmmc_read_sectors(card, buf, 0, 1) != ESP_OK) {
-        app_logf("  SD_RESULT: init OK but sector 0 unreadable\n");
-        heap_caps_free(buf);
-        return;
-    }
-
-    const uint8_t *mbr = buf;
-    bool is_exfat_whole = (memcmp(mbr + 3, "EXFAT   ", 8) == 0);
-    uint32_t part_lba = 0, part_type = 0;
-
-    if (is_exfat_whole) {
-        part_lba = 0; part_type = 0x07;
-    } else if (mbr[510] == 0x55 && mbr[511] == 0xAA) {
-        for (int i = 0; i < 4; i++) {
-            const uint8_t *pe = mbr + 446 + 16 * i;
-            if (pe[4] == 0) continue;
-            part_lba = rd32(pe, 8);
-            part_type = pe[4];
-            break;
-        }
-    }
-    if (part_type == 0) {
-        app_logf("  no MBR partition and no exFAT boot sector (sector 0 first bytes: "
-                 "%02x %02x %02x %02x)\n", mbr[0], mbr[1], mbr[2], mbr[3]);
-        heap_caps_free(buf);
-        return;
-    }
-    app_logf("  SD_PARTITION: type=0x%02" PRIx32 " lba=%" PRIu32 "\n", part_type, part_lba);
-
-    if (sdmmc_read_sectors(card, buf, part_lba, 1) != ESP_OK) {
-        app_logf("  boot sector at LBA %" PRIu32 " unreadable\n", part_lba);
-        heap_caps_free(buf);
-        return;
-    }
-    const uint8_t *bs = buf;
-
-    if (memcmp(bs + 3, "EXFAT   ", 8) == 0) {
-        uint32_t bps_shift = bs[108];
-        uint32_t spc_shift = bs[109];
-        uint32_t cluster_heap = rd32(bs, 88);
-        uint32_t root_clus = rd32(bs, 96);
-        uint64_t volume_sectors = (uint64_t)rd32(bs, 72) | ((uint64_t)rd32(bs, 76) << 32);
-        app_logf("  SD_FS: exFAT sector=%u B cluster=%u B volume=%llu MB\n",
-                 1u << bps_shift, (1u << bps_shift) << spc_shift,
-                 (unsigned long long)(volume_sectors * (1u << bps_shift) / (1024 * 1024)));
-        uint32_t root_lba = cluster_heap + (root_clus - 2) * (1u << spc_shift);
-        if (sdmmc_read_sectors(card, buf, root_lba, 1) == ESP_OK) {
-            app_logf("  SD_ROOT (exFAT, first entries):\n");
-            int shown = 0;
-            for (int off = 0; off < 512 && shown < 16; off += 32) {
-                const uint8_t *e = buf + off;
-                if (e[0] == 0x00) break;
-                if (e[0] != 0x85 && e[0] != 0x83) continue;
-                char name[32]; int n = 0;
-                for (int i = 0; i < 15; i++) {
-                    uint16_t ch = (uint16_t)e[2 + i * 2] | ((uint16_t)e[3 + i * 2] << 8);
-                    if (!ch) break;
-                    name[n++] = (ch < 128) ? (char)ch : '?';
-                }
-                name[n] = 0;
-                app_logf("    %-20s %s\n", name, (e[0] == 0x83) ? "<DIR>" : "");
-                shown++;
-            }
-            if (!shown) app_logf("    (empty)\n");
-        }
-    } else {
-        uint32_t bps = rd16(bs, 11);
-        uint32_t spc = bs[13];
-        uint32_t reserved = rd16(bs, 14);
-        uint32_t nfats = bs[16];
-        uint32_t root_entries = rd16(bs, 17);
-        uint32_t total16 = rd16(bs, 19);
-        uint32_t fatsz16 = rd16(bs, 22);
-        uint32_t total32 = rd32(bs, 32);
-        uint32_t fatsz32 = rd32(bs, 36);
-        char label[12] = {0};
-        memcpy(label, bs + 71, 11);
-
-        uint64_t total_sectors = total16 ? total16 : total32;
-        uint32_t fatsz = fatsz16 ? fatsz16 : fatsz32;
-        uint32_t data_sectors = (uint32_t)(total_sectors - (reserved + nfats * fatsz +
-                                     (root_entries * 32 + bps - 1) / bps));
-        uint32_t clusters = data_sectors / (spc ? spc : 1);
-        const char *fstype = clusters < 4085 ? "FAT12" : (clusters < 65525 ? "FAT16" : "FAT32");
-
-        app_logf("  SD_FS: %s sector=%" PRIu32 " B cluster=%" PRIu32 " B clusters=%" PRIu32 "\n",
-                 fstype, bps, bps * spc, clusters);
-        app_logf("  SD_CAPACITY: %llu MB (%llu sectors of %" PRIu32 " B)\n",
-                 (unsigned long long)(total_sectors * bps / (1024 * 1024)),
-                 (unsigned long long)total_sectors, bps);
-        app_logf("  SD_LABEL: %.11s\n", label);
-
-        uint32_t data_lba = reserved + nfats * fatsz + (root_entries * 32) / bps;
-        app_logf("  SD_ROOT (first entries):\n");
-        if (clusters < 65525) {
-            uint32_t root_lba = reserved + nfats * fatsz;
-            uint32_t root_sectors = (root_entries * 32 + bps - 1) / bps;
-            read_root(card, buf, root_lba, root_sectors > 8 ? 8 : root_sectors,
-                      spc, bps, data_lba, false, 16);
-        } else {
-            uint32_t root_clus = rd32(bs, 44);
-            uint32_t chain_lba = reserved + (root_clus - 2) * spc;
-            read_root(card, buf, chain_lba, spc > 8 ? 8 : spc,
-                      spc, bps, data_lba, true, 16);
-        }
-    }
-    app_logf("  SD_RESULT: mounted-read OK (raw sectors only, nothing written)\n");
-    heap_caps_free(buf);
-}
-
 /* ---------------------------------------------- read-only inspection (raw)
  * Same questions as inspect_card(), but through CMD17, because this card
  * refuses CMD59 and so cannot go through sdmmc_card_init.  Nothing is written.
@@ -943,7 +762,11 @@ static void raw_inspect(spi_device_handle_t dev)
                          : spc;
 
     for (uint32_t s = 0; s < dir_sectors && shown < 16; s++) {
-        if (raw_read_block(dev, dir_lba + s, blk) != 0) { app_logf("    (read error)\n"); break; }
+        if (raw_read_block(dev, dir_lba + s, blk) != 0) {
+            app_logf("    (read error at dir sector %" PRIu32 ")\n", s);
+            g_inspect_ok = false;
+            break;
+        }
         if (s == 0) {
             app_logf("    ROOT_RAW[%02x %02x %02x %02x %02x %02x %02x %02x | %02x %02x %02x %02x %02x %02x %02x %02x]\n",
                      blk[0], blk[1], blk[2], blk[3], blk[4], blk[5], blk[6], blk[7],
@@ -1038,7 +861,12 @@ static bool try_spi(const char *tag, uint32_t khz)
         goto done;
     }
     app_logf("  SD_CARD_INIT[%s %" PRIu32 " kHz]: OK\n", tag, khz);
-    inspect_card(card, tag);
+    app_logf("  SD_CARD: name=%.*s type=%s speed=%" PRIu32 " kHz size=%llu MB\n",
+             8, card->cid.name, (card->is_mmc ? "MMC" : (card->is_sdio ? "SDIO" : "SD")),
+             card->real_freq_khz,
+             (unsigned long long)((uint64_t)card->csd.capacity * card->csd.sector_size / (1024 * 1024)));
+    /* Content inspection lives in raw_inspect() only: one lister, one buffer
+     * discipline, and it is the path that actually runs on this card. */
     heap_caps_free(card);
     sdspi_host_remove_device(dev);
     sdspi_host_deinit();
@@ -1093,7 +921,8 @@ static bool try_sdmmc_1bit(uint32_t khz)
         return false;
     }
     app_logf("  SDMMC_CARD_INIT[1-bit %" PRIu32 " kHz]: OK\n", khz);
-    inspect_card(card, "SDMMC 1-bit");
+    app_logf("  SD_CARD: name=%.*s size=%llu MB\n", 8, card->cid.name,
+             (unsigned long long)((uint64_t)card->csd.capacity * card->csd.sector_size / (1024 * 1024)));
     heap_caps_free(card);
     sdmmc_host_deinit();
     return true;
@@ -1155,10 +984,18 @@ void app_main(void)
                  "with R1=0x05) -- a marginal contact or a slow power-up, to be settled by "
                  "rung 2's meter readings\n", g_raw_attempt);
     }
-    app_logf("SD_VERDICT_DRIVER: %s\n", ok
-             ? "sdmmc_card_init succeeded"
-             : "sdmmc_card_init is unavailable for this card (CMD59 rejected in idle state; "
-               "see the driver log above) -- an API-library limit, not a wiring fault");
+    if (ok) {
+        app_logf("SD_VERDICT_DRIVER: sdmmc_card_init succeeded\n");
+    } else if (g_cmd59_idle == 1) {
+        app_logf("SD_VERDICT_DRIVER: sdmmc_card_init is unavailable for this card -- CMD59 "
+                 "(CRC_ON_OFF) is rejected in idle state, which is where "
+                 "sdmmc_init_spi_crc sends it (see the driver log above). An API-library "
+                 "limit, not a wiring fault\n");
+    } else {
+        app_logf("SD_VERDICT_DRIVER: sdmmc_card_init failed for a reason this probe did not "
+                 "isolate (CMD59 probe: %s) -- see the driver log above\n",
+                 g_cmd59_idle == 0 ? "accepted" : "not reached");
+    }
     if (g_have_card_id) {
         app_logf("SD_VERDICT_CARD: identified (see CSD/CID/FAT lines above)\n");
     }

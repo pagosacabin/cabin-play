@@ -121,8 +121,16 @@ follow-up commit:
    read was logged but the caller still printed `inspection OK`. Fixed with an
    explicit `g_inspect_ok` that every read failure clears.
 3. **Low — corrupted FAT listing.** The first-file read reused the directory
-   buffer, so the rest of that chunk parsed as directory entries. Fixed with a
-   separate `fb[512]`.
+   buffer, so the rest of that chunk parsed as directory entries. The duplicate
+   driver-path lister (`read_root()`/`inspect_card()`) was deleted entirely --
+   one lister, one buffer discipline, and it is the path that actually runs.
+
+A second pass on that commit found the fixes incomplete, and it was right:
+the DRIVER verdict asserted the CMD59 mechanism even when the probe never ran
+(now gated on a tri-state probe result), `g_inspect_ok` was not cleared by
+root-sector read errors (now every failure path clears it), and the aliasing
+fix had landed in `raw_inspect()` while `read_root()` still aliased (moot now
+that `read_root()` is gone). Final verdict: see the mailbox reply.
 
 ## What this means for the write path (task 0230)
 

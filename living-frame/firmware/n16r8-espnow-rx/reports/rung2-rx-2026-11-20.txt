@@ -5,4 +5,5 @@ REPORT: rx_packets=64 distinct=32 rx_bytes=15360
 REPORT: bad_pattern=0 dup=32 out_of_range=0
 REPORT: tfer_id=0x0230beef expected_packets=32 first_seq=0 last_seq=31
 REPORT: sha256_rx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
+REPORT: report_write_errors=0
 REPORT: result=espnow_rx_complete

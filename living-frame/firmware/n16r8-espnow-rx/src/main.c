@@ -82,15 +82,36 @@ static const char *reason_name(uint8_t reason)
     }
 }
 
+/* The report partition is this build's only log (the FT232R console is dead on
+ * this bench), so a failed write must not be silent: every step is checked, the
+ * read-back length is verified, and the outcome is counted.  Peer review
+ * (2026-11-20) flagged the unchecked writes. */
+static int g_report_errors;
+
 static void write_report(void)
 {
     const esp_partition_t *part = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t)0x40, "report");
-    if (part == NULL) return;
-    esp_partition_erase_range(part, 0, part->size);
     uint32_t header[2] = { 0x30323330u, (uint32_t)g_report_len };  /* "0230" */
-    esp_partition_write(part, 0, header, sizeof(header));
-    esp_partition_write(part, sizeof(header), g_report, g_report_len);
+    if (part == NULL) { g_report_errors++; return; }
+    if (sizeof(header) + g_report_len > part->size) { g_report_errors++; return; }
+
+    esp_err_t e;
+    if ((e = esp_partition_erase_range(part, 0, part->size)) != ESP_OK) {
+        g_report_errors++; fputs("REPORT: report_erase_failed\n", stdout); return;
+    }
+    if ((e = esp_partition_write(part, 0, header, sizeof(header))) != ESP_OK) {
+        g_report_errors++; fputs("REPORT: report_header_write_failed\n", stdout); return;
+    }
+    if ((e = esp_partition_write(part, sizeof(header), g_report, g_report_len)) != ESP_OK) {
+        g_report_errors++; fputs("REPORT: report_body_write_failed\n", stdout); return;
+    }
+    /* read back the length field: proves the header the host parses is on flash */
+    uint32_t check[2] = { 0, 0 };
+    if ((e = esp_partition_read(part, 0, check, sizeof(check))) != ESP_OK ||
+        check[0] != header[0] || check[1] != header[1]) {
+        g_report_errors++; fputs("REPORT: report_readback_mismatch\n", stdout);
+    }
 }
 
 static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int len)
@@ -202,6 +223,7 @@ void app_main(void)
     app_logf("REPORT: tfer_id=0x%08x expected_packets=%d first_seq=%d last_seq=%d\n",
              (unsigned)g_tfer_id, (int)g_expect_pkts, g_first_seq, g_last_seq);
     app_logf("REPORT: sha256_rx=%s\n", sha);
+    app_logf("REPORT: report_write_errors=%d\n", g_report_errors);
     app_logf("REPORT: result=%s\n",
              (expected_pkts == PKT_COUNT && g_bad_pattern == 0) ? "espnow_rx_complete"
                                                                 : "espnow_rx_incomplete");

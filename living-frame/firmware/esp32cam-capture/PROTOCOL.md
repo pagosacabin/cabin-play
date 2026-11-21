@@ -78,7 +78,8 @@ transfer id, with a sequence-derived payload pattern. It exists to prove the
 radio and the reassembly path, and it did:
 
 ```
-sender   sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28  64/64 sends ACKed
+sender   sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
+         64/64 sends ACKed, seq_acked=32/32 (per-sequence, not an aggregate count)
 receiver sha256_rx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
          32 distinct of 32 expected, 32 duplicates (the deliberate second pass), bad_pattern=0
 ```

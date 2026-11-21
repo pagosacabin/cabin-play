@@ -115,12 +115,16 @@ window, so the link was proven this run with `esp32cam-espnow-tx`:
 REPORT: sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f28
 REPORT: pass=1 send_ok=32 send_fail=0
 REPORT: pass=2 send_ok=32 send_fail=0
+REPORT: seq_acked=32 seq_missing=0 of 32
 REPORT: result=espnow_tx_sent
 ```
 
 The frame board reassembled the same 7,680 bytes with the same hash — full result
 in `../n16r8-espnow-rx/README.md`. Logs:
-`bench/run-2026-11-20-reseat/espnow-tx/`.
+`bench/run-2026-11-20-reseat/espnow-tx-p2/` (the reviewed firmware; the first run
+is in `.../espnow-tx/` with the same hash). `seq_acked=32 seq_missing=0` is the
+success criterion — every sequence individually ACKed, not just 32 ACKs counted in
+aggregate, which is what Copilot's review asked for.
 
 ## Next actions at the bench (in order)
 

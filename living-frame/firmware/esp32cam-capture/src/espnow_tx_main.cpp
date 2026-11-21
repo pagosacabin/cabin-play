@@ -29,6 +29,13 @@ static const uint32_t TFR_ID = 0x0230BEEFu;
 static uint8_t  g_buf[TOTAL_LEN];
 static volatile int g_sent_ok;
 static volatile int g_sent_fail;
+/* Per-sequence ACK bookkeeping: the status callback does not say which packet
+ * it belongs to, so sends are issued one at a time and the sequence in flight
+ * is recorded here.  Peer review (2026-11-20) was right that counting ACKs
+ * alone can hide a repeated sequence or a missing one. */
+static volatile int      g_inflight_seq = -1;
+static volatile uint8_t  g_ack_ok[PKT_COUNT];
+static volatile uint8_t  g_ack_fail[PKT_COUNT];
 
 static inline uint8_t pattern_byte(int seq, int i)
 {
@@ -45,7 +52,14 @@ static void sha256_hex(const uint8_t *data, size_t len, char out[65])
 
 static void on_sent(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
-    if (status == ESP_NOW_SEND_SUCCESS) g_sent_ok++; else g_sent_fail++;
+    int seq = g_inflight_seq;
+    if (status == ESP_NOW_SEND_SUCCESS) {
+        g_sent_ok++;
+        if (seq >= 0 && seq < PKT_COUNT) g_ack_ok[seq] = 1;
+    } else {
+        g_sent_fail++;
+        if (seq >= 0 && seq < PKT_COUNT) g_ack_fail[seq] = 1;
+    }
 }
 
 void setup()
@@ -106,18 +120,27 @@ void setup()
     for (int attempt = 0; attempt < 2; attempt++) {
         int ok0 = g_sent_ok, fail0 = g_sent_fail;
         for (int seq = 0; seq < PKT_COUNT; seq++) {
+            g_inflight_seq = seq;
             esp_err_t e = esp_now_send(FRAME_MAC, g_buf + seq * PKT_LEN, PKT_LEN);
-            if (e != ESP_OK) g_sent_fail++;
+            if (e != ESP_OK) { g_sent_fail++; g_ack_fail[seq] = 1; }
             delay(30);
         }
+        g_inflight_seq = -1;
         delay(300);
         Serial.printf("REPORT: pass=%d send_ok=%d send_fail=%d\n",
                       attempt + 1, g_sent_ok - ok0, g_sent_fail - fail0);
     }
 
+    int seq_acked = 0, seq_missing = 0;
+    for (int seq = 0; seq < PKT_COUNT; seq++) {
+        if (g_ack_ok[seq]) seq_acked++;
+        else { seq_missing++; if (seq_missing <= 8) Serial.printf("REPORT: missing_seq=%d\n", seq); }
+    }
     Serial.printf("REPORT: send_ok_total=%d send_fail_total=%d\n", g_sent_ok, g_sent_fail);
+    Serial.printf("REPORT: seq_acked=%d seq_missing=%d of %d\n", seq_acked, seq_missing, PKT_COUNT);
+    /* success now means every sequence number was individually ACKed */
     Serial.printf("REPORT: result=%s\n",
-                  (g_sent_ok >= PKT_COUNT) ? "espnow_tx_sent" : "espnow_tx_incomplete");
+                  (seq_missing == 0) ? "espnow_tx_sent" : "espnow_tx_incomplete");
     Serial.printf("REPORT: done\n");
 }
 

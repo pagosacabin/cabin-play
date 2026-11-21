@@ -42,7 +42,7 @@ Radio: `WIFI_MODE_STA`, channel 1, `WIFI_PROTOCOL_11B|11G|11N` on both ends
 protocol/rate mismatch shows up as *nothing received*, not as an error). The
 sender is an ESP32-CAM (classic ESP32) at the 1 Mbps 11b base rate.
 
-## Result, 2026-11-20 17:20 MST (rung 2)
+## Result, 2026-11-20 17:20 MST and re-run 17:28 MST (rung 2)
 
 Frame board report (`reports/rung2-rx-2026-11-20.txt`):
 
@@ -57,7 +57,9 @@ REPORT: sha256_rx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f
 REPORT: result=espnow_rx_complete
 ```
 
-CAM console (`../esp32cam-capture/bench/run-2026-11-20-reseat/espnow-tx/report.txt`):
+CAM console, re-run with the reviewed firmware
+(`../esp32cam-capture/bench/run-2026-11-20-reseat/espnow-tx-p2/report.txt`; the
+first pass is in `.../espnow-tx/report.txt` with the same hash):
 
 ```
 REPORT: mac=f0:16:1d:ae:2b:20 channel=1 peer=c4:9e:7e:08:6d:f4
@@ -66,6 +68,7 @@ REPORT: sha256_tx=74bb840392a757f743926df1e363626405bb5416482b85e30e817766afaa2f
 REPORT: pass=1 send_ok=32 send_fail=0
 REPORT: pass=2 send_ok=32 send_fail=0
 REPORT: send_ok_total=64 send_fail_total=0
+REPORT: seq_acked=32 seq_missing=0 of 32
 REPORT: result=espnow_tx_sent
 ```
 
@@ -82,6 +85,23 @@ REPORT: result=espnow_tx_sent
 inferred from the report it wrote; ESP-NOW delivery beyond 7,680 B, encryption,
 and RSSI at range are untested. Rung 3 (a real JPEG over this link) is still
 open on the camera.
+
+## Peer review (Copilot, 2026-11-20, reviewed at fb336ec)
+
+Two findings, both fixed in the follow-up commit; the transfer was then re-run
+with the fixed firmware and reproduced the identical hash.
+
+1. **Medium — the sender's success condition could report a false success.** It
+   counted ACK callbacks in aggregate (`send_ok >= 32`), which two passes over the
+   same sequences would satisfy while leaving others unsent. Fixed: sends are
+   issued one at a time and the status callback records the sequence in flight,
+   so `result=espnow_tx_sent` now requires **every** sequence to be individually
+   ACKed (`seq_acked=32 seq_missing=0`). The captured 64/64 was already a real
+   result; the *criterion* was the weaker thing.
+2. **Low — `write_report()` ignored partition errors.** On a build whose only log
+   is that partition, a failed write would have looked like a short report. Fixed:
+   every erase/write is checked, the header is read back and compared, and the
+   outcome is reported as `report_write_errors` (0 here).
 
 ## Frame board end state
 

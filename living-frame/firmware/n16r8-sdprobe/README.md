@@ -94,6 +94,36 @@ stays in SPI mode until its power is cycled — so that failure is **not** a
 measurement of the 1-bit path. It would need a power cycle before the first
 command to be meaningful.
 
+### Verdicts the probe prints (separated on purpose)
+
+```
+SD_VERDICT_RAW:    the card ANSWERS on SPI (raw init READY)
+SD_VERDICT_DRIVER: sdmmc_card_init is unavailable for this card (CMD59 rejected in
+                   idle state; see the driver log above) -- an API-library limit,
+                   not a wiring fault
+SD_VERDICT_CARD:   identified (see CSD/CID/FAT lines above)
+SD_VERDICT_READ:   read-only inspection completed through CMD17
+```
+
+A single pass/fail line would erase this task's whole finding: the card works and
+the library does not.
+
+## Peer review (Copilot, 2026-11-20)
+
+Copilot reviewed `ea58165` and returned three findings, all fixed before the
+follow-up commit:
+
+1. **Medium — a false "card does not answer" verdict.** `raw_probe()` could reach
+   READY and read the card while the final verdict still said the card did not
+   answer, because the raw result was not part of `ok`. Fixed by splitting the
+   verdict into RAW / DRIVER / CARD / READ lines (above).
+2. **Medium — a false "inspection OK".** A failed root-directory or boot-sector
+   read was logged but the caller still printed `inspection OK`. Fixed with an
+   explicit `g_inspect_ok` that every read failure clears.
+3. **Low — corrupted FAT listing.** The first-file read reused the directory
+   buffer, so the rest of that chunk parsed as directory entries. Fixed with a
+   separate `fb[512]`.
+
 ## What this means for the write path (task 0230)
 
 A mount through ESP-IDF's `sdmmc`/`sdspi` driver is not available for this card

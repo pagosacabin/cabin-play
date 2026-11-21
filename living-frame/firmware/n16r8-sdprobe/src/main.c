@@ -70,6 +70,10 @@ static uint32_t rd16(const uint8_t *b, int o);
 static uint32_t rd32(const uint8_t *b, int o);
 static void print_fat_name(const uint8_t *e);
 static bool g_byte_addressed = true;
+static bool g_raw_ready;            /* raw SPI init reached READY */
+static int  g_raw_attempt;
+static bool g_inspect_ok;           /* no read error during inspection */
+static bool g_have_card_id;         /* CSD decoded */
 
 /* ---- report sink (same discipline as 0225) ------------------------------ */
 static char  g_report[60000];
@@ -385,6 +389,7 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
 
     app_logf("  RAW_INIT: %s on attempt %d of 5\n",
              ready ? "READY" : "FAILED", ready ? ok_attempt : 5);
+    if (ready) { g_raw_ready = true; g_raw_attempt = ok_attempt; }
     write_report_partition();
 
     if (ready && inspect) {
@@ -771,6 +776,7 @@ static void raw_inspect(spi_device_handle_t dev)
 
     app_logf("\n=== 2. CARD CONTENTS (RAW, READ-ONLY) ===\n");
 
+    g_inspect_ok = true;
     if (raw_read_reg(dev, 9, reg) == 0) {
         bool blank = true;
         for (int i = 0; i < 16; i++) if (reg[i] != 0xFF) blank = false;
@@ -784,7 +790,10 @@ static void raw_inspect(spi_device_handle_t dev)
                  reg[8], reg[9], reg[10], reg[11], reg[12], reg[13], reg[14], reg[15]);
         app_logf("  SD_CAPACITY_FROM_CSD: %llu MB (%llu bytes)\n",
                  (unsigned long long)(bytes / (1024ull * 1024ull)), (unsigned long long)bytes);
+        g_have_card_id = true;
         }
+    } else {
+        g_inspect_ok = false;
     }
     if (raw_read_reg(dev, 10, reg) == 0) {
         bool blank = true;
@@ -808,6 +817,7 @@ static void raw_inspect(spi_device_handle_t dev)
     write_report_partition();
     if (raw_read_block(dev, 0, blk) != 0) {
         app_logf("  SD_RESULT: FAIL cannot read sector 0\n");
+        g_inspect_ok = false;
         write_report_partition();
         return;
     }
@@ -837,6 +847,7 @@ static void raw_inspect(spi_device_handle_t dev)
 
     if (raw_read_block(dev, part_lba, blk) != 0) {
         app_logf("  SD_RESULT: FAIL cannot read boot sector at LBA %" PRIu32 "\n", part_lba);
+        g_inspect_ok = false;
         return;
     }
     const uint8_t *bs = blk;
@@ -867,8 +878,11 @@ static void raw_inspect(spi_device_handle_t dev)
                 shown++;
             }
             if (!shown) app_logf("    (empty)\n");
+        } else {
+            g_inspect_ok = false;
         }
-        app_logf("  SD_RESULT: read-only inspection OK\n");
+        app_logf("  SD_RESULT: %s (CMD17 only, nothing written)\n",
+                 g_inspect_ok ? "read-only inspection OK" : "inspection INCOMPLETE - a read failed");
         return;
     }
 
@@ -948,7 +962,10 @@ static void raw_inspect(spi_device_handle_t dev)
                 uint32_t clus = rd16(e, 26) | ((uint32_t)rd16(e, 20) << 16);
                 uint32_t size = rd32(e, 28);
                 uint32_t file_lba = data_lba + (clus - 2) * spc;
-                uint8_t fb[512];
+                /* Its own buffer: reading the file into the directory buffer
+                 * would make the rest of this chunk parse as directory
+                 * entries (a silent source of bogus listings). */
+                static uint8_t fb[512];
                 if (clus >= 2 && raw_read_block(dev, file_lba, fb) == 0) {
                     char head[33]; int k = 0;
                     for (int i = 0; i < 32 && i < (int)size; i++) {
@@ -968,7 +985,8 @@ static void raw_inspect(spi_device_handle_t dev)
         if (stop) break;
     }
     if (!shown) app_logf("    (empty)\n");
-    app_logf("  SD_RESULT: read-only inspection OK (CMD17 only, nothing written)\n");
+    app_logf("  SD_RESULT: %s (CMD17 only, nothing written)\n",
+             g_inspect_ok ? "read-only inspection OK" : "inspection INCOMPLETE - a read failed");
 }
 
 /* ------------------------------------------------------------ rung 1 + 3 */
@@ -1125,12 +1143,35 @@ void app_main(void)
         ok |= try_sdmmc_1bit(20000);
     }
 
-    if (!ok) {
-        app_logf("\nSD_VERDICT: FAIL - the card does not answer on SPI (both clocks, "
-                 "with and without internal pull-ups) nor in SDMMC 1-bit.\n");
+    /* Verdicts are separated on purpose: a card that answers at command level but
+     * cannot go through sdmmc_card_init is exactly this task's finding, and a
+     * single FAIL line would erase it. */
+    app_logf("\n=== 3. VERDICTS ===\n");
+    app_logf("SD_VERDICT_RAW: %s\n", g_raw_ready
+             ? "the card ANSWERS on SPI (raw init READY)"
+             : "the card did not answer the raw SPI probe");
+    if (g_raw_ready && g_raw_attempt > 1) {
+        app_logf("SD_NOTE_RAW: init needed %d attempts after reset (first pass fails at CMD8 "
+                 "with R1=0x05) -- a marginal contact or a slow power-up, to be settled by "
+                 "rung 2's meter readings\n", g_raw_attempt);
+    }
+    app_logf("SD_VERDICT_DRIVER: %s\n", ok
+             ? "sdmmc_card_init succeeded"
+             : "sdmmc_card_init is unavailable for this card (CMD59 rejected in idle state; "
+               "see the driver log above) -- an API-library limit, not a wiring fault");
+    if (g_have_card_id) {
+        app_logf("SD_VERDICT_CARD: identified (see CSD/CID/FAT lines above)\n");
+    }
+    app_logf("SD_VERDICT_READ: %s\n", g_inspect_ok
+             ? "read-only inspection completed through CMD17"
+             : "read-only inspection did not complete - a read failed");
+    if (!g_raw_ready) {
         app_logf("NEXT: rung 2 (meter) - 3.3 V at the holder's VCC with the card seated and "
                  "init attempted; continuity from each holder pad to its ESP32 pin; shorts "
                  "between adjacent lines.  Firmware cannot measure that.\n");
+    } else if (!ok) {
+        app_logf("NEXT: the write path needs a driver that tolerates this card (CMD59 in idle), "
+                 "or a card that implements it; rung 2's meter readings are still owed.\n");
     }
 
     app_logf("\n########## PROBE COMPLETE ##########\n");

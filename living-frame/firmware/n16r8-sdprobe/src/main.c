@@ -64,6 +64,30 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+/* 0236 -- power-up settle delay before the FIRST init attempt only.
+ *
+ * 0234 measured the fault precisely: after every reset the first SPI exchange
+ * with the card returns junk (CMD0 answers 0x3f/0x47 instead of R1=0x01; CMD8
+ * answers R1=0x00 and its R7 does not echo 0x1AA) and the SECOND attempt is
+ * clean -- 27 of 27 resets, two cards, two builds.  The delay below is inserted
+ * between the standard 74+ dummy clocks (CS high) and the first CMD0 of the
+ * first attempt, and nowhere else: attempts 2+ run exactly as in 0234 so the
+ * cross-reset comparison stays honest.
+ *
+ * Set at build time, no source edit per value:
+ *   PLATFORMIO_BUILD_FLAGS="-DSD_FIRSTPASS_DELAY_MS=50" pio run -e n16r8-sdprobe
+ * 0 is the 0234 control: the #if below compiles the delay out entirely, so the
+ * control build is behaviourally identical to the base revision.
+ */
+#ifndef SD_FIRSTPASS_DELAY_MS
+#define SD_FIRSTPASS_DELAY_MS 0
+#endif
+/* Range guard: a value the power-up test never intends is a build error rather
+ * than a silently-passed flag (and it proves the -D reached this file). */
+#if SD_FIRSTPASS_DELAY_MS < 0 || SD_FIRSTPASS_DELAY_MS > 2000
+#error "SD_FIRSTPASS_DELAY_MS out of range (0..2000 ms)"
+#endif
+
 #define PIN_SCK   12
 #define PIN_MOSI  11
 #define PIN_MISO  13
@@ -201,6 +225,7 @@ static void fp_report(void)
 {
     int pass_first = 0, ready_n = 0;
     app_logf("\n=== 4. FIRST-PASS TABLE (persisted across resets, NVS) ===\n");
+    app_logf("FIRSTPASS_DELAY_MS: %d\n", SD_FIRSTPASS_DELAY_MS);
     app_logf("FIRSTPASS_SLOTS: %d (of %d kept), build_id=%08x\n", g_slot_n, FP_SLOTS, g_build_id);
     for (int i = 0; i < g_slot_n; i++) {
         const fp_slot_t *s = &g_slots[i];
@@ -478,6 +503,14 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
             t.tx_buffer = ff;
             spi_device_transmit(dev, &t);
         }
+
+#if SD_FIRSTPASS_DELAY_MS > 0
+        /* 0236: settle time after the clocks and before the very first CMD0 of
+         * this boot.  First attempt only -- later attempts keep 0234's timing. */
+        if (capture_first && attempt == 1) {
+            vTaskDelay(pdMS_TO_TICKS(SD_FIRSTPASS_DELAY_MS));
+        }
+#endif
 
         uint8_t r0 = sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);   /* GO_IDLE */
         vTaskDelay(pdMS_TO_TICKS(5));
@@ -1364,6 +1397,7 @@ void app_main(void)
 
     app_logf("\n\n########## 0234 SD RETEST (0229 probe extended) ##########\n");
     app_logf("build: %s %s\n", __DATE__, __TIME__);
+    app_logf("FIRSTPASS_DELAY_MS: %d (0236; applies to attempt 1 only)\n", SD_FIRSTPASS_DELAY_MS);
 
     /* Cross-reset first-pass table (0234 step 3). */
     fp_load();

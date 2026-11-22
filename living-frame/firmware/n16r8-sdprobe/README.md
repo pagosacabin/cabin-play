@@ -285,3 +285,88 @@ read-back of `0x10000..0xB5000` = `a2829d610cd2be6fa7455b18cc3e1b378248864f975b3
 the same hash as `.pio/build/n16r8-photo-800x600/firmware.bin` and as the
 pre-flash read-back. The board's own report (`logs/07-...`) shows
 `mode 800x600`, framebuffer `sha256 204578cc…`, `MATCH`, `362 vsync in 5.998 s`.
+
+## 0236 — power-up delay before the first CMD0 (one variable)
+
+0234 left the fault precisely measured: after every reset the *first* SPI
+exchange with the card is garbage (CMD0 answers `0x3f`/`0x47`; CMD8 answers
+`R1=0x00` with the R7 echo shifted one byte late) and the *second* attempt is
+clean, 27 of 27 resets on two cards and two builds. Stephen's hypothesis: the
+card needs more settling time after power-up.
+
+The probe now takes a build-time settle delay, `SD_FIRSTPASS_DELAY_MS`,
+inserted between the standard 74+ dummy clocks (CS high) and the first CMD0 of
+the **first** raw-init attempt, and nowhere else — attempts 2+ and the second
+probe call are byte-for-byte 0234's code path:
+
+```bash
+PLATFORMIO_BUILD_FLAGS="-DSD_FIRSTPASS_DELAY_MS=50" pio run -e n16r8-sdprobe
+PLATFORMIO_BUILD_FLAGS="-DSD_FIRSTPASS_DELAY_MS=50" pio run -e n16r8-sdprobe -t upload
+```
+
+`0` compiles the delay out entirely (the 0234 control); a value outside 0..2000
+is a compile error, which also proves the `-D` reached the file. The value is
+printed in the report header and above the first-pass table, so every committed
+log names its own delay. (The two added `FIRSTPASS_DELAY_MS:` lines are the only
+report difference at delay 0 — peer review's one NIT.)
+
+### Measured: 12 resets per value, five values, 65 boots, 0 first-pass successes
+
+The probe's own report partition is the record; `logs/09`–`13` are the full
+read-backs (13 slots each: the flash boot plus the 12 driven resets).
+
+| delay (ms) | first_pass_ok / boots | CMD0 first response | CMD8 R1 (first attempt) |
+| ---: | :---: | :--- | :--- |
+| 0 (control) | **0 / 13** | `0x3f` x6, `0x47` x7 | `0x00` x13 |
+| 10 | **0 / 13** | `0x3f` x10, `0x47` x3 | `0x00` x13 |
+| 50 | **0 / 13** | `0x3f` x10, `0x47` x3 | `0x00` x13 |
+| 100 | **0 / 13** | `0x3f` x11, `0x47` x2 | `0x00` x13 |
+| 250 | **0 / 13** | `0x3f` x11, `0x47` x2 | `0x00` x13 |
+
+**Verdict: no delay up to 250 ms changes the first-pass rate — the first init
+pass failed on all 65 boots.** Note that these delays are *on top of* the 250 ms
+post-boot settle already in `app_main` (`FIRSTPASS_DELAY_MS=250` therefore puts
+~500 ms between reset release and the first CMD0), so the tested window runs to
+about half a second of settling and the fault is still there.
+
+The junk pattern does not change with delay either: attempt 1 still returns
+`ff ff f8 47` for CMD0 (a leading `0xf8` before a real-looking R1) and
+`ff 00 00 00 01 aa` for CMD8 — the R7 echo is present but read one byte late,
+i.e. the first exchange after a reset is **misaligned**, not slow. Attempt 2's
+clean `ff 01 ff ff…` / `ff 01 00 00 01 aa` shows the corrected alignment.
+Settling time is therefore not the mechanism; the CS hypothesis (the other
+candidate the task names) is a separate task and was not touched here.
+
+The `FIRSTPASS_VERDICT:` line in the report is 0234's fixed wording ("does not
+follow the old card") and is unrelated to the delay; read `FIRSTPASS_SUMMARY`.
+Card seated throughout: SanDisk `SR512`, CSD capacity 511,868,665,856 B (512 GB),
+label `RECALBOX` — the 0234 card. Read-only: raw init and reads only, no mount
+with write, no format.
+
+### Board state found before the run, and the restore
+
+The frame board was **not** on the accepted build when this task started: the
+app region matched
+`/home/astroboy/wt/0235-goal-trial/…/n16r8-photo-800x600/firmware.bin` (built
+2026-11-21 10:07) and its report partition held
+`FATAL: embedded image is 307200 B, framebuffer needs 480000 B` — an 800x600 env
+carrying the 640x480 raster, so it aborted at boot. Restored at the end from the
+committed source (`tools/convert_photo64.py --source data/hummingbird.jpg
+--space gamma --mode 800x600`, then `env:n16r8-photo-800x600`), with the
+generated headers reverted afterwards so the committed tree is unchanged:
+
+- board report: `mode 800x600`, `embedded 480000 B`, framebuffer
+  `sha256 204578cc…` == tool `204578cc…`, `MATCH`,
+  `362 vsync in 5.998 s -> 60.35 Hz`, `14473 fills -> 40.0 per frame`
+- app region `0x10000..0xC5000` read back = `df402554…b7211`, byte-identical to
+  the `firmware.bin` that was flashed, and `esptool verify_flash` reports
+  `digest matched`
+- the flashed image's own banner reads `build Nov 20 2026 17:23:09`: the object
+  cache for that exact build (the accepted 0228 800x600 build, rebuilt during
+  0230) was reused because the regenerated header is byte-identical to the one
+  it was built from, so no translation unit recompiled. The raster sha256 chain
+  and the read-back are what prove which image is on the board.
+
+Peer review: Copilot (Herdr pane t17) on `21ceff2`, one pass, findings: 1 NIT
+(the two added report lines at delay 0), **Verdict: SHIP**. No GitHub PR exists
+in this repo for that branch; the review record is this section.

@@ -1,0 +1,683 @@
+
+
+########## 0234 SD RETEST (0229 probe extended) ##########
+build: Nov 21 2026 19:36:31
+FIRSTPASS_DELAY_MS: 0 (0236; applies to attempt 1 only)
+D (1484) nvs: nvs_open_from_partition sdprobe0234 1
+D (1484) nvs: nvs_get bid 4
+D (1494) nvs: nvs_get_str_or_blob fp
+FIRSTPASS_BOOT: 13 (slot index for this boot)
+
+=== 1. IDENTITY ===
+CHIP: esp32-s3 cores=2 rev=v0.2
+IDF: 5.5.0
+MAC: c4:9e:7e:08:6d:f4
+SD_PINS: SCK=12 MOSI=11 MISO=13 CS=10 CARD_DETECT=14
+D (1944) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (1944) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (1944) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (1954) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (1964) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+LINES[idle] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+D (1974) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (1984) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (1994) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (2004) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (2014) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+LINES[idle] pullups=internal-on: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+
+--- RAW SPI PROBE [no-internal-pullup], 400 kHz, manual CS, internal pull-ups OFF (external only) ---
+D (2034) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (2044) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (2054) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (2054) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (2064) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+LINES[no-internal-pullup] pullups=off: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+D (2084) gdma: new group (0) at 0x3fcea290
+D (2084) gdma: new pair (0,0) at 0x3fcea31c
+D (2084) gdma: new tx channel (0,0) at 0x3fcea258
+D (2094) gdma: new rx channel (0,0) at 0x3fcea33c
+D (2094) spi: SPI2 use iomux pins.
+D (2114) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+  ATTEMPT 1/5
+    CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff 
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  ATTEMPT 2/5
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff 
+    CMD8 verdict: card is v2.00+ (R7 echoes 0x1AA) (R1=0x01)
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    ACMD41 initial: R1=0x01
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
+    ACMD41 final: R1=0x00 after 58 ms (READY)
+    CMD58 arg=0x00000000: R1=0x00 payload[4]=ff 00 c0 ff 80 00 ff ff ff ff ff ff 
+    OCR: c0 ff 80 00 (CCS/voltage)
+    ADDRESSING: BLOCK (SDHC/SDXC: CMD17 arg = LBA) (CCS=1)
+    CMD13 arg=0x00000000: R1=0x00 payload[2]=ff 00 00 ff ff ff ff ff ff ff 
+  RAW_INIT: READY on attempt 2 of 5
+
+=== 2. CARD CONTENTS (RAW, READ-ONLY) ===
+  CSD_STRUCTURE: v2
+  CSD: 40 0e 00 32 db 79 00 0e e5 b7 7f 80 0a 40 40 93
+  SD_CAPACITY_FROM_CSD: 488156 MB (511868665856 bytes)
+  CID: 03 53 44 53 52 35 31 32 86 e4 84 5e 78 01 89 a5
+  SD_CID[align 0]: MID=0x03 OID=SD PNM=SR512 PRV=8.6 PSN=e4845e78 MDT=2024/9  <- printable PNM at this alignment
+  SD_CID[align 1]: MID=0x53 OID=DS PNM=????? PRV=14.4 PSN=845e7801 MDT=2154/5
+  SD_CID_NAME: SR512  serial=e4845e78 (PSN, CID bytes 9..12)
+  STEP: reading sector 0
+  STEP: sector 0 read OK (fa b8 00 10)
+  SD_PARTITION: type=0x0c lba=2048
+  MBR_ENTRY0: type=0x0c lba=2048 sectors=6301696 boot=OK label='RECALBOX   ' root_clus=2
+    -> data_lba=14368 first bytes OK: 52 45 43 41
+  MBR_ENTRY1: type=0x07 lba=6305792 sectors=991338497 boot=OK label='' root_clus=0
+    -> data_lba=6305792 first bytes OK: eb 76 90 45
+  MBR_ENTRY2: type=0x83 lba=997646336 sectors=2097152 boot=OK label='' root_clus=0
+    -> data_lba=997646336 first bytes OK: 00 00 00 00
+  SD_FS: FAT32 sector=512 B cluster=4096 B clusters=785960
+  SD_CAPACITY_BS: 3076 MB (6300000 sectors of 512 B)
+  SD_LABEL: RECALBOX   
+  CAPACITY_PROBE: LBA 1000000 (past 512 MB) -> read OK, first bytes:
+    [26 30 b0 c9 43 32 ee 4b]
+  CAPACITY_PROBE: CSD last LBA 999743487 (488156 MB) -> read OK
+    [00 00 00 00 00 00 00 00]
+  SD_BPB: reserved=32 nfats=2 fatsz=6144 root_entries=0 total=6300000
+  SD_ROOT (first entries):
+  SD_ROOT_CLUSTER: 2 -> dir_lba 14368 (part_lba 2048, data_lba 14368, spc 8)
+    ROOT_RAW[52 45 43 41 4c 42 4f 58 | 20 20 20 08 00 00 a0 a4]
+    ROOT_REREAD 0: identical to the first read
+    ROOT_REREAD 1: identical to the first read
+    ROOT_REREAD 2: identical to the first read
+    ROOT_REREAD 3: identical to the first read
+    ROOT_REREAD 4: identical to the first read
+    CRT           <DIR>         0 B  start_clus=3
+    START4.ELF            2258496 B  start_clus=6
+    FIRST FILE HEAD (32 B): .ELF........................4...
+    FIRST FILE HEX: 7f 45 4c 46 01 01 01 00 00 00 00 00 00 00 00 00 
+    FIXUP4X.DAT              8451 B  start_clus=558
+    FIXUP4.DAT               5455 B  start_clus=561
+    START4X.ELF           3006152 B  start_clus=563
+    RECALB~1.TXT               17 B  start_clus=1297
+    RECALB~1.CON             3121 B  start_clus=313181
+    RECALB~2.TXT              527 B  start_clus=1299
+    BOOT.MD5                23183 B  start_clus=1300
+    BCM271~1.DTB            80137 B  start_clus=1306
+    CMDLINE.TXT               220 B  start_clus=1326
+    BCM271~2.DTB            80153 B  start_clus=1327
+    BOOT          <DIR>         0 B  start_clus=1347
+    PRE-UP~1.SH                20 B  start_clus=312568
+    OVERLAYS      <DIR>         0 B  start_clus=312569
+    CONFIG.TXT               1573 B  start_clus=312993
+  SD_RESULT: read-only inspection OK (CMD17 only, nothing written)
+
+  DRIVER SEQUENCE REPLAY:
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff 
+    CMD52 arg=0x00000000: R1=0x05 payload[0]=ff 05 ff ff ff ff ff ff 
+    CMD5  arg=0x00000000: R1=0x05 payload[0]=ff 05 ff ff ff ff ff ff 
+    CMD59 arg=0x00000001: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    with CMD52+CMD5 first: CMD52=0x05 CMD5=0x05 CMD59=0x01
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff 
+    CMD59 arg=0x00000001: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    without CMD5 (control): CMD59=0x01
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff 
+    CMD52 arg=0x00000000: R1=0x05 payload[0]=ff 05 ff ff ff ff ff ff 
+    CMD59 arg=0x00000001: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD52 only,   then CMD59=0x01
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff 
+    CMD5  arg=0x00000000: R1=0x05 payload[0]=ff 05 ff ff ff ff ff ff 
+    CMD59 arg=0x00000001: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD5 only,    then CMD59=0x01
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD59 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD59 arg=0x00000001: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD59 probe in IDLE state (after CMD0 R1=0x01): R1=0x01 -> ACCEPTED (idle bit only)
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0 repeatability: 10/10 answered R1=0x01 (idle)
+D (3994) gdma: del rx channel (0,0)
+D (3994) gdma: del tx channel (0,0)
+D (3994) gdma: del pair (0,0)
+D (4004) gdma: del group 0
+D (4184) nvs: nvs_set_blob fp 104
+
+--- RAW SPI PROBE [internal-pullup], 400 kHz, manual CS, internal pull-ups ON ---
+D (4364) gpio: GPIO[14]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (4374) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (4384) gpio: GPIO[11]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (4384) gpio: GPIO[12]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+D (4394) gpio: GPIO[13]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 1| Pulldown: 0| Intr:0 
+LINES[internal-pullup] pullups=internal-on: MISO=1 CS=1 MOSI=1 SCK=1 CD14=1
+D (4414) gdma: new group (0) at 0x3fcea290
+D (4414) gdma: new pair (0,0) at 0x3fcea31c
+D (4414) gdma: new tx channel (0,0) at 0x3fcea258
+D (4424) gdma: new rx channel (0,0) at 0x3fcea33c
+D (4424) spi: SPI2 use iomux pins.
+D (4444) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+  ATTEMPT 1/5
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff 
+    CMD8 verdict: card is v2.00+ (R7 echoes 0x1AA) (R1=0x01)
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    ACMD41 initial: R1=0x01
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
+    ACMD41 final: R1=0x00 after 58 ms (READY)
+    CMD58 arg=0x00000000: R1=0x00 payload[4]=ff 00 c0 ff 80 00 ff ff ff ff ff ff 
+    OCR: c0 ff 80 00 (CCS/voltage)
+    ADDRESSING: BLOCK (SDHC/SDXC: CMD17 arg = LBA) (CCS=1)
+    CMD13 arg=0x00000000: R1=0x00 payload[2]=ff 00 00 ff ff ff ff ff ff ff 
+  RAW_INIT: READY on attempt 1 of 5
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD0 repeatability: 10/10 answered R1=0x01 (idle)
+D (4824) gdma: del rx channel (0,0)
+D (4824) gdma: del tx channel (0,0)
+D (4834) gdma: del pair (0,0)
+D (4834) gdma: del group 0
+
+--- STOCK DRIVER + MOUNT [mount 400kHz] at 400 kHz ---
+D (5024) gdma: new group (0) at 0x3fcea290
+D (5024) gdma: new pair (0,0) at 0x3fcea31c
+D (5034) gdma: new tx channel (0,0) at 0x3fcea258
+D (5034) gdma: new rx channel (0,0) at 0x3fcea33c
+D (5044) spi: SPI2 use iomux pins.
+D (5044) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
+D (5064) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (5064) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (5074) spi_master: device5 locked the bus
+D (5084) spi_master: device5 release bus
+V (5084) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+I (5094) sdspi_transaction: cmd=52, R1 response: command not supported
+D (5094) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
+D (5104) spi_master: device5 locked the bus
+D (5104) spi_master: device5 release bus
+V (5104) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (5134) spi_master: device5 locked the bus
+D (5134) spi_master: device5 release bus
+V (5134) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (5154) spi_master: device5 locked the bus
+D (5154) spi_master: device5 release bus
+V (5154) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa010000
+D (5154) sdmmc_sd: SDHC/SDXC card
+D (5154) spi_master: device5 locked the bus
+D (5154) spi_master: device5 release bus
+V (5164) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+I (5164) sdspi_transaction: cmd=5, R1 response: command not supported
+D (5174) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x106
+D (5174) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x106; not IO card
+D (5184) spi_master: device5 locked the bus
+D (5194) spi_master: device5 release bus
+D (5194) sdspi_host: data CRC set=1
+V (5194) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (5204) spi_master: device5 locked the bus
+D (5204) spi_master: device5 release bus
+V (5204) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (5214) spi_master: device5 locked the bus
+D (5214) spi_master: device5 release bus
+V (5224) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (5234) spi_master: device5 locked the bus
+D (5234) spi_master: device5 release bus
+V (5234) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (5244) spi_master: device5 locked the bus
+D (5244) spi_master: device5 release bus
+V (5244) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (5264) spi_master: device5 locked the bus
+D (5264) spi_master: device5 release bus
+V (5264) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (5264) spi_master: device5 locked the bus
+D (5274) spi_master: device5 release bus
+V (5274) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (5284) spi_master: device5 locked the bus
+D (5284) spi_master: device5 release bus
+V (5284) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x0080ffc0
+D (5294) sdmmc_common: host_ocr=0xff8000 card_ocr=0xc0ff8000
+D (5294) sdmmc_common: sdmmc_card_init: host_ocr=00ff8000, card_ocr=c0ff8000
+D (5304) sdmmc_init: sdmmc_card_init: card type is SD
+D (5304) spi_master: device5 locked the bus
+D (5314) spi_master: device5 release bus
+V (5314) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x03feff00
+D (5324) spi_master: device5 locked the bus
+D (5324) spi_master: device5 release bus
+V (5334) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x40feff00
+D (5334) spi_master: device5 locked the bus
+D (5344) spi_master: device5 release bus
+V (5344) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (5344) spi_master: device5 locked the bus
+D (5354) spi_master: device5 release bus
+V (5354) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x87844502
+D (5364) spi_master: device5 locked the bus
+D (5364) spi_master: device5 release bus
+V (5364) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (5374) spi_master: device5 locked the bus
+D (5384) spi_master: device5 release bus
+V (5384) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x00000000
+D (5384) spi_master: device5 locked the bus
+D (5394) spi_master: device5 release bus
+V (5394) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (5404) spi_master: device5 locked the bus
+D (5404) spi_master: device5 release bus
+V (5404) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x87844502
+D (5414) vfs_fat_sdmmc: using pdrv=0
+D (5414) spi_master: device5 locked the bus
+D (5424) spi_master: device5 release bus
+V (5424) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+D (5424) spi_master: device5 locked the bus
+D (5444) spi_master: device5 release bus
+V (5444) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x1000b8fa
+D (5444) spi_master: device5 locked the bus
+D (5444) spi_master: device5 release bus
+V (5454) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+D (5454) spi_master: device5 locked the bus
+D (5474) spi_master: device5 release bus
+V (5474) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x6d9058eb
+D (5474) spi_master: device5 locked the bus
+D (5474) spi_master: device5 release bus
+V (5474) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+D (5484) spi_master: device5 locked the bus
+D (5494) spi_master: device5 release bus
+V (5494) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x41615252
+D (5494) spi_master: device5 locked the bus
+D (5494) spi_master: device5 release bus
+V (5504) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+  MOUNT[mount 400kHz 400 kHz]: OK card=SR512 speed=400 kHz size=488156 MB
+D (5514) spi_master: device5 locked the bus
+D (5524) spi_master: device5 release bus
+V (5524) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+D (5524) spi_master: device5 locked the bus
+D (5534) spi_master: device5 release bus
+V (5534) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+  ROOT_ENTRY: CRT
+  ROOT_ENTRY: START4.ELF
+  ROOT_ENTRY: FIXUP4X.DAT
+  ROOT_ENTRY: FIXUP4.DAT
+  ROOT_ENTRY: START4X.ELF
+  ROOT_ENTRY: RECALB~1.TXT
+  ROOT_ENTRY: RECALB~1.CON
+  ROOT_ENTRY: RECALB~2.TXT
+  ROOT_ENTRY: BOOT.MD5
+D (5564) spi_master: device5 locked the bus
+D (5574) spi_master: device5 release bus
+V (5574) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x35002d42
+D (5574) spi_master: device5 locked the bus
+D (5574) spi_master: device5 release bus
+V (5584) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+  ROOT_ENTRY: BCM271~1.DTB
+  ROOT_ENTRY: CMDLINE.TXT
+  ROOT_ENTRY: BCM271~2.DTB
+  ROOT_ENTRY: BOOT
+  ROOT_ENTRY: PRE-UP~1.SH
+  ROOT_ENTRY: OVERLAYS
+  ROOT_ENTRY: CONFIG.TXT
+  ROOT_ENTRY: BOOT.LST
+  ROOT_ENTRY: UPDATE
+D (5604) spi_master: device5 locked the bus
+D (5624) spi_master: device5 release bus
+V (5624) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x61006841
+D (5624) spi_master: device5 locked the bus
+D (5624) spi_master: device5 release bus
+V (5624) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+  ROOT_ENTRY: HARDWARE.LOG
+  ROOT_ENTRY: SYSTEM~1
+  ROOT_ENTRY: RECALB~2.CON
+  ROOT_ENTRY: ASOUND~1.STA
+  ROOT_ENTRY: RECALB~1.BAC
+D (5644) spi_master: device5 locked the bus
+D (5654) spi_master: device5 release bus
+V (5654) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x00000000
+D (5654) spi_master: device5 locked the bus
+D (5664) spi_master: device5 release bus
+V (5664) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+  ROOT_ENTRIES: 23
+D (5674) spi_master: device5 locked the bus
+D (5684) spi_master: device5 release bus
+V (5684) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x41434552
+D (5684) spi_master: device5 locked the bus
+D (5684) spi_master: device5 release bus
+V (5694) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+  FIRST_FILE_PICK: /sdcard/START4.ELF (2258496 bytes)
+D (5704) spi_master: device5 locked the bus
+D (5714) spi_master: device5 release bus
+V (5714) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x464c457f
+D (5714) spi_master: device5 locked the bus
+D (5724) spi_master: device5 release bus
+V (5724) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffff00
+  FIRST_FILE: /sdcard/START4.ELF first 32 byte(s): 7f 45 4c 46 01 01 01 00 00 00 00 00 00 00 00 00 02 00 89 00 01 00 00 00 00 02 c0 ce 34 00 00 00
+D (5744) vfs_fat: vfs_fat_lseek: offset=128, filesize:=2258496
+D (5744) vfs_fat: vfs_fat_lseek: offset=32, filesize:=2258496
+D (5754) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (5764) gdma: del rx channel (0,0)
+D (5764) gdma: del tx channel (0,0)
+D (5764) gdma: del pair (0,0)
+D (5774) gdma: del group 0
+MOUNT_VERDICT: the stock driver MOUNTS this card (read-only listing above)
+
+--- SPI sdmmc_card_init [rung1 400kHz] at 400 kHz ---
+D (5984) gdma: new group (0) at 0x3fcea290
+D (5994) gdma: new pair (0,0) at 0x3fcea31c
+D (5994) gdma: new tx channel (0,0) at 0x3fcea258
+D (6004) gdma: new rx channel (0,0) at 0x3fcea33c
+D (6004) spi: SPI2 use iomux pins.
+D (6004) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
+D (6024) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (6034) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (6044) spi_master: device5 locked the bus
+D (6044) spi_master: device5 release bus
+V (6054) sdspi_transaction: r1 = 0x04 hw_cmd.r[0]=0xffffffff
+I (6054) sdspi_transaction: cmd=52, R1 response: command not supported
+D (6064) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
+D (6064) spi_master: device5 locked the bus
+D (6074) spi_master: device5 release bus
+V (6074) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6094) spi_master: device5 locked the bus
+D (6094) spi_master: device5 release bus
+V (6094) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6114) spi_master: device5 locked the bus
+D (6114) spi_master: device5 release bus
+V (6114) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa010000
+D (6114) sdmmc_sd: SDHC/SDXC card
+D (6114) spi_master: device5 locked the bus
+D (6114) spi_master: device5 release bus
+V (6124) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+I (6124) sdspi_transaction: cmd=5, R1 response: command not supported
+D (6134) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x106
+D (6134) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x106; not IO card
+D (6144) spi_master: device5 locked the bus
+D (6154) spi_master: device5 release bus
+D (6154) sdspi_host: data CRC set=1
+V (6154) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6164) spi_master: device5 locked the bus
+D (6164) spi_master: device5 release bus
+V (6164) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6174) spi_master: device5 locked the bus
+D (6174) spi_master: device5 release bus
+V (6184) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6194) spi_master: device5 locked the bus
+D (6194) spi_master: device5 release bus
+V (6194) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6204) spi_master: device5 locked the bus
+D (6204) spi_master: device5 release bus
+V (6204) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6224) spi_master: device5 locked the bus
+D (6224) spi_master: device5 release bus
+V (6224) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6224) spi_master: device5 locked the bus
+D (6234) spi_master: device5 release bus
+V (6234) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6244) spi_master: device5 locked the bus
+D (6244) spi_master: device5 release bus
+V (6244) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x0080ffc0
+D (6254) sdmmc_common: host_ocr=0xff8000 card_ocr=0xc0ff8000
+D (6254) sdmmc_common: sdmmc_card_init: host_ocr=00ff8000, card_ocr=c0ff8000
+D (6264) sdmmc_init: sdmmc_card_init: card type is SD
+D (6264) spi_master: device5 locked the bus
+D (6274) spi_master: device5 release bus
+V (6274) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x03feff00
+D (6284) spi_master: device5 locked the bus
+D (6284) spi_master: device5 release bus
+V (6294) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x40feff00
+D (6294) spi_master: device5 locked the bus
+D (6304) spi_master: device5 release bus
+V (6304) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6304) spi_master: device5 locked the bus
+D (6314) spi_master: device5 release bus
+V (6314) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x87844502
+D (6324) spi_master: device5 locked the bus
+D (6324) spi_master: device5 release bus
+V (6324) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6334) spi_master: device5 locked the bus
+D (6344) spi_master: device5 release bus
+V (6344) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffff0000
+D (6344) spi_master: device5 locked the bus
+D (6354) spi_master: device5 release bus
+V (6354) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6364) spi_master: device5 locked the bus
+D (6364) spi_master: device5 release bus
+V (6364) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x87844502
+  SD_CARD_INIT[rung1 400kHz 400 kHz]: OK
+  SD_CARD: name=SR512 type=SD speed=400 kHz size=488156 MB
+D (6384) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (6394) gdma: del rx channel (0,0)
+D (6394) gdma: del tx channel (0,0)
+D (6394) gdma: del pair (0,0)
+D (6394) gdma: del group 0
+
+--- SPI sdmmc_card_init [rung1 100kHz] at 100 kHz ---
+D (6404) gdma: new group (0) at 0x3fcea290
+D (6414) gdma: new pair (0,0) at 0x3fcea31c
+D (6414) gdma: new tx channel (0,0) at 0x3fcea258
+D (6414) gdma: new rx channel (0,0) at 0x3fcea33c
+D (6424) spi: SPI2 use iomux pins.
+D (6424) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
+D (6444) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (6454) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (6464) spi_master: device5 locked the bus
+D (6464) spi_master: device5 release bus
+V (6464) sdspi_transaction: r1 = 0x04 hw_cmd.r[0]=0xffffffff
+I (6474) sdspi_transaction: cmd=52, R1 response: command not supported
+D (6474) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
+D (6484) spi_master: device5 locked the bus
+D (6484) spi_master: device5 release bus
+V (6494) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6514) spi_master: device5 locked the bus
+D (6514) spi_master: device5 release bus
+V (6514) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6534) spi_master: device5 locked the bus
+D (6534) spi_master: device5 release bus
+V (6534) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa010000
+D (6534) sdmmc_sd: SDHC/SDXC card
+D (6534) spi_master: device5 locked the bus
+D (6534) spi_master: device5 release bus
+V (6544) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+I (6544) sdspi_transaction: cmd=5, R1 response: command not supported
+D (6554) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x106
+D (6554) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x106; not IO card
+D (6564) spi_master: device5 locked the bus
+D (6574) spi_master: device5 release bus
+D (6574) sdspi_host: data CRC set=1
+V (6574) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6584) spi_master: device5 locked the bus
+D (6584) spi_master: device5 release bus
+V (6584) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6594) spi_master: device5 locked the bus
+D (6594) spi_master: device5 release bus
+V (6604) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6614) spi_master: device5 locked the bus
+D (6614) spi_master: device5 release bus
+V (6614) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6624) spi_master: device5 locked the bus
+D (6624) spi_master: device5 release bus
+V (6624) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6644) spi_master: device5 locked the bus
+D (6644) spi_master: device5 release bus
+V (6644) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6644) spi_master: device5 locked the bus
+D (6654) spi_master: device5 release bus
+V (6654) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6664) spi_master: device5 locked the bus
+D (6664) spi_master: device5 release bus
+V (6664) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x0080ffc0
+D (6674) sdmmc_common: host_ocr=0xff8000 card_ocr=0xc0ff8000
+D (6674) sdmmc_common: sdmmc_card_init: host_ocr=00ff8000, card_ocr=c0ff8000
+D (6684) sdmmc_init: sdmmc_card_init: card type is SD
+D (6684) spi_master: device5 locked the bus
+D (6694) spi_master: device5 release bus
+V (6694) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x03feff00
+D (6704) spi_master: device5 locked the bus
+D (6704) spi_master: device5 release bus
+V (6714) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x40feff00
+D (6714) spi_master: device5 locked the bus
+D (6724) spi_master: device5 release bus
+V (6724) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6724) spi_master: device5 locked the bus
+D (6734) spi_master: device5 release bus
+V (6734) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x87844502
+D (6744) spi_master: device5 locked the bus
+D (6744) spi_master: device5 release bus
+V (6744) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6754) spi_master: device5 locked the bus
+D (6764) spi_master: device5 release bus
+V (6764) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x00000000
+D (6764) spi_master: device5 locked the bus
+D (6774) spi_master: device5 release bus
+V (6774) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6784) spi_master: device5 locked the bus
+D (6784) spi_master: device5 release bus
+V (6784) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x87844502
+  SD_CARD_INIT[rung1 100kHz 100 kHz]: OK
+  SD_CARD: name=SR512 type=SD speed=400 kHz size=488156 MB
+D (6804) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (6814) gdma: del rx channel (0,0)
+D (6814) gdma: del tx channel (0,0)
+D (6814) gdma: del pair (0,0)
+D (6814) gdma: del group 0
+
+--- SPI sdmmc_card_init [rung1 default] at 20000 kHz ---
+D (6824) gdma: new group (0) at 0x3fcea290
+D (6834) gdma: new pair (0,0) at 0x3fcea31c
+D (6834) gdma: new tx channel (0,0) at 0x3fcea258
+D (6834) gdma: new rx channel (0,0) at 0x3fcea33c
+D (6844) spi: SPI2 use iomux pins.
+D (6844) sdspi_host: sdspi_host_init_device: SPI2 cs=10 cd=-1 wp=-1 wp_polarity:0
+D (6864) spi_master: SPI2: New device added to CS5, effective clock: 400000 Hz
+D (6874) gpio: GPIO[10]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (6884) spi_master: device5 locked the bus
+D (6884) spi_master: device5 release bus
+V (6884) sdspi_transaction: r1 = 0x04 hw_cmd.r[0]=0xffffffff
+I (6894) sdspi_transaction: cmd=52, R1 response: command not supported
+D (6894) sdmmc_cmd: cmd=52, sdmmc_req_run returned 0x106
+D (6904) spi_master: device5 locked the bus
+D (6904) spi_master: device5 release bus
+V (6914) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (6934) spi_master: device5 locked the bus
+D (6934) spi_master: device5 release bus
+V (6934) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (6954) spi_master: device5 locked the bus
+D (6954) spi_master: device5 release bus
+V (6954) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xaa010000
+D (6954) sdmmc_sd: SDHC/SDXC card
+D (6954) spi_master: device5 locked the bus
+D (6954) spi_master: device5 release bus
+V (6964) sdspi_transaction: r1 = 0x05 hw_cmd.r[0]=0xffffffff
+I (6964) sdspi_transaction: cmd=5, R1 response: command not supported
+D (6974) sdmmc_cmd: cmd=5, sdmmc_req_run returned 0x106
+D (6974) sdmmc_io: sdmmc_init_io: io_send_op_cond (1) returned 0x106; not IO card
+D (6984) spi_master: device5 locked the bus
+D (6994) spi_master: device5 release bus
+D (6994) sdspi_host: data CRC set=1
+V (6994) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (7004) spi_master: device5 locked the bus
+D (7004) spi_master: device5 release bus
+V (7004) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (7014) spi_master: device5 locked the bus
+D (7014) spi_master: device5 release bus
+V (7024) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (7034) spi_master: device5 locked the bus
+D (7034) spi_master: device5 release bus
+V (7034) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (7044) spi_master: device5 locked the bus
+D (7044) spi_master: device5 release bus
+V (7044) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (7064) spi_master: device5 locked the bus
+D (7064) spi_master: device5 release bus
+V (7064) sdspi_transaction: r1 = 0x01 hw_cmd.r[0]=0xffffffff
+D (7064) spi_master: device5 locked the bus
+D (7074) spi_master: device5 release bus
+V (7074) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (7084) spi_master: device5 locked the bus
+D (7084) spi_master: device5 release bus
+V (7084) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x0080ffc0
+D (7094) sdmmc_common: host_ocr=0xff8000 card_ocr=0xc0ff8000
+D (7094) sdmmc_common: sdmmc_card_init: host_ocr=00ff8000, card_ocr=c0ff8000
+D (7104) sdmmc_init: sdmmc_card_init: card type is SD
+D (7104) spi_master: device5 locked the bus
+D (7114) spi_master: device5 release bus
+V (7114) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x03feff00
+D (7124) spi_master: device5 locked the bus
+D (7124) spi_master: device5 release bus
+V (7134) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x40feff00
+D (7134) spi_master: device5 locked the bus
+D (7144) spi_master: device5 release bus
+V (7144) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (7144) spi_master: device5 locked the bus
+D (7154) spi_master: device5 release bus
+V (7154) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x87844502
+D (7164) spi_master: device5 locked the bus
+D (7164) spi_master: device5 release bus
+V (7164) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (7174) spi_master: device5 locked the bus
+D (7184) spi_master: device5 release bus
+V (7184) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffff0000
+D (7184) sdspi_host: Setting card clock to 20000 kHz
+D (7194) spi_master: SPI2: New device added to CS5, effective clock: 20000000 Hz
+D (7204) spi_master: device5 locked the bus
+D (7204) spi_master: device5 release bus
+V (7214) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0xffffffff
+D (7214) spi_master: device5 locked the bus
+D (7224) spi_master: device5 release bus
+V (7224) sdspi_transaction: r1 = 0x00 hw_cmd.r[0]=0x87844502
+  SD_CARD_INIT[rung1 default 20000 kHz]: OK
+  SD_CARD: name=SR512 type=SD speed=20000 kHz size=488156 MB
+D (7244) gpio: GPIO[10]| InputEn: 1| OutputEn: 0| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0 
+D (7244) gdma: del rx channel (0,0)
+D (7254) gdma: del tx channel (0,0)
+D (7254) gdma: del pair (0,0)
+D (7254) gdma: del group 0
+
+=== 4. FIRST-PASS TABLE (persisted across resets, NVS) ===
+FIRSTPASS_DELAY_MS: 0
+FIRSTPASS_SLOTS: 13 (of 24 kept), build_id=d90c695a
+  boot  1: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  7: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  8: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  9: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 10: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 11: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 12: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 13: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+FIRSTPASS_SUMMARY: raw_init_ready=13/13 first_pass_ok=0/13
+FIRSTPASS_VERDICT: the first init pass after a reset failed on this card too -- the flakiness does NOT follow the old card
+
+=== 3. VERDICTS ===
+SD_VERDICT_RAW: the card ANSWERS on SPI (raw init READY)
+SD_VERDICT_DRIVER: sdmmc_card_init succeeded
+SD_VERDICT_CARD: identified (see CSD/CID/FAT lines above)
+SD_VERDICT_READ: read-only inspection completed through CMD17
+
+########## PROBE COMPLETE ##########

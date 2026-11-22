@@ -179,14 +179,21 @@
 #if !SD_FOLD_TASK
 #error "SD_NEWCARD_TASK needs SD_FOLD_ARM=1 (it reuses the 0239 pre-sacrifice)"
 #endif
-#ifndef SD_KIT_FLOW
+/* SD_KIT_FLOW is already defined (0) by the SD_KIT_TASK block above, so the
+ * earlier `#ifndef` guard silently left the write flow compiled OUT and the
+ * build ran the 0239 fold app instead (peer review, 2026-11-22, BLOCKER). */
+#undef  SD_KIT_FLOW
 #define SD_KIT_FLOW 1
-#endif
 #define SD_NEWCARD_POLICY 1
 #define TASK_NO "0241"
 #else
 #define SD_NEWCARD_POLICY 0
 #define TASK_NO "0240"
+#endif
+
+/* The write flow exists only when one of the two tasks selected it. */
+#if SD_KIT_FLOW && !defined(SD_KIT_TASK) && !defined(SD_NEWCARD_TASK)
+#error "SD_KIT_FLOW is set but no task selected it"
 #endif
 
 
@@ -1964,6 +1971,41 @@ static bool kit_raw_identity(void)
         have_csd = !blank;
     }
 
+#if SD_NEWCARD_POLICY
+    /* The authorization below decides whether an ERASE may happen, so the
+     * identity it reads must be verified rather than merely non-blank (peer
+     * review, 2026-11-22, BLOCKER: a single unverified read could miss the kit
+     * card's exclusion or understate the Recalbox card's capacity).
+     * Two more independent reads of each register are taken and all three must
+     * be byte-identical; the OCR is re-read the same way.  A register that
+     * cannot be read three times identically is NOT authorization data. */
+    uint8_t cid_b[16] = {0}, cid_c[16] = {0};
+    uint8_t csd_b[16] = {0}, csd_c[16] = {0};
+    uint8_t ocr_b[8] = {0};
+    bool cid_x3 = have_cid &&
+                  raw_read_reg(dev, 10, cid_b) == 0 &&
+                  raw_read_reg(dev, 10, cid_c) == 0 &&
+                  memcmp(cid, cid_b, sizeof cid) == 0 &&
+                  memcmp(cid, cid_c, sizeof cid) == 0;
+    bool csd_x3 = have_csd &&
+                  raw_read_reg(dev, 9, csd_b) == 0 &&
+                  raw_read_reg(dev, 9, csd_c) == 0 &&
+                  memcmp(csd, csd_b, sizeof csd) == 0 &&
+                  memcmp(csd, csd_c, sizeof csd) == 0;
+    bool ocr_x2 = (sd_raw_cmd(dev, 58, 0, 0xFF, 4, ocr_b, sizeof ocr_b) != 0xFF) &&
+                  memcmp(ocr, ocr_b, 4) == 0;
+    app_logf("  IDENTITY_VERIFY: cid_3x_identical=%d csd_3x_identical=%d "
+             "ocr_2x_identical=%d\n", (int)cid_x3, (int)csd_x3, (int)ocr_x2);
+    /* Informational only: both registers of this card family read 0x00 in the
+     * CRC byte (measured on the kit card in 0240), so a CRC7 mismatch cannot
+     * be used to refuse -- the three-read stability plus the OCR/CSD class
+     * cross-check below are the integrity test that IS sound on this path. */
+    app_logf("  IDENTITY_CRC7: cid stored=0x%02x calc=0x%02x  csd stored=0x%02x "
+             "calc=0x%02x (informational; see 0240's measured 0x00 quirk)\n",
+             have_cid ? cid[15] : 0xFF, have_cid ? sd_crc7(cid, 15) : 0xFF,
+             have_csd ? csd[15] : 0xFF, have_csd ? sd_crc7(csd, 15) : 0xFF);
+#endif
+
     spi_bus_remove_device(dev);
     spi_bus_free(SPI2_HOST);
 
@@ -2019,14 +2061,28 @@ static bool kit_raw_identity(void)
      * Anything else with a readable CID is the card Stephen seated for 0241. */
     bool is_kit        = have_cid && psn == KIT_CARD_PSN;
     bool never_scratch = have_csd && bytes >= KIT_NEVER_SCRATCH_BYTES;
-    bool gate          = have_cid && have_csd && !is_kit && !never_scratch;
+    /* OCR (block vs byte addressing) and the CSD's structure version are two
+     * independent statements of the same fact.  A corrupted CSD that read as
+     * v1 for an SDXC card -- the exact way a 512 GB card's capacity could be
+     * understated -- also disagrees with the OCR, so this is the cross-check
+     * that makes the capacity test trustworthy. */
+    bool class_ok   = have_csd && ocr_x2 && (ccs == (structure != 0));
+    bool size_plaus = have_csd &&
+                      ((structure != 0) ? (bytes >= (2ull << 30) && bytes <= (2ull << 40))
+                                        : (bytes <= (4ull << 30)));
+    bool verified   = cid_x3 && csd_x3 && ocr_x2;
+    bool gate       = verified && class_ok && size_plaus && !is_kit && !never_scratch;
 
-    app_logf("NEWCARD_GATE: %s (cid_read=%d is_kit_card_0x%08" PRIx32 "=%d "
-             "capacity=%llu MB never_scratch_ge_400GiB=%d)\n",
-             gate ? "AUTHORIZED -- not the kit card and not the 512 GB Recalbox card"
-                  : "STOP -- nothing will be formatted or written",
-             (int)have_cid, (uint32_t)KIT_CARD_PSN, (int)is_kit,
+    app_logf("NEWCARD_GATE: %s\n", gate
+             ? "AUTHORIZED -- not the kit card and not the 512 GB Recalbox card"
+             : "STOP -- nothing will be formatted or written");
+    app_logf("NEWCARD_GATE_TESTS: identity_verified=%d ocr_csd_class_consistent=%d "
+             "size_plausible=%d is_kit_card_0x%08" PRIx32 "=%d capacity=%llu MB "
+             "never_scratch_ge_%lluGiB=%d\n",
+             (int)verified, (int)class_ok, (int)size_plaus,
+             (uint32_t)KIT_CARD_PSN, (int)is_kit,
              (unsigned long long)(bytes / (1024ull * 1024ull)),
+             (unsigned long long)(KIT_NEVER_SCRATCH_BYTES / (1ull << 30)),
              (int)never_scratch);
     if (is_kit) {
         app_logf("NEWCARD_GATE: the seated card is the 1 GB KIT card -- 0240 "
@@ -2034,8 +2090,14 @@ static bool kit_raw_identity(void)
     }
     if (never_scratch) {
         app_logf("NEWCARD_GATE: the seated card is in the NEVER-SCRATCH class "
-                 "(>= 400 GiB, i.e. the 512 GB Recalbox card); no format, no "
-                 "write, refused absolutely.\n");
+                 "(>= %llu GiB, i.e. the 512 GB Recalbox card); no format, no "
+                 "write, refused absolutely.\n",
+                 (unsigned long long)(KIT_NEVER_SCRATCH_BYTES / (1ull << 30)));
+    }
+    if (!verified) {
+        app_logf("NEWCARD_GATE: card identity could not be verified (three "
+                 "identical reads of CID and CSD and two of the OCR are "
+                 "required); failing closed with no format, no write.\n");
     }
     return gate;
 #else

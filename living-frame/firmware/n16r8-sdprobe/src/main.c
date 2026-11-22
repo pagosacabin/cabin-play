@@ -59,8 +59,10 @@
 #include "sdmmc_cmd.h"
 #include "nvs.h"
 #include "nvs_flash.h"
-#include "dirent.h"
-#include "sys/stat.h"
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "mbedtls/sha256.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -140,6 +142,25 @@
 #define SD_FOLD_TASK 1
 #else
 #define SD_FOLD_TASK 0
+#endif
+
+/* 0240 -- the kit card's write path: identity gate, driver init behind the
+ * 0239 pre-sacrifice, format, write, read back, remount, read back again.
+ *
+ * This arm REQUIRES the 0239 block (it reuses fold_presacrifice() and
+ * fold_one_init()), so it is built as `-DSD_FOLD_ARM=1 -DSD_KIT_TASK=1`.
+ * DESTRUCTIVE to the card that is in the holder -- the identity gate below is
+ * what keeps it from touching the 512 GB Recalbox card: nothing is written
+ * unless the seated card reads back as the ~1 GB SDSC kit card.
+ *   PLATFORMIO_BUILD_FLAGS="-DSD_FOLD_ARM=1 -DSD_KIT_TASK=1" pio run -e n16r8-sdprobe
+ */
+#ifdef SD_KIT_TASK
+#if !SD_FOLD_TASK
+#error "SD_KIT_TASK needs SD_FOLD_ARM=1 (it reuses the 0239 pre-sacrifice)"
+#endif
+#define SD_KIT_FLOW 1
+#else
+#define SD_KIT_FLOW 0
 #endif
 
 #define PIN_SCK   12
@@ -1766,6 +1787,456 @@ static void fold_driver_log_levels(void)
     esp_log_level_set("sdspi_transaction", ESP_LOG_VERBOSE); /* r1 per command */
 }
 
+/* ===================== 0240: the kit card's write path ===================== */
+#if SD_KIT_FLOW
+
+#define KIT_PATH           "/sdcard/KITCARD.BIN"
+#define KIT_FILE_BYTES     (128u * 1024u)     /* 32 chunks of 4 KiB, > the 64 KiB floor */
+#define KIT_CHUNK          4096u
+#define KIT_CAP_MIN_BYTES  (900ull * 1024ull * 1024ull)
+#define KIT_CAP_MAX_BYTES  (1200ull * 1024ull * 1024ull)
+
+/* The driver's verbose log is what names an init failure, but it would also
+ * log every block of a 128 KiB write and overflow the 60 kB report before the
+ * result lines are appended.  Quiet it after the mount steps. */
+static void kit_quiet_driver(void)
+{
+    esp_log_level_set("sdspi_host", ESP_LOG_WARN);
+    esp_log_level_set("sdspi_transaction", ESP_LOG_WARN);
+    esp_log_level_set("sdmmc_cmd", ESP_LOG_WARN);
+    esp_log_level_set("sdmmc_sd", ESP_LOG_WARN);
+    esp_log_level_set("sdmmc_common", ESP_LOG_WARN);
+    esp_log_level_set("sdmmc_init", ESP_LOG_WARN);
+    esp_log_level_set("sdmmc_io", ESP_LOG_WARN);
+}
+
+/* Deterministic payload: byte i = ((i*31) + ((i>>9)*7) + ((i>>17)*131)) ^ 0xA5,
+ * all in uint32 arithmetic.  The host tool recomputes the same bytes, so the
+ * board's hash can be checked against an independent implementation. */
+static void kit_pattern(uint8_t *b, size_t n, uint32_t off)
+{
+    for (size_t i = 0; i < n; i++) {
+        uint32_t x = off + (uint32_t)i;
+        b[i] = (uint8_t)(((x * 31u) + ((x >> 9) * 7u) + ((x >> 17) * 131u)) ^ 0xA5u);
+    }
+}
+
+/* Step 1 -- the hard gate.  Read CID and CSD over the raw path (read-only, no
+ * format, no write) and refuse unless the seated card is the ~1 GB kit SDSC
+ * card.  Returns true only when every gate test passes. */
+static bool kit_raw_identity(void)
+{
+    app_logf("\n=== 0240 STEP 1: SEATED-CARD IDENTITY (raw SPI, read-only) ===\n");
+
+    spi_bus_config_t bus = {
+        .mosi_io_num = PIN_MOSI,
+        .miso_io_num = PIN_MISO,
+        .sclk_io_num = PIN_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) {
+        app_logf("KIT_GATE: SPI bus init failed (%s)\n", esp_err_to_name(err));
+        return false;
+    }
+
+    gpio_set_direction(PIN_CS, GPIO_MODE_OUTPUT);
+    gpio_set_level(PIN_CS, 1);
+    gpio_set_pull_mode(PIN_MISO, GPIO_FLOATING);
+    gpio_set_pull_mode(PIN_CS, GPIO_FLOATING);
+    gpio_set_pull_mode(PIN_MOSI, GPIO_FLOATING);
+
+    spi_device_interface_config_t devcfg = {0};
+    devcfg.clock_speed_hz = 400 * 1000;
+    devcfg.mode = 0;
+    devcfg.spics_io_num = -1;
+    devcfg.queue_size = 1;
+    spi_device_handle_t dev = NULL;
+    err = spi_bus_add_device(SPI2_HOST, &devcfg, &dev);
+    if (err != ESP_OK) {
+        app_logf("KIT_GATE: add_device failed (%s)\n", esp_err_to_name(err));
+        spi_bus_free(SPI2_HOST);
+        return false;
+    }
+
+    uint8_t pl[8] = {0};
+    bool ready = false;
+    for (int attempt = 1; attempt <= 5 && !ready; attempt++) {
+        uint8_t ff[10];
+        memset(ff, 0xFF, sizeof ff);
+        gpio_set_level(PIN_CS, 1);
+        spi_transaction_t t = {0};
+        t.length = sizeof(ff) * 8;
+        t.tx_buffer = ff;
+        spi_device_transmit(dev, &t);
+
+        uint8_t r0 = sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);
+        vTaskDelay(pdMS_TO_TICKS(5));
+        uint8_t r8 = sd_raw_cmd(dev, 8, 0x000001AA, 0x87, 4, pl, sizeof pl);
+        bool v2 = (r8 == 0x01 && pl[2] == 0x01 && pl[3] == 0xAA);
+        app_logf("  IDENTITY_INIT attempt %d: CMD0=0x%02x CMD8=0x%02x (%s)\n",
+                 attempt, r0, r8, v2 ? "R7 echoes 0x1AA" : "no valid R7 echo");
+        if (!v2) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
+
+        sd_raw_cmd(dev, 55, 0, 0x65, 0, pl, sizeof pl);
+        uint8_t a41 = sd_raw_cmd(dev, 41, 0x40000000u, 0x77, 0, pl, sizeof pl);
+        uint32_t t0 = (uint32_t)(esp_timer_get_time() / 1000);
+        while (a41 == 0x01) {
+            uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+            if (now - t0 > 1000) break;
+            vTaskDelay(pdMS_TO_TICKS(20));
+            sd_raw_cmd(dev, 55, 0, 0x65, 0, pl, sizeof pl);
+            a41 = sd_raw_cmd(dev, 41, 0x40000000u, 0x77, 0, pl, sizeof pl);
+        }
+        app_logf("  IDENTITY_INIT: ACMD41 R1=0x%02x after %u ms\n", a41,
+                 (unsigned)((uint32_t)(esp_timer_get_time() / 1000) - t0));
+        if (a41 == 0x00) { ready = true; break; }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    if (!ready) {
+        app_logf("KIT_GATE: STOP -- the card did not reach READY over the raw path. "
+                 "Nothing was written.\n");
+        spi_bus_remove_device(dev);
+        spi_bus_free(SPI2_HOST);
+        return false;
+    }
+
+    uint8_t ocr[8] = {0};
+    sd_raw_cmd(dev, 58, 0, 0xFF, 4, ocr, sizeof ocr);
+    bool ccs = ((ocr[0] >> 6) & 1) != 0;
+    g_byte_addressed = !ccs;
+    app_logf("  OCR: %02x %02x %02x %02x  OCR_CCS=%d  ADDRESSING=%s\n",
+             ocr[0], ocr[1], ocr[2], ocr[3], (int)ccs,
+             ccs ? "BLOCK (SDHC/SDXC)" : "BYTE (SDSC)");
+
+    uint8_t cid[16] = {0};
+    bool have_cid = (raw_read_reg(dev, 10, cid) == 0);
+    if (have_cid) {
+        bool blank = true;
+        for (int i = 0; i < 16; i++) if (cid[i] != 0xFF) blank = false;
+        have_cid = !blank;
+    }
+    uint8_t csd[16] = {0};
+    bool have_csd = (raw_read_reg(dev, 9, csd) == 0);
+    if (have_csd) {
+        bool blank = true;
+        for (int i = 0; i < 16; i++) if (csd[i] != 0xFF) blank = false;
+        have_csd = !blank;
+    }
+
+    spi_bus_remove_device(dev);
+    spi_bus_free(SPI2_HOST);
+
+    if (have_cid) {
+        char name[6] = {0};
+        for (int i = 0; i < 5; i++) name[i] = (char)cid[3 + i];
+        uint32_t psn = ((uint32_t)cid[9] << 24) | ((uint32_t)cid[10] << 16) |
+                       ((uint32_t)cid[11] << 8) | (uint32_t)cid[12];
+        app_logf("  CID: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                 cid[0], cid[1], cid[2], cid[3], cid[4], cid[5], cid[6], cid[7],
+                 cid[8], cid[9], cid[10], cid[11], cid[12], cid[13], cid[14], cid[15]);
+        app_logf("  CID_MID: 0x%02x  CID_NAME: %.5s  CID_PSN: 0x%08" PRIx32 "\n",
+                 cid[0], name, psn);
+    } else {
+        app_logf("  CID: read FAILED\n");
+    }
+
+    uint64_t bytes = 0;
+    unsigned structure = 0;
+    if (have_csd) {
+        structure = (unsigned)(csd[0] >> 6);
+        bytes = csd_capacity_bytes(csd);
+        app_logf("  CSD: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                 csd[0], csd[1], csd[2], csd[3], csd[4], csd[5], csd[6], csd[7],
+                 csd[8], csd[9], csd[10], csd[11], csd[12], csd[13], csd[14], csd[15]);
+        app_logf("  CSD_STRUCTURE: v%u  CAPACITY: %llu MB (%llu bytes)\n",
+                 structure == 0 ? 1u : 2u,
+                 (unsigned long long)(bytes / (1024ull * 1024ull)),
+                 (unsigned long long)bytes);
+    } else {
+        app_logf("  CSD: read FAILED\n");
+    }
+
+    /* The gate: v1 (SDSC) structure, byte addressing, and a capacity in the
+     * 1 GB class.  A 512 GB SDXC card fails all three; an empty holder fails
+     * the READY test above. */
+    bool is_sdsc   = have_csd && structure == 0;
+    bool byte_addr = !ccs;
+    bool cap_ok    = have_csd && bytes >= KIT_CAP_MIN_BYTES && bytes <= KIT_CAP_MAX_BYTES;
+    bool gate      = is_sdsc && byte_addr && cap_ok;
+
+    app_logf("KIT_GATE: %s (sdsc=%d byte_addressed=%d capacity_in_900MB..1200MB=%d)\n",
+             gate ? "PASS -- seated card is the ~1 GB kit SDSC card"
+                  : "FAIL -- STOP, nothing will be formatted or written",
+             (int)is_sdsc, (int)byte_addr, (int)cap_ok);
+    return gate;
+}
+
+/* Mount the card through the stock driver + FatFS.  Returns a live mount on
+ * success; on failure the bus is released so the caller can retry. */
+static bool kit_mount(const char *tag, bool format_if_failed, sdmmc_card_t **out)
+{
+    app_logf("\n--- KIT MOUNT [%s] ---\n", tag);
+
+    spi_bus_config_t bus = {
+        .mosi_io_num = PIN_MOSI,
+        .miso_io_num = PIN_MISO,
+        .sclk_io_num = PIN_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) {
+        app_logf("  MOUNT_FAIL spi_bus_initialize=%s\n", esp_err_to_name(err));
+        return false;
+    }
+
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot.host_id = SPI2_HOST;
+    slot.gpio_cs = PIN_CS;
+
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = SPI2_HOST;
+    host.max_freq_khz = 400;
+
+    esp_vfs_fat_mount_config_t mcfg = {
+        .format_if_mount_failed = format_if_failed,
+        .max_files = 4,
+        .allocation_unit_size = 0,
+    };
+    sdmmc_card_t *card = NULL;
+    err = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot, &mcfg, &card);
+    if (err != ESP_OK) {
+        app_logf("  MOUNT_FAIL[%s]: %s (%d)\n", tag, esp_err_to_name(err), (int)err);
+        spi_bus_free(SPI2_HOST);
+        return false;
+    }
+
+    app_logf("  MOUNT_OK[%s]: card=%s speed=%" PRIu32 " kHz size=%llu MB "
+             "format_if_mount_failed=%d\n",
+             tag, card->cid.name, card->real_freq_khz,
+             (unsigned long long)((uint64_t)card->csd.capacity * card->csd.sector_size
+                                  / (1024 * 1024)),
+             (int)format_if_failed);
+    *out = card;
+    return true;
+}
+
+static void kit_unmount(sdmmc_card_t *card)
+{
+    esp_err_t err = esp_vfs_fat_sdcard_unmount("/sdcard", card);
+    app_logf("  UNMOUNT: %s\n", err == ESP_OK ? "ok" : esp_err_to_name(err));
+    spi_bus_free(SPI2_HOST);
+}
+
+static void kit_sha_hex(const uint8_t *d, char *out /* 65 */)
+{
+    for (int i = 0; i < 32; i++) snprintf(out + i * 2, 3, "%02x", d[i]);
+    out[64] = 0;
+}
+
+/* One pass over the file: write it (mode "wb") or read it (mode "rb"),
+ * hashing what crosses the API.  Returns 0 on success, -1 on the first error. */
+static int kit_pass(const char *tag, bool write, uint8_t *buf, char *hex_out)
+{
+    FILE *f = fopen(KIT_PATH, write ? "wb" : "rb");
+    if (!f) {
+        app_logf("  %s_OPEN: FAILED (errno %d)\n", tag, errno);
+        return -1;
+    }
+
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    mbedtls_sha256_starts(&ctx, 0);
+
+    uint32_t done = 0;
+    int rc = 0;
+    while (done < KIT_FILE_BYTES) {
+        uint32_t want = KIT_FILE_BYTES - done;
+        if (want > KIT_CHUNK) want = KIT_CHUNK;
+        size_t got;
+        if (write) {
+            kit_pattern(buf, want, done);
+            got = fwrite(buf, 1, want, f);
+        } else {
+            got = fread(buf, 1, want, f);
+        }
+        if (got != want) {
+            app_logf("  %s_IO: %s at offset %" PRIu32 " (%u of %u bytes, errno %d)\n",
+                     tag, write ? "short write" : "short read", done,
+                     (unsigned)got, (unsigned)want, errno);
+            rc = -1;
+            break;
+        }
+        mbedtls_sha256_update(&ctx, buf, want);
+        done += want;
+    }
+
+    if (write && rc == 0) {
+        if (fflush(f) != 0) { app_logf("  %s_FLUSH: FAILED (errno %d)\n", tag, errno); rc = -1; }
+        if (fsync(fileno(f)) != 0) { app_logf("  %s_FSYNC: FAILED (errno %d)\n", tag, errno); rc = -1; }
+    }
+    if (fclose(f) != 0) { app_logf("  %s_CLOSE: FAILED (errno %d)\n", tag, errno); rc = -1; }
+
+    uint8_t digest[32];
+    mbedtls_sha256_finish(&ctx, digest);
+    mbedtls_sha256_free(&ctx);
+    kit_sha_hex(digest, hex_out);
+
+    struct stat st;
+    if (stat(KIT_PATH, &st) == 0) {
+        app_logf("  %s_RESULT: %s %" PRIu32 " bytes, file size %ld, sha256 %s\n",
+                 tag, rc == 0 ? "ok" : "FAILED", done, (long)st.st_size, hex_out);
+        if (st.st_size != (long)KIT_FILE_BYTES) {
+            app_logf("  %s_SIZE: FAILED (expected %u)\n", tag, (unsigned)KIT_FILE_BYTES);
+            rc = -1;
+        }
+    } else {
+        app_logf("  %s_RESULT: %s %" PRIu32 " bytes, stat failed (errno %d), sha256 %s\n",
+                 tag, rc == 0 ? "ok" : "FAILED", done, errno, hex_out);
+        rc = -1;
+    }
+    return rc;
+}
+
+void app_main(void)
+{
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    esp_log_set_vprintf(report_vprintf);
+    fold_driver_log_levels();
+
+    app_logf("\n\n########## 0240: KIT CARD FORMAT / WRITE / READ BACK ##########\n");
+    app_logf("build: %s %s\n", __DATE__, __TIME__);
+    app_logf("KIT_FILE: %s, %u bytes, chunk %u bytes, clock 400 kHz\n",
+             KIT_PATH, (unsigned)KIT_FILE_BYTES, (unsigned)KIT_CHUNK);
+
+    report_identity();
+    write_report_partition();
+
+    vTaskDelay(pdMS_TO_TICKS(250));
+
+    /* ---- step 1: the identity gate.  Nothing is written unless it passes. */
+    bool gate = kit_raw_identity();
+    write_report_partition();
+    if (!gate) {
+        app_logf("\nKIT_STOP: identity gate failed -- no format, no write. "
+                 "Wrong card or empty holder; this task authorizes the kit card only.\n");
+        write_report_partition();
+        for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+
+    /* ---- step 2: the 0239 pre-sacrifice, then ONE stock-driver init. */
+    uint8_t sac_r1 = 0xFF;
+    esp_err_t serr = fold_presacrifice(&sac_r1);
+    app_logf("KIT_PRESACRIFICE: %s r1=0x%02x\n",
+             serr == ESP_OK ? "ran" : "FAILED", sac_r1);
+
+    bool init_called = false;
+    esp_err_t ierr = fold_one_init(400, &init_called);
+    app_logf("KIT_DRIVER_INIT: called=%d result=%s (%d)\n",
+             (int)init_called, ierr == ESP_OK ? "OK" : esp_err_to_name(ierr), (int)ierr);
+    write_report_partition();
+
+    /* ---- step 3: mount -- one attempt, one retry, then format-on-mount. */
+    sdmmc_card_t *card = NULL;
+    bool mounted = kit_mount("attempt 1, format_if_mount_failed=false", false, &card);
+    bool formatted_by_mount = false;
+    if (!mounted) {
+        mounted = kit_mount("attempt 2 (retry), format_if_mount_failed=false", false, &card);
+    }
+    if (!mounted) {
+        mounted = kit_mount("attempt 3, format_if_mount_failed=true", true, &card);
+        formatted_by_mount = mounted;
+    }
+    write_report_partition();
+
+    if (!mounted) {
+        app_logf("\nKIT_STOP: the stock driver could not mount this card at 400 kHz "
+                 "(see the driver's own log lines above). No format, no write.\n");
+        write_report_partition();
+        for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+
+    if (formatted_by_mount) {
+        app_logf("KIT_FORMAT_METHOD: esp_vfs_fat_sdspi_mount(format_if_mount_failed=true) "
+                 "-- FatFS f_mkfs ran inside the mount\n");
+    } else {
+        esp_err_t ferr = esp_vfs_fat_sdcard_format("/sdcard", card);
+        app_logf("KIT_FORMAT_METHOD: esp_vfs_fat_sdcard_format (FatFS f_mkfs, FAT32) "
+                 "-> %s\n", ferr == ESP_OK ? "OK" : esp_err_to_name(ferr));
+        if (ferr != ESP_OK) {
+            app_logf("\nKIT_STOP: format failed; no write attempted.\n");
+            write_report_partition();
+            for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
+        }
+    }
+
+    uint64_t total = 0, freeb = 0;
+    if (esp_vfs_fat_info("/sdcard", &total, &freeb) == ESP_OK) {
+        app_logf("KIT_VOLUME: total=%llu B free=%llu B\n",
+                 (unsigned long long)total, (unsigned long long)freeb);
+    } else {
+        app_logf("KIT_VOLUME: esp_vfs_fat_info failed\n");
+    }
+    write_report_partition();
+
+    /* ---- step 4: write, read back in place, unmount, remount, read again. */
+    kit_quiet_driver();
+    uint8_t *buf = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_8BIT);
+    if (!buf) {
+        app_logf("KIT_STOP: no %u-byte buffer available\n", (unsigned)KIT_CHUNK);
+        write_report_partition();
+        for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+
+    char sha_w[65] = {0}, sha_r[65] = {0}, sha_m[65] = {0};
+    int wrc = kit_pass("KIT_WRITE", true, buf, sha_w);
+    write_report_partition();
+
+    int rrc = kit_pass("KIT_READBACK", false, buf, sha_r);
+    write_report_partition();
+
+    kit_unmount(card);
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    sdmmc_card_t *card2 = NULL;
+    bool remounted = kit_mount("remount after unmount, format_if_mount_failed=false",
+                               false, &card2);
+    int mrc = -1;
+    if (remounted) {
+        mrc = kit_pass("KIT_REMOUNT_READ", false, buf, sha_m);
+        kit_unmount(card2);
+    } else {
+        app_logf("  KIT_REMOUNT_READ: mount failed -- cross-remount read not measured\n");
+    }
+    heap_caps_free(buf);
+    write_report_partition();
+
+    app_logf("\n=== 0240 RESULT ===\n");
+    app_logf("KIT_HASH_WRITTEN:   %s\n", sha_w);
+    app_logf("KIT_HASH_READBACK:  %s\n", sha_r);
+    app_logf("KIT_HASH_REMOUNT:   %s\n", sha_m);
+    app_logf("KIT_CHAIN: write=%s readback=%s remount=%s\n",
+             wrc == 0 ? "ok" : "FAIL", rrc == 0 ? "ok" : "FAIL",
+             mrc == 0 ? "ok" : "FAIL");
+    bool all = (wrc == 0 && rrc == 0 && mrc == 0 &&
+                strcmp(sha_w, sha_r) == 0 && strcmp(sha_w, sha_m) == 0);
+    app_logf("KIT_VERDICT: %s\n",
+             all ? "PASS -- format/mount/write/read-back complete, all three hashes match"
+                 : "FAIL -- see the stage lines above");
+    app_logf("\n########## 0240 COMPLETE ##########\n");
+    write_report_partition();
+
+    for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
+}
+
+#else   /* the 0239 fold app_main, unchanged */
 void app_main(void)
 {
     vTaskDelay(pdMS_TO_TICKS(300));
@@ -1834,6 +2305,8 @@ void app_main(void)
 
     for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
 }
+
+#endif  /* SD_KIT_FLOW */
 
 #else   /* the 0229/0234/0236/0238 probe, unchanged */
 

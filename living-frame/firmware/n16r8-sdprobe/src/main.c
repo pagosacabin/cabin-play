@@ -1936,24 +1936,21 @@ static bool kit_raw_identity(void)
 
     uint32_t psn = 0;
     if (have_cid) {
-        /* CID layout: MID[0] OID[1..2] PNM[3..7] PRV[8] PSN[9..12] MDT[13..14]
-         * CRC[15].  The serial was mis-parsed by one byte until peer review
-         * (2026-11-22) caught it: 0229 recorded this card's raw CID as
-         *   05 00 0c 61 73 64 66 67 22 00 00 13 a4 01 9a 00
-         * and serial 0x000013a4 sits at bytes 10..13, not 9..12 (the 0x22 at
-         * byte 9 is PRV).  Both readings are printed so the record is checkable
-         * without trusting either parse. */
+        /* CID layout (zero-based): MID[0] OID[1..2] PNM[3..7] PRV[8]
+         * PSN[9..12] MDT[13..14] CRC[15].  Checked against 0229's recorded raw
+         * CID for this card, 05 00 0c 61 73 64 66 67 22 00 00 13 a4 01 9a 00:
+         * cid[9..12] = 00 00 13 a4 = 0x000013a4, the serial 0229 logged.  (An
+         * interim 10..13 parse in the first fix attempt was off by one, caught
+         * in the follow-up review before the bench run.) */
         char name[6] = {0};
         for (int i = 0; i < 5; i++) name[i] = (char)cid[3 + i];
-        uint32_t psn_9_12  = ((uint32_t)cid[9]  << 24) | ((uint32_t)cid[10] << 16) |
-                             ((uint32_t)cid[11] << 8)  | (uint32_t)cid[12];
-        psn = ((uint32_t)cid[10] << 24) | ((uint32_t)cid[11] << 16) |
-              ((uint32_t)cid[12] << 8)  | (uint32_t)cid[13];
+        psn = ((uint32_t)cid[9]  << 24) | ((uint32_t)cid[10] << 16) |
+              ((uint32_t)cid[11] << 8)  | (uint32_t)cid[12];
         app_logf("  CID: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
                  cid[0], cid[1], cid[2], cid[3], cid[4], cid[5], cid[6], cid[7],
                  cid[8], cid[9], cid[10], cid[11], cid[12], cid[13], cid[14], cid[15]);
-        app_logf("  CID_MID: 0x%02x  CID_NAME: %.5s  CID_PSN: 0x%08" PRIx32 "  "
-                 "(old 9..12 parse: 0x%08" PRIx32 ")\n", cid[0], name, psn, psn_9_12);
+        app_logf("  CID_MID: 0x%02x  CID_NAME: %.5s  CID_PSN: 0x%08" PRIx32 "\n",
+                 cid[0], name, psn);
     } else {
         app_logf("  CID: read FAILED\n");
     }

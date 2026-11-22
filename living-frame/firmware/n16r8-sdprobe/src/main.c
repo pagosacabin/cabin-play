@@ -1839,6 +1839,12 @@ static void fold_driver_log_levels(void)
  * (05 00 0c 61 73 64 66 67 22 00 00 13 a4 01 9a 00 -> PSN 0x000013a4).  This is
  * the identity half of the gate: capacity alone would admit any 1 GB SDSC card. */
 #define KIT_CARD_PSN       0x000013a4u
+#if SD_NEWCARD_POLICY
+/* The Recalbox card's serial, from 0234's recorded raw CID (03 53 44 53 52 35
+ * 31 32 86 e4 84 5e 78 01 89 a5 -> PSN 0xe4845e78).  Excluded by identity so
+ * the never-scratch guarantee does not rest on its CSD alone. */
+#define RECALBOX_CARD_PSN  0xe4845e78u
+#endif
 
 /* The driver's verbose log is what names an init failure, but it would also
  * log every block of a 128 KiB write and overflow the 60 kB report before the
@@ -1868,6 +1874,72 @@ static void kit_pattern(uint8_t *b, size_t n, uint32_t off)
 /* Step 1 -- the hard gate.  Read CID and CSD over the raw path (read-only, no
  * format, no write) and refuse unless the seated card is the ~1 GB kit SDSC
  * card.  Returns true only when every gate test passes. */
+#if SD_NEWCARD_POLICY
+/* CRC16-CCITT (poly 0x1021, init 0), the checksum the card appends to an SPI
+ * data block.  Used to confirm the register bytes above were received intact. */
+static uint16_t newcard_crc16(const uint8_t *d, int n)
+{
+    uint16_t crc = 0;
+    for (int i = 0; i < n; i++) {
+        crc ^= (uint16_t)((uint16_t)d[i] << 8);
+        for (int k = 0; k < 8; k++) {
+            crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+/* 16-byte register + its 2-byte SPI CRC16 (18 bytes). */
+static int raw_read_reg18(spi_device_handle_t dev, uint8_t cmd, uint8_t *out18)
+{
+    return raw_read_data(dev, cmd, 0, out18, 18);
+}
+
+/* Read one register three times and require: every read identical, the
+ * register's own CRC7 valid, and -- when the card supplies one (non-0x0000) --
+ * the data-block CRC16 matching.  Returns true only then. */
+static bool newcard_read_reg(spi_device_handle_t dev, uint8_t cmd, const char *tag,
+                             uint8_t *out16, bool *crc7_ok, bool *crc16_ok)
+{
+    uint8_t r[3][18];
+    memset(r, 0, sizeof r);
+    for (int k = 0; k < 3; k++) {
+        if (raw_read_reg18(dev, cmd, r[k]) != 0) {
+            app_logf("  %s_IDENTITY: read %d/3 FAILED -- identity not verified\n",
+                     tag, k + 1);
+            return false;
+        }
+    }
+
+    bool same = memcmp(r[0], r[1], 18) == 0 && memcmp(r[0], r[2], 18) == 0;
+    uint8_t calc7 = sd_crc7(r[0], 15);
+    *crc7_ok = (calc7 == r[0][15]);
+    uint16_t calc16 = newcard_crc16(r[0], 16);
+    uint16_t got16 = (uint16_t)(((uint16_t)r[0][16] << 8) | r[0][17]);
+    bool absent = (r[0][16] == 0x00 && r[0][17] == 0x00);
+    *crc16_ok = (calc16 == got16);
+
+    app_logf("  %s_IDENTITY: 3x_identical=%d crc7 stored=0x%02x calc=0x%02x ok=%d | "
+             "crc16 stored=0x%04x calc=0x%04x ok=%d%s\n",
+             tag, (int)same, r[0][15], calc7, (int)*crc7_ok, got16, calc16,
+             (int)*crc16_ok, absent ? " (card sent 0x0000: no CRC16)" : "");
+
+    if (!same) return false;
+    if (*crc16_ok) { /* both checksums agree: verified whichever way it got here */ }
+    else if (!absent) {
+        app_logf("  %s_IDENTITY: CRC16 present and MISMATCHED -- refusing to "
+                 "trust this register\n", tag);
+        return false;
+    } else if (!*crc7_ok) {
+        app_logf("  %s_IDENTITY: neither CRC7 nor CRC16 validates -- refusing to "
+                 "trust this register\n", tag);
+        return false;
+    }
+    memcpy(out16, r[0], 16);
+    return true;
+}
+#endif
+
 static bool kit_raw_identity(void)
 {
     app_logf("\n=== " TASK_NO " STEP 1: SEATED-CARD IDENTITY (raw SPI, read-only) ===\n");
@@ -1973,37 +2045,26 @@ static bool kit_raw_identity(void)
 
 #if SD_NEWCARD_POLICY
     /* The authorization below decides whether an ERASE may happen, so the
-     * identity it reads must be verified rather than merely non-blank (peer
-     * review, 2026-11-22, BLOCKER: a single unverified read could miss the kit
-     * card's exclusion or understate the Recalbox card's capacity).
-     * Two more independent reads of each register are taken and all three must
-     * be byte-identical; the OCR is re-read the same way.  A register that
-     * cannot be read three times identically is NOT authorization data. */
-    uint8_t cid_b[16] = {0}, cid_c[16] = {0};
-    uint8_t csd_b[16] = {0}, csd_c[16] = {0};
+     * identity it reads must be VERIFIED, not merely non-blank and not merely
+     * repeated (peer review, 2026-11-22: three identical reads can repeat a
+     * persistent corruption).  Each register is read three times, 18 bytes at a
+     * time -- the 16-byte register plus the 2-byte SPI data-block CRC16 -- and
+     * must come back byte-identical every time with its own CRC7 valid; a
+     * register whose CRC16 is present (non-0x0000) must match too. */
+    uint8_t cid18[18] = {0}, csd18[18] = {0};
+    bool cid_crc7 = false, cid_crc16 = false, csd_crc7 = false, csd_crc16 = false;
+    bool cid_verified = newcard_read_reg(dev, 10, "CID", cid18, &cid_crc7, &cid_crc16);
+    bool csd_verified = newcard_read_reg(dev, 9, "CSD", csd18, &csd_crc7, &csd_crc16);
     uint8_t ocr_b[8] = {0};
-    bool cid_x3 = have_cid &&
-                  raw_read_reg(dev, 10, cid_b) == 0 &&
-                  raw_read_reg(dev, 10, cid_c) == 0 &&
-                  memcmp(cid, cid_b, sizeof cid) == 0 &&
-                  memcmp(cid, cid_c, sizeof cid) == 0;
-    bool csd_x3 = have_csd &&
-                  raw_read_reg(dev, 9, csd_b) == 0 &&
-                  raw_read_reg(dev, 9, csd_c) == 0 &&
-                  memcmp(csd, csd_b, sizeof csd) == 0 &&
-                  memcmp(csd, csd_c, sizeof csd) == 0;
     bool ocr_x2 = (sd_raw_cmd(dev, 58, 0, 0xFF, 4, ocr_b, sizeof ocr_b) != 0xFF) &&
                   memcmp(ocr, ocr_b, 4) == 0;
-    app_logf("  IDENTITY_VERIFY: cid_3x_identical=%d csd_3x_identical=%d "
-             "ocr_2x_identical=%d\n", (int)cid_x3, (int)csd_x3, (int)ocr_x2);
-    /* Informational only: both registers of this card family read 0x00 in the
-     * CRC byte (measured on the kit card in 0240), so a CRC7 mismatch cannot
-     * be used to refuse -- the three-read stability plus the OCR/CSD class
-     * cross-check below are the integrity test that IS sound on this path. */
-    app_logf("  IDENTITY_CRC7: cid stored=0x%02x calc=0x%02x  csd stored=0x%02x "
-             "calc=0x%02x (informational; see 0240's measured 0x00 quirk)\n",
-             have_cid ? cid[15] : 0xFF, have_cid ? sd_crc7(cid, 15) : 0xFF,
-             have_csd ? csd[15] : 0xFF, have_csd ? sd_crc7(csd, 15) : 0xFF);
+    app_logf("  IDENTITY_VERIFY: cid_verified=%d csd_verified=%d ocr_2x_identical=%d\n",
+             (int)cid_verified, (int)csd_verified, (int)ocr_x2);
+    if (cid_verified) memcpy(cid, cid18, sizeof cid);
+    if (csd_verified) memcpy(csd, csd18, sizeof csd);
+    /* Only verified register data is authorization data. */
+    have_cid = cid_verified;
+    have_csd = csd_verified;
 #endif
 
     spi_bus_remove_device(dev);
@@ -2060,44 +2121,54 @@ static bool kit_raw_identity(void)
      *     than by a single capacity equality that a relabelled card could miss.
      * Anything else with a readable CID is the card Stephen seated for 0241. */
     bool is_kit        = have_cid && psn == KIT_CARD_PSN;
-    bool never_scratch = have_csd && bytes >= KIT_NEVER_SCRATCH_BYTES;
-    /* OCR (block vs byte addressing) and the CSD's structure version are two
-     * independent statements of the same fact.  A corrupted CSD that read as
-     * v1 for an SDXC card -- the exact way a 512 GB card's capacity could be
-     * understated -- also disagrees with the OCR, so this is the cross-check
-     * that makes the capacity test trustworthy. */
-    bool class_ok   = have_csd && ocr_x2 && (ccs == (structure != 0));
-    bool size_plaus = have_csd &&
-                      ((structure != 0) ? (bytes >= (2ull << 30) && bytes <= (2ull << 40))
-                                        : (bytes <= (4ull << 30)));
-    bool verified   = cid_x3 && csd_x3 && ocr_x2;
-    bool gate       = verified && class_ok && size_plaus && !is_kit && !never_scratch;
+    /* 0234 recorded the Recalbox card's own CID:
+     *   03 53 44 53 52 35 31 32 86 e4 84 5e 78 01 89 a5
+     *   MID 0x03 (SanDisk), OID "SD", PNM "SR512", PSN 0xe4845e78
+     * Capacity is 511,868,665,856 B = 476.7 GiB.  It is excluded by IDENTITY
+     * as well as by size, so a misread C_SIZE cannot let it through: this is
+     * the check that does not depend on the CSD at all. */
+    bool is_recalbox_name = have_cid && cid[0] == 0x03 && memcmp(cid + 3, "SR512", 5) == 0;
+    bool is_recalbox_psn  = have_cid && psn == RECALBOX_CARD_PSN;
+    bool never_scratch    = have_csd && bytes >= KIT_NEVER_SCRATCH_BYTES;
+    /* structure 0 = CSD v1 (SDSC), 1 = CSD v2 (SDHC/SDXC); 2 and 3 are
+     * reserved and are refused rather than treated as v2 (peer review). */
+    bool struct_v1  = have_csd && structure == 0;
+    bool struct_v2  = have_csd && structure == 1;
+    bool class_ok   = (struct_v1 || struct_v2) && ocr_x2 && (ccs == struct_v2);
+    bool size_plaus = struct_v1 ? (bytes <= (4ull << 30))
+                                : (struct_v2 && bytes >= (2ull << 30) &&
+                                   bytes <= (2ull << 40));
+    bool verified   = cid_verified && csd_verified && ocr_x2;
+    bool gate       = verified && class_ok && size_plaus && !is_kit &&
+                      !is_recalbox_name && !is_recalbox_psn && !never_scratch;
 
     app_logf("NEWCARD_GATE: %s\n", gate
              ? "AUTHORIZED -- not the kit card and not the 512 GB Recalbox card"
              : "STOP -- nothing will be formatted or written");
     app_logf("NEWCARD_GATE_TESTS: identity_verified=%d ocr_csd_class_consistent=%d "
-             "size_plausible=%d is_kit_card_0x%08" PRIx32 "=%d capacity=%llu MB "
-             "never_scratch_ge_%lluGiB=%d\n",
+             "size_plausible=%d is_kit_0x%08" PRIx32 "=%d is_recalbox_SR512=%d "
+             "is_recalbox_psn_0x%08" PRIx32 "=%d capacity=%llu MB "
+             "never_scratch_ge_%lluGiB=%d csd_structure=%u\n",
              (int)verified, (int)class_ok, (int)size_plaus,
-             (uint32_t)KIT_CARD_PSN, (int)is_kit,
+             (uint32_t)KIT_CARD_PSN, (int)is_kit, (int)is_recalbox_name,
+             RECALBOX_CARD_PSN, (int)is_recalbox_psn,
              (unsigned long long)(bytes / (1024ull * 1024ull)),
              (unsigned long long)(KIT_NEVER_SCRATCH_BYTES / (1ull << 30)),
-             (int)never_scratch);
+             structure);
     if (is_kit) {
         app_logf("NEWCARD_GATE: the seated card is the 1 GB KIT card -- 0240 "
                  "already measured it; no format, no write.\n");
     }
-    if (never_scratch) {
-        app_logf("NEWCARD_GATE: the seated card is in the NEVER-SCRATCH class "
-                 "(>= %llu GiB, i.e. the 512 GB Recalbox card); no format, no "
-                 "write, refused absolutely.\n",
-                 (unsigned long long)(KIT_NEVER_SCRATCH_BYTES / (1ull << 30)));
+    if (is_recalbox_name || is_recalbox_psn || never_scratch) {
+        app_logf("NEWCARD_GATE: the seated card is the NEVER-SCRATCH card (the "
+                 "512 GB SanDisk SR512 / Recalbox, 476.7 GiB); no format, no "
+                 "write, refused absolutely.\n");
     }
     if (!verified) {
         app_logf("NEWCARD_GATE: card identity could not be verified (three "
-                 "identical reads of CID and CSD and two of the OCR are "
-                 "required); failing closed with no format, no write.\n");
+                 "identical reads of CID and CSD with a valid CRC7 and no CRC16 "
+                 "mismatch, plus two identical OCR reads, are required); failing "
+                 "closed with no format, no write.\n");
     }
     return gate;
 #else

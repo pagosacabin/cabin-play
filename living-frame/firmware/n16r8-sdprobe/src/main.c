@@ -1916,22 +1916,25 @@ static bool newcard_read_reg(spi_device_handle_t dev, uint8_t cmd, const char *t
     *crc7_ok = (calc7 == r[0][15]);
     uint16_t calc16 = newcard_crc16(r[0], 16);
     uint16_t got16 = (uint16_t)(((uint16_t)r[0][16] << 8) | r[0][17]);
-    bool absent = (r[0][16] == 0x00 && r[0][17] == 0x00);
+    /* "Absent" is a property of the BYTES THE CARD SENT, never of the computed
+     * value: an all-zero pair must not be matched by a coincidentally-zero
+     * calculation (peer review, 2026-11-22). */
+    bool crc16_present = !(r[0][16] == 0x00 && r[0][17] == 0x00);
     *crc16_ok = (calc16 == got16);
 
     app_logf("  %s_IDENTITY: 3x_identical=%d crc7 stored=0x%02x calc=0x%02x ok=%d | "
-             "crc16 stored=0x%04x calc=0x%04x ok=%d%s\n",
+             "crc16 stored=0x%04x calc=0x%04x ok=%d present=%d\n",
              tag, (int)same, r[0][15], calc7, (int)*crc7_ok, got16, calc16,
-             (int)*crc16_ok, absent ? " (card sent 0x0000: no CRC16)" : "");
+             (int)*crc16_ok, (int)crc16_present);
 
+    /* Fail closed, unconditionally: identical reads are necessary but not
+     * sufficient, CRC7 is ALWAYS required, and a CRC16 the card supplied must
+     * match.  (The counterfeit kit card returns 0x00 in the CRC7 byte, so it
+     * can never reach an authorized state -- which is the intended outcome.) */
     if (!same) return false;
-    if (*crc16_ok) { /* both checksums agree: verified whichever way it got here */ }
-    else if (!absent) {
+    if (!*crc7_ok) return false;
+    if (crc16_present && !*crc16_ok) {
         app_logf("  %s_IDENTITY: CRC16 present and MISMATCHED -- refusing to "
-                 "trust this register\n", tag);
-        return false;
-    } else if (!*crc7_ok) {
-        app_logf("  %s_IDENTITY: neither CRC7 nor CRC16 validates -- refusing to "
                  "trust this register\n", tag);
         return false;
     }

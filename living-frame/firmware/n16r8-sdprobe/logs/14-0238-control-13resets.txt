@@ -1,0 +1,134 @@
+# 0238 control (SD_FRAMING_VARIANT=0, delay 0) — 13 host resets, per-reset report read-back
+# read back with: esptool --chip esp32s3 -p /dev/ttyUSB0 -b 460800 read_flash 0x310000 0x10000 report.bin
+# then: python3 -c "import struct;d=open(...).read();m,n=struct.unpack('<II',d[:8]);print(d[8:8+n].decode())"
+
+===== RESET 1  (v0b-reset-1, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 1 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x00 payload[0]=00 00 00 00 00 00 00 00
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=00 00 00 00 00 00 00 00 00 00 00 00
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=0/1 first_pass_ok=0/1
+
+===== RESET 2  (v0b-reset-2, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 2 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=1/2 first_pass_ok=0/2
+
+===== RESET 3  (v0b-reset-3, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 3 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=2/3 first_pass_ok=0/3
+
+===== RESET 4  (v0b-reset-4, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 4 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=3/4 first_pass_ok=0/4
+
+===== RESET 5  (v0b-reset-5, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 5 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=4/5 first_pass_ok=0/5
+
+===== RESET 6  (v0b-reset-6, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 6 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=5/6 first_pass_ok=0/6
+
+===== RESET 7  (v0b-reset-7, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 7 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=6/7 first_pass_ok=0/7
+
+===== RESET 8  (v0b-reset-8, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 8 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=7/8 first_pass_ok=0/8
+
+===== RESET 9  (v0b-reset-9, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 9 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=8/9 first_pass_ok=0/9
+
+===== RESET 10  (v0b-reset-10, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 10 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=9/10 first_pass_ok=0/10
+
+===== RESET 11  (v0b-reset-11, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 11 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=10/11 first_pass_ok=0/11
+
+===== RESET 12  (v0b-reset-12, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 12 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=11/12 first_pass_ok=0/12
+
+===== RESET 13  (v0b-reset-13, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:07
+  FIRSTPASS_FRAMING: variant=0 (0238; control)
+  FIRSTPASS_BOOT: 13 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+    CMD8 verdict: no valid R7 echo (R1=0x00)
+  FIRSTPASS_SUMMARY: raw_init_ready=12/13 first_pass_ok=0/13
+

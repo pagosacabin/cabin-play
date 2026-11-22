@@ -88,6 +88,33 @@
 #error "SD_FIRSTPASS_DELAY_MS out of range (0..2000 ms)"
 #endif
 
+/* 0238 -- framing of the first transaction after reset.
+ *
+ * 0236 killed the timing hypothesis (0-250 ms changed nothing, 65 boots) and
+ * exposed the shape of the fault instead: on attempt 1 CMD0 answers with a
+ * 0xF8 lead byte in front of a plausible R1 (ff ff f8 47) and CMD8's R7 echo
+ * arrives one byte late (ff 00 00 00 01 aa).  The first frame is *shifted*, not
+ * slow, so this task tests two framing variants between the 74+ dummy clocks
+ * and the first real CMD0:
+ *
+ *   0 = control           -- unmodified 0236 arrangement (default)
+ *   1 = sacrificial frame -- one throwaway CMD0 after the dummy clocks, its
+ *                            response logged and discarded; the real attempt
+ *                            then runs exactly as the control does
+ *   2 = clean CS re-assert-- CS driven high, held >= 1 ms, then the real CMD0
+ *                            is issued in the following CS-low period
+ *
+ * Build-time only, and the framing variants add nothing else: clock stays
+ * 400 kHz, the delay stays at SD_FIRSTPASS_DELAY_MS, pull-ups unchanged.
+ *   PLATFORMIO_BUILD_FLAGS="-DSD_FRAMING_VARIANT=1" pio run -e n16r8-sdprobe
+ */
+#ifndef SD_FRAMING_VARIANT
+#define SD_FRAMING_VARIANT 0
+#endif
+#if SD_FRAMING_VARIANT < 0 || SD_FRAMING_VARIANT > 2
+#error "SD_FRAMING_VARIANT out of range (0=control, 1=sacrificial frame, 2=CS re-assert)"
+#endif
+
 #define PIN_SCK   12
 #define PIN_MOSI  11
 #define PIN_MISO  13
@@ -172,7 +199,13 @@ static void fp_load(void)
                  esp_err_to_name(err));
         return;
     }
-    err = nvs_open("sdprobe0234", NVS_READWRITE, &g_nvs);
+    /* 0238: own namespace.  0234/0236's "sdprobe0234" namespace was observed to
+     * hand its table to a new build whose stamp differed (first 0238 boot
+     * reported FIRSTPASS_BOOT: 16 with 15 rows carrying the control's
+     * signatures), which would misreport a variant's first-pass rate.  A
+     * separate namespace makes each 0238 run start from an empty table without
+     * touching the accepted 800x600 build's settings in NVS. */
+    err = nvs_open("sdprobe0238", NVS_READWRITE, &g_nvs);
     if (err != ESP_OK) {
         app_logf("FIRSTPASS: nvs_open failed (%s) - counter will not survive resets\n",
                  esp_err_to_name(err));
@@ -226,6 +259,9 @@ static void fp_report(void)
     int pass_first = 0, ready_n = 0;
     app_logf("\n=== 4. FIRST-PASS TABLE (persisted across resets, NVS) ===\n");
     app_logf("FIRSTPASS_DELAY_MS: %d\n", SD_FIRSTPASS_DELAY_MS);
+    app_logf("FIRSTPASS_FRAMING: variant=%d (%s)\n", SD_FRAMING_VARIANT,
+             SD_FRAMING_VARIANT == 0 ? "control"
+               : SD_FRAMING_VARIANT == 1 ? "sacrificial frame" : "CS re-assert");
     app_logf("FIRSTPASS_SLOTS: %d (of %d kept), build_id=%08x\n", g_slot_n, FP_SLOTS, g_build_id);
     for (int i = 0; i < g_slot_n; i++) {
         const fp_slot_t *s = &g_slots[i];
@@ -352,9 +388,14 @@ static uint8_t sd_crc7(const uint8_t *d, int n)
     return (uint8_t)((crc << 1) | 1);
 }
 
+/* 0238: log-line tag for the sacrificial frame (empty for every real command). */
+static const char *g_cmd_tag = "";
+
 static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
                           uint8_t crc, int extra, uint8_t *out, int out_max)
 {
+    /* 0238: the sacrificial frame goes through this same path so its timing is
+     * the control's; g_cmd_tag only makes its log lines distinguishable. */
     uint8_t tx[32], rx[32];
     memset(tx, 0xFF, sizeof tx);
     memset(rx, 0x00, sizeof rx);
@@ -390,7 +431,7 @@ static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
     }
 
     if (err != ESP_OK) {
-        app_logf("    CMD%-2u: spi transfer failed (%s)\n", cmd, esp_err_to_name(err));
+        app_logf("    %sCMD%-2u: spi transfer failed (%s)\n", g_cmd_tag, cmd, esp_err_to_name(err));
         return 0xFF;
     }
 
@@ -407,7 +448,7 @@ static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
     hex[hn] = 0;
 
     if (idx < 0) {
-        app_logf("    CMD%-2u arg=0x%08" PRIx32 ": NO RESPONSE (raw %s)\n", cmd, arg, hex);
+        app_logf("    %sCMD%-2u arg=0x%08" PRIx32 ": NO RESPONSE (raw %s)\n", g_cmd_tag, cmd, arg, hex);
         return 0xFF;
     }
 
@@ -415,8 +456,8 @@ static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
     for (int i = idx + 1; i < n && copied < out_max && copied < extra; i++, copied++) {
         out[copied] = rx[i];
     }
-    app_logf("    CMD%-2u arg=0x%08" PRIx32 ": R1=0x%02x payload[%d]=%s\n",
-             cmd, arg, rx[idx], copied, hex);
+    app_logf("    %sCMD%-2u arg=0x%08" PRIx32 ": R1=0x%02x payload[%d]=%s\n",
+             g_cmd_tag, cmd, arg, rx[idx], copied, hex);
     return rx[idx];
 }
 
@@ -509,6 +550,27 @@ static void raw_probe(const char *tag, bool pullups, bool inspect)
          * this boot.  First attempt only -- later attempts keep 0234's timing. */
         if (capture_first && attempt == 1) {
             vTaskDelay(pdMS_TO_TICKS(SD_FIRSTPASS_DELAY_MS));
+        }
+#endif
+
+#if SD_FRAMING_VARIANT == 1
+        /* 0238 rung 1 -- sacrificial frame.  One throwaway CMD0 whose response
+         * is logged and discarded; the real measurement below then runs exactly
+         * as the control does, one transaction later. */
+        if (capture_first && attempt == 1) {
+            app_logf("  SACRIFICIAL FRAME (0238 rung 1)\n");
+            g_cmd_tag = "SACRIFICE ";
+            uint8_t sp[8] = {0};
+            (void)sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, sp, sizeof sp);
+            g_cmd_tag = "";
+        }
+#elif SD_FRAMING_VARIANT == 2
+        /* 0238 rung 2 -- clean CS re-assert: CS high, held >= 1 ms, then the
+         * real CMD0 is issued in the CS-low period that follows. */
+        if (capture_first && attempt == 1) {
+            gpio_set_level(PIN_CS, 1);
+            esp_rom_delay_us(2000);
+            app_logf("  CS RE-ASSERT (0238 rung 2): CS high %d us, then CMD0\n", 2000);
         }
 #endif
 
@@ -1398,6 +1460,10 @@ void app_main(void)
     app_logf("\n\n########## 0234 SD RETEST (0229 probe extended) ##########\n");
     app_logf("build: %s %s\n", __DATE__, __TIME__);
     app_logf("FIRSTPASS_DELAY_MS: %d (0236; applies to attempt 1 only)\n", SD_FIRSTPASS_DELAY_MS);
+    app_logf("FIRSTPASS_FRAMING: variant=%d (0238; %s)\n", SD_FRAMING_VARIANT,
+             SD_FRAMING_VARIANT == 0 ? "control"
+               : SD_FRAMING_VARIANT == 1 ? "sacrificial frame before the first real attempt"
+                                         : "CS high >= 1 ms re-assert before the first CMD0");
 
     /* Cross-reset first-pass table (0234 step 3). */
     fp_load();

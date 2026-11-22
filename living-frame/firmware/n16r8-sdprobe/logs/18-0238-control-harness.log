@@ -1,0 +1,183 @@
+===== v0b RESET 1 2026-11-21T21:26:47-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 1 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=0/1 first_pass_ok=0/1
+===== v0b RESET 2 2026-11-21T21:27:33-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 2 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=1/2 first_pass_ok=0/2
+===== v0b RESET 3 2026-11-21T21:28:19-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 3 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=2/3 first_pass_ok=0/3
+===== v0b RESET 4 2026-11-21T21:29:05-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 4 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=3/4 first_pass_ok=0/4
+===== v0b RESET 5 2026-11-21T21:29:51-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 5 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=4/5 first_pass_ok=0/5
+===== v0b RESET 6 2026-11-21T21:30:37-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 6 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=5/6 first_pass_ok=0/6
+===== v0b RESET 7 2026-11-21T21:31:23-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 7 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=6/7 first_pass_ok=0/7
+===== v0b RESET 8 2026-11-21T21:32:10-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 8 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=7/8 first_pass_ok=0/8
+===== v0b RESET 9 2026-11-21T21:32:56-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 9 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  9: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=8/9 first_pass_ok=0/9
+===== v0b RESET 10 2026-11-21T21:33:42-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 10 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  9: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 10: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=9/10 first_pass_ok=0/10
+===== v0b RESET 11 2026-11-21T21:34:27-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 11 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  9: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 10: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 11: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=10/11 first_pass_ok=0/11
+===== v0b RESET 12 2026-11-21T21:35:14-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 12 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  9: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 10: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 11: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 12: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=11/12 first_pass_ok=0/12
+===== v0b RESET 13 2026-11-21T21:36:00-07:00
+
+Hard resetting via RTS pin...
+   FIRSTPASS_FRAMING: variant=0 (0238; control)
+   FIRSTPASS_FRAMING: variant=0 (control)
+   FIRSTPASS_SLOTS: 13 (of 24 kept), build_id=ab89bc1f
+     boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+     boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot  9: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 10: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 11: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 12: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+     boot 13: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+   FIRSTPASS_SUMMARY: raw_init_ready=12/13 first_pass_ok=0/13
+===== v0b LOOP DONE 2026-11-21T21:36:46-07:00

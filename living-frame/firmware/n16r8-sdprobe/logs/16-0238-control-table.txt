@@ -1,0 +1,23 @@
+# 0238 control — full persisted first-pass table after the 13-reset run (last 24 slots kept)
+
+build: Nov 21 2026 21:26:07
+FIRSTPASS_DELAY_MS: 0 (0236; applies to attempt 1 only)
+FIRSTPASS_FRAMING: variant=0 (0238; control)
+FIRSTPASS_DELAY_MS: 0
+FIRSTPASS_FRAMING: variant=0 (control)
+FIRSTPASS_SLOTS: 13 (of 24 kept), build_id=ab89bc1f
+  boot  1: CMD0_first=0x00 CMD8_r1=0x00 RAW=FAILED ok_attempt=0 acmd41=0 ms
+  boot  2: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  3: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  4: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  5: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  6: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  7: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  8: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot  9: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 10: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 11: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 12: CMD0_first=0x3f CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+  boot 13: CMD0_first=0x47 CMD8_r1=0x00 RAW=READY ok_attempt=2 acmd41=58 ms
+FIRSTPASS_SUMMARY: raw_init_ready=12/13 first_pass_ok=0/13
+FIRSTPASS_VERDICT: the first init pass after a reset failed on this card too -- the flakiness does NOT follow the old card

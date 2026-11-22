@@ -370,3 +370,77 @@ generated headers reverted afterwards so the committed tree is unchanged:
 Peer review: Copilot (Herdr pane t17) on `21ceff2`, one pass, findings: 1 NIT
 (the two added report lines at delay 0), **Verdict: SHIP**. No GitHub PR exists
 in this repo for that branch; the review record is this section.
+
+## 0238 — framing of the first transaction: a sacrificial frame cures it
+
+0236 killed the timing hypothesis (0–250 ms of settle after the 74+ dummy clocks,
+0/13 first passes at every value, 65 boots) and exposed the shape of the fault
+instead: on attempt 1 CMD0 answers with a `0xF8` lead byte in front of a plausible
+R1 (`ff ff f8 47`) or three bytes late (`ff ff ff c1/c2 3f`), and CMD8's R7 echo
+arrives one byte late (`ff 00 00 00 01 aa`). The frame is **shifted**, not slow.
+
+`SD_FRAMING_VARIANT` (build-time, `PLATFORMIO_BUILD_FLAGS`) selects the variant;
+nothing else moves — clock 400 kHz, `SD_FIRSTPASS_DELAY_MS` stays 0, pull-ups as
+in 0236, card strictly read-only.
+
+| Variant | `-DSD_FRAMING_VARIANT=` | First pass | READY |
+| --- | --- | --- | --- |
+| Control (0236 arrangement) | 0 | **0/13** | 12/13 (one boot never reached READY) |
+| Rung 1 — one sacrificial CMD0 after the dummy clocks | 1 | **13/13** | 13/13, every one on attempt 1 |
+| Rung 2 — CS high ≥1 ms, then CMD0 | 2 | not run | rung 1 cured the first pass |
+
+**Verdict: a single sacrificial CMD0 after the dummy clocks makes the first init
+pass reliable (13/13 vs 0/13 control); the CS re-assert rung was not needed.**
+
+The pairing is the evidence. In every rung-1 boot the throwaway frame comes back
+with the control's broken shape and the frame immediately after it is clean:
+
+```
+SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c1 3f ff ff ff
+CMD0        arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+CMD8        arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+```
+
+Control, same positions, every reset (13 boots, two runs of 13 and 14):
+
+```
+CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c1 3f ff ff ff      (or 0x47 / ff ff f8 47)
+CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff
+```
+
+Per-reset read-backs: `logs/14-0238-control-13resets.txt`,
+`logs/15-0238-sacrificial-frame-13resets.txt`; the persisted tables:
+`logs/16-…-table.txt`, `logs/17-…-table.txt`; harness logs `logs/18`, `logs/19`.
+Each entry is one `esptool --after hard_reset` on the FT232R port followed by a
+42 s settle and a `read_flash 0x310000 0x10000` of the report partition.
+
+### Two tooling facts this run had to correct
+
+1. **The 0234/0236 NVS namespace handed its table to a new build.** The first
+   0238 boot reported `FIRSTPASS_BOOT: 16` with 15 rows carrying the *control's*
+   signatures, under a build stamp that did not match — which would report a
+   variant's rate as its predecessor's. 0238 opens its own namespace,
+   `sdprobe0238`, so every run starts from an empty table; the accepted 800x600
+   build's settings in NVS are untouched. Both arms were re-run after the change
+   and the numbers above are from those clean runs.
+2. **After the first flash of the rung-1 image the board rebooted itself 14
+   times in ~45 s**, each boot appending a failing first pass (`0x3f`/`0x47`),
+   before settling into the 13 clean reset boots measured above. It is not a host
+   reset burst: one `esptool` connection per call, no retries in the logs. A
+   re-flash of the *identical* image afterwards produced exactly one boot, clean.
+   Mechanism undetermined (the sacrifice's benefit is absent on those back-to-back
+   boots); recorded rather than explained — 14 failing boots out of 27 recorded
+   for this build, which is why the verdict above is scoped to host-driven resets.
+
+### Board state found and restored
+
+Board arrived on the accepted 800x600 build: report partition held
+`mode 800x600`, framebuffer `sha256 204578cc…`, `MATCH`, `362 vsync in 5.998 s`
+(`logs/20-0238-board-pre-state.txt`). Restored to the same build afterwards —
+`mode 800x600`, `sha256 204578cc… == tool`, `MATCH`, `362 vsync in 5.998 s`,
+`14473 fills -> 40.0 per frame`, `Hash of data verified.` on the write
+(`logs/21-0238-board-restored-800x600.txt`). No card write of any kind: raw init
+and CMD17/CMD9/CMD10 reads only.
+
+Peer review: Copilot (Herdr pane t17) on the probe diff before the bench run —
+one pass, no findings, **Verdict: SHIP**.

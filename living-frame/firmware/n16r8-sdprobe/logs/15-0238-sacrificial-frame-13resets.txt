@@ -1,0 +1,134 @@
+# 0238 rung 1 (SD_FRAMING_VARIANT=1) — 13 host resets, per-reset report read-back
+# the SACRIFICE line is the throwaway CMD0 (response logged, discarded); the CMD0 that
+# follows it in the same boot is the first REAL init attempt whose result is recorded.
+
+===== RESET 1  (v1b-reset-1, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 15 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c1 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=14/15 first_pass_ok=1/15
+
+===== RESET 2  (v1b-reset-2, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 16 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=15/16 first_pass_ok=2/16
+
+===== RESET 3  (v1b-reset-3, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 17 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=16/17 first_pass_ok=3/17
+
+===== RESET 4  (v1b-reset-4, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 18 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=17/18 first_pass_ok=4/18
+
+===== RESET 5  (v1b-reset-5, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 19 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=18/19 first_pass_ok=5/19
+
+===== RESET 6  (v1b-reset-6, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 20 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=19/20 first_pass_ok=6/20
+
+===== RESET 7  (v1b-reset-7, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 21 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=20/21 first_pass_ok=7/21
+
+===== RESET 8  (v1b-reset-8, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 22 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=21/22 first_pass_ok=8/22
+
+===== RESET 9  (v1b-reset-9, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 23 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=22/23 first_pass_ok=9/23
+
+===== RESET 10  (v1b-reset-10, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 24 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=23/24 first_pass_ok=10/24
+
+===== RESET 11  (v1b-reset-11, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 25 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=24/24 first_pass_ok=11/24
+
+===== RESET 12  (v1b-reset-12, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 25 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=24/24 first_pass_ok=12/24
+
+===== RESET 13  (v1b-reset-13, host reset via esptool --after hard_reset)
+  build: Nov 21 2026 21:26:58
+  FIRSTPASS_FRAMING: variant=1 (0238; sacrificial frame before the first real attempt)
+  FIRSTPASS_BOOT: 25 (slot index for this boot)
+  first transaction(s) of this boot, raw rx after the 6-byte command:
+    SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff
+  FIRSTPASS_SUMMARY: raw_init_ready=24/24 first_pass_ok=13/24
+

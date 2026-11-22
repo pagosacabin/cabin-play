@@ -115,6 +115,33 @@
 #error "SD_FRAMING_VARIANT out of range (0=control, 1=sacrificial frame, 2=CS re-assert)"
 #endif
 
+/* 0239 -- does a raw pre-sacrifice make the STOCK driver's first init clean?
+ *
+ * 0238 proved one throwaway CMD0 after the dummy clocks makes the RAW probe's
+ * first init pass reliable (13/13 vs 0/13 control).  This task asks whether the
+ * same sacrifice carries over to the stock ESP-IDF driver: per reset, ONE
+ * sdmmc_card_init() call is the measurement, and the arm decides whether a raw
+ * pre-sacrifice (74+ dummy clocks with CS high, one throwaway CMD0, response
+ * logged and discarded, CS high) precedes it.
+ *
+ *   0 = control   -- one sdmmc_card_init, nothing before it
+ *   1 = sacrifice -- raw pre-sacrifice, then the identical single init call
+ *
+ * Defining SD_FOLD_ARM selects the compact 0239 flow in app_main(); leaving it
+ * undefined leaves the 0229/0234/0236/0238 probe byte-for-byte in place.  One
+ * variable only: 400 kHz, SD_FIRSTPASS_DELAY_MS stays 0, pull-ups unchanged,
+ * card read-only.
+ *   PLATFORMIO_BUILD_FLAGS="-DSD_FOLD_ARM=1" pio run -e n16r8-sdprobe
+ */
+#ifdef SD_FOLD_ARM
+#if SD_FOLD_ARM < 0 || SD_FOLD_ARM > 1
+#error "SD_FOLD_ARM out of range (0=control, 1=pre-sacrifice)"
+#endif
+#define SD_FOLD_TASK 1
+#else
+#define SD_FOLD_TASK 0
+#endif
+
 #define PIN_SCK   12
 #define PIN_MOSI  11
 #define PIN_MISO  13
@@ -139,6 +166,15 @@ static uint8_t g_seq_with = 0xFF;   /* CMD59 after CMD52+CMD5, like the driver *
 static uint8_t g_seq_without = 0xFF;/* CMD59 without CMD5 (control) */
 static uint8_t g_seq_52only = 0xFF; /* CMD59 after CMD52 alone (control) */
 static bool g_seq_ran;
+
+#if SD_FOLD_TASK
+/* 0239: how many CMD0 frames the stock driver itself issued in the current
+ * init call, counted from its own verbose log (one per line, keyed on the
+ * `CMD0,` field sdspi_host prints).  The driver sends CMD0 twice by design in
+ * SPI mode (sdmmc_send_cmd_go_idle_state), so a count of 2 means its internal
+ * retry ran -- the first frame was absorbed, not used. */
+static uint16_t g_fold_cmd0_frames;
+#endif
 
 /* First-pass evidence for 0234's cross-reset table: the very first responses
  * of this boot, captured before any retry — the same quantity 0229 measured at
@@ -313,6 +349,12 @@ static int report_vprintf(const char *fmt, va_list ap)
             g_report_len += len;
         }
         fputs(line, stdout);
+#if SD_FOLD_TASK
+        /* 0239: count the driver's own CMD0 frames from its log. */
+        for (const char *p = line; (p = strstr(p, "CMD0,")) != NULL; p += 5) {
+            if (g_fold_cmd0_frames != 0xFFFF) g_fold_cmd0_frames++;
+        }
+#endif
     }
     return n;
 }
@@ -391,6 +433,12 @@ static uint8_t sd_crc7(const uint8_t *d, int n)
 /* 0238: log-line tag for the sacrificial frame (empty for every real command). */
 static const char *g_cmd_tag = "";
 
+/* 0239: sd_raw_cmd returns 0xFF for BOTH "the card drove nothing" and "the SPI
+ * transfer itself failed", and those are different findings for a sacrifice
+ * that must actually reach the bus.  This flag separates them; the base probe
+ * never reads it, so its behaviour is unchanged. */
+static bool g_raw_tx_err;
+
 static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
                           uint8_t crc, int extra, uint8_t *out, int out_max)
 {
@@ -399,6 +447,7 @@ static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
     uint8_t tx[32], rx[32];
     memset(tx, 0xFF, sizeof tx);
     memset(rx, 0x00, sizeof rx);
+    g_raw_tx_err = false;
 
     tx[0] = 0x40 | cmd;
     tx[1] = (uint8_t)(arg >> 24);
@@ -427,11 +476,13 @@ static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
         spi_transaction_t tail = {0};
         tail.length = 8;
         tail.tx_buffer = &ff;
-        spi_device_transmit(dev, &tail);
+        /* 0239: the frame is only "sent and cleaned up" if this succeeds too. */
+        if (spi_device_transmit(dev, &tail) != ESP_OK) g_raw_tx_err = true;
     }
 
     if (err != ESP_OK) {
         app_logf("    %sCMD%-2u: spi transfer failed (%s)\n", g_cmd_tag, cmd, esp_err_to_name(err));
+        g_raw_tx_err = true;
         return 0xFF;
     }
 
@@ -1442,6 +1493,350 @@ static bool try_sdmmc_1bit(uint32_t khz)
     return true;
 }
 
+/* ======================================================= 0239 fold (task) ==
+ * Compact flow, selected by -DSD_FOLD_ARM: per boot, ONE sdmmc_card_init()
+ * call is the measurement.  The sacrifice arm runs the raw pre-sacrifice on the
+ * same pins and the same SPI2 peripheral first, then releases the bus so the
+ * stock driver initialises it itself -- that is the closest arrangement to what
+ * real firmware would do, and it keeps the driver unmodified.
+ *
+ * Cross-reset table: own NVS namespace `sdprobe0239`, keyed by a hash of the
+ * build stamp (the 0238 lesson -- a shared namespace hands a new build the old
+ * build's rows).  The accepted 800x600 build's own NVS settings are untouched.
+ */
+#if SD_FOLD_TASK
+
+typedef struct __attribute__((packed)) {
+    uint8_t  magic;        /* 0xA6: a slot that was actually written */
+    uint8_t  arm;          /* 0 = control, 1 = pre-sacrifice */
+    uint8_t  init_ok;      /* the ONE sdmmc_card_init call returned ESP_OK */
+    uint8_t  sac_r1;       /* sacrifice CMD0 response (0xFF = not run) */
+    uint16_t init_err;     /* esp_err_t of that call, low 16 bits */
+    uint16_t cmd0_frames;  /* CMD0 frames the driver issued (2 = its retry ran) */
+} fold_slot_t;
+
+#define FOLD_SLOTS 32
+static fold_slot_t   g_fold[FOLD_SLOTS];
+static int           g_fold_n;
+static bool          g_fold_nvs_ok;
+static nvs_handle_t  g_fold_nvs;
+static uint32_t      g_fold_build_id;
+
+static void fold_load(void)
+{
+    esp_err_t err = nvs_flash_init();
+    if (err != ESP_OK && err != ESP_ERR_NVS_NO_FREE_PAGES) {
+        app_logf("FOLD: nvs_flash_init failed (%s) - table will not survive resets\n",
+                 esp_err_to_name(err));
+        return;
+    }
+    err = nvs_open("sdprobe0239", NVS_READWRITE, &g_fold_nvs);
+    if (err != ESP_OK) {
+        app_logf("FOLD: nvs_open failed (%s) - table will not survive resets\n",
+                 esp_err_to_name(err));
+        return;
+    }
+    g_fold_nvs_ok = true;
+
+    /* The table key carries the arm as well as the build stamp: two builds of
+     * this file can share a __TIME__ second, and a shared table would let one
+     * arm's rows into the other's summary (peer review, 0239). */
+    char stamp[64];
+    snprintf(stamp, sizeof stamp, "%s %s arm=%d", __DATE__, __TIME__, SD_FOLD_ARM);
+    uint32_t bid = 2166136261u;
+    for (const char *c = stamp; *c; c++) { bid ^= (uint8_t)*c; bid *= 16777619u; }
+    g_fold_build_id = bid;
+
+    uint32_t stored = 0;
+    bool same = (nvs_get_u32(g_fold_nvs, "bid", &stored) == ESP_OK && stored == bid);
+    size_t len = sizeof(g_fold);
+    err = nvs_get_blob(g_fold_nvs, "fold", g_fold, &len);
+    if (err == ESP_OK && same) {
+        g_fold_n = (int)(len / sizeof(fold_slot_t));
+        if (g_fold_n > FOLD_SLOTS) g_fold_n = FOLD_SLOTS;
+        app_logf("FOLD: resuming this build's table (%d slot(s))\n", g_fold_n);
+    } else {
+        g_fold_n = 0;
+        nvs_set_u32(g_fold_nvs, "bid", bid);
+        nvs_commit(g_fold_nvs);
+        app_logf("FOLD: new build stamp, table starts empty\n");
+    }
+}
+
+static void fold_append(uint8_t arm, uint8_t init_ok, uint8_t sac_r1,
+                        esp_err_t init_err, uint16_t cmd0_frames)
+{
+    fold_slot_t s = { 0xA6, arm, init_ok, sac_r1, (uint16_t)((uint32_t)init_err & 0xFFFFu),
+                      cmd0_frames };
+    if (g_fold_n >= FOLD_SLOTS) {
+        memmove(&g_fold[0], &g_fold[1], sizeof(fold_slot_t) * (FOLD_SLOTS - 1));
+        g_fold_n = FOLD_SLOTS - 1;
+    }
+    g_fold[g_fold_n++] = s;
+    if (g_fold_nvs_ok) {
+        esp_err_t err = nvs_set_blob(g_fold_nvs, "fold", g_fold,
+                                     sizeof(fold_slot_t) * (size_t)g_fold_n);
+        if (err == ESP_OK) err = nvs_commit(g_fold_nvs);
+        if (err != ESP_OK) app_logf("FOLD: persisting slot failed (%s)\n", esp_err_to_name(err));
+    }
+}
+
+static void fold_report(void)
+{
+    int ok = 0, n = 0, invalid = 0;
+    for (int i = 0; i < g_fold_n; i++) {
+        const fold_slot_t *s = &g_fold[i];
+        if (s->magic != 0xA6) continue;
+        bool valid = (s->arm == (uint8_t)SD_FOLD_ARM);
+        if (valid) {
+            n++;
+            if (s->init_ok) ok++;
+        } else {
+            invalid++;      /* 0xFE = the pre-sacrifice itself did not run */
+        }
+        app_logf("FOLD_SLOT %2d: arm=%d%s first_init=%s err=%u(0x%04x) sac_r1=0x%02x "
+                 "cmd0_frames=%u\n",
+                 i + 1, s->arm, valid ? "" : " INVALID", s->init_ok ? "OK" : "FAIL",
+                 (unsigned)s->init_err, (unsigned)s->init_err, s->sac_r1,
+                 (unsigned)s->cmd0_frames);
+    }
+    app_logf("FOLD_SLOTS: %d valid for arm %d, %d invalid, build_id=%08x\n",
+             n, SD_FOLD_ARM, invalid, g_fold_build_id);
+    app_logf("FOLD_SUMMARY: arm=%d first_init_ok=%d/%d\n", SD_FOLD_ARM, ok, n);
+}
+
+/* The raw pre-sacrifice: 74+ dummy clocks with CS high, one throwaway CMD0
+ * (GO_IDLE_STATE, CRC7 0x95), response logged and discarded, CS high again.
+ * Then the bus is released so the stock driver initialises SPI2 itself. */
+static esp_err_t fold_presacrifice(uint8_t *r1_out)
+{
+    *r1_out = 0xFF;
+    app_logf("\n--- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---\n");
+
+    spi_bus_config_t bus = {
+        .mosi_io_num = PIN_MOSI,
+        .miso_io_num = PIN_MISO,
+        .sclk_io_num = PIN_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) {
+        app_logf("  SACRIFICE: spi_bus_initialize failed (%s) -- boot NOT counted\n",
+                 esp_err_to_name(err));
+        return err;
+    }
+
+    gpio_set_direction(PIN_CS, GPIO_MODE_OUTPUT);
+    gpio_set_level(PIN_CS, 1);
+
+    spi_device_interface_config_t devcfg = {0};
+    devcfg.clock_speed_hz = 400 * 1000;
+    devcfg.mode = 0;
+    devcfg.spics_io_num = -1;          /* CS driven by hand */
+    devcfg.queue_size = 1;
+    spi_device_handle_t dev = NULL;
+    err = spi_bus_add_device(SPI2_HOST, &devcfg, &dev);
+    if (err != ESP_OK) {
+        app_logf("  SACRIFICE: add_device failed (%s) -- boot NOT counted\n",
+                 esp_err_to_name(err));
+        spi_bus_free(SPI2_HOST);
+        return err;
+    }
+
+    /* 74+ clocks with CS high before the first command (SD spec).  The transfer
+     * result is checked: a failed clock burst means the sacrifice did not run. */
+    {
+        uint8_t ff[10];
+        memset(ff, 0xFF, sizeof ff);
+        gpio_set_level(PIN_CS, 1);
+        spi_transaction_t t = {0};
+        t.length = sizeof(ff) * 8;
+        t.tx_buffer = ff;
+        err = spi_device_transmit(dev, &t);
+    }
+    if (err != ESP_OK) {
+        app_logf("  SACRIFICE: dummy-clock transfer failed (%s) -- boot NOT counted\n",
+                 esp_err_to_name(err));
+        spi_bus_remove_device(dev);
+        spi_bus_free(SPI2_HOST);
+        return err;
+    }
+
+    uint8_t pl[8] = {0};
+    g_cmd_tag = "SACRIFICE ";
+    uint8_t r1 = sd_raw_cmd(dev, 0, 0x00000000, 0x95, 0, pl, sizeof pl);
+    g_cmd_tag = "";
+    if (g_raw_tx_err) {
+        /* 0xFF from a failed transfer is not a sacrifice: the frame never went
+         * out, so the driver's init below cannot be attributed to arm 1. */
+        app_logf("  SACRIFICE: CMD0 transfer failed -- boot NOT counted\n");
+        gpio_set_level(PIN_CS, 1);
+        spi_bus_remove_device(dev);
+        spi_bus_free(SPI2_HOST);
+        return ESP_FAIL;
+    }
+    gpio_set_level(PIN_CS, 1);
+
+    spi_bus_remove_device(dev);
+    spi_bus_free(SPI2_HOST);
+    app_logf("  SACRIFICE: R1=0x%02x (discarded); device removed, SPI2 freed before "
+             "the driver initialises it\n", r1);
+    *r1_out = r1;
+    return ESP_OK;   /* 0xFF here means "no response", not "the sacrifice did not run" */
+}
+
+/* THE measurement: exactly one sdmmc_card_init() at the given clock.  No retry
+ * is wrapped around it here -- whatever the driver does internally is the
+ * driver's own business and is visible in its log (g_fold_cmd0_frames). */
+static esp_err_t fold_one_init(uint32_t khz, bool *init_called)
+{
+    *init_called = false;
+    app_logf("\n--- 0239 ONE sdmmc_card_init, stock driver, %" PRIu32 " kHz ---\n", khz);
+
+    spi_bus_config_t bus = {
+        .mosi_io_num = PIN_MOSI,
+        .miso_io_num = PIN_MISO,
+        .sclk_io_num = PIN_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) return err;
+
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot.host_id = SPI2_HOST;
+    slot.gpio_cs = PIN_CS;
+    err = sdspi_host_init();
+    if (err != ESP_OK) {
+        app_logf("  FAIL sdspi_host_init=%s\n", esp_err_to_name(err));
+        spi_bus_free(SPI2_HOST);
+        return err;
+    }
+    sdspi_dev_handle_t dev = 0;
+    err = sdspi_host_init_device(&slot, &dev);
+    if (err != ESP_OK) {
+        app_logf("  FAIL sdspi_host_init_device=%s\n", esp_err_to_name(err));
+        sdspi_host_deinit();
+        spi_bus_free(SPI2_HOST);
+        return err;
+    }
+
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = dev;
+    host.max_freq_khz = khz;
+
+    sdmmc_card_t *card = heap_caps_calloc(1, sizeof(sdmmc_card_t),
+                                          MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!card) {
+        sdspi_host_remove_device(dev);
+        sdspi_host_deinit();
+        spi_bus_free(SPI2_HOST);
+        return ESP_ERR_NO_MEM;
+    }
+
+    *init_called = true;                     /* from here the result IS the call's */
+    err = sdmmc_card_init(&host, card);      /* the single measured call */
+    if (err == ESP_OK) {
+        app_logf("  FOLD_FIRST_INIT_RAW: OK name=%.*s speed=%" PRIu32 " kHz size=%llu MB\n",
+                 8, card->cid.name, card->real_freq_khz,
+                 (unsigned long long)((uint64_t)card->csd.capacity * card->csd.sector_size
+                                      / (1024 * 1024)));
+    } else {
+        app_logf("  FOLD_FIRST_INIT_RAW: FAIL %s (%d)\n", esp_err_to_name(err), (int)err);
+    }
+
+    heap_caps_free(card);
+    sdspi_host_remove_device(dev);
+    sdspi_host_deinit();
+    spi_bus_free(SPI2_HOST);
+    return err;
+}
+
+static void fold_driver_log_levels(void)
+{
+    esp_log_level_set("sdmmc_cmd", ESP_LOG_DEBUG);
+    esp_log_level_set("sdmmc_sd", ESP_LOG_DEBUG);
+    esp_log_level_set("sdmmc_common", ESP_LOG_DEBUG);
+    esp_log_level_set("sdmmc_init", ESP_LOG_DEBUG);
+    esp_log_level_set("sdmmc_io", ESP_LOG_DEBUG);
+    esp_log_level_set("sdspi_host", ESP_LOG_VERBOSE);       /* CMDn, arg, flags */
+    esp_log_level_set("sdspi_transaction", ESP_LOG_VERBOSE); /* r1 per command */
+}
+
+void app_main(void)
+{
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    esp_log_set_vprintf(report_vprintf);
+    fold_driver_log_levels();
+
+    app_logf("\n\n########## 0239 FOLD: pre-sacrifice before the stock driver init ##########\n");
+    app_logf("build: %s %s\n", __DATE__, __TIME__);
+    app_logf("FOLD_ARM: %d (%s), ONE sdmmc_card_init call per boot\n", SD_FOLD_ARM,
+             SD_FOLD_ARM == 1 ? "pre-sacrifice then init" : "control, init only");
+    app_logf("FOLD_CLOCK: 400 kHz; SD_FIRSTPASS_DELAY_MS=%d (unused in this flow)\n",
+             SD_FIRSTPASS_DELAY_MS);
+
+    fold_load();
+    report_identity();
+    write_report_partition();
+
+    /* Same power-up settle the base probe uses before its first command. */
+    vTaskDelay(pdMS_TO_TICKS(250));
+
+    uint8_t sac_r1 = 0xFF;
+    bool sac_ran = true;
+    if (SD_FOLD_ARM == 1) {
+        esp_err_t serr = fold_presacrifice(&sac_r1);
+        if (serr != ESP_OK) {
+            sac_ran = false;    /* the procedure did not complete: not a trial */
+            app_logf("  FOLD_SACRIFICE_FAILED: %s -- this boot is recorded INVALID "
+                     "and excluded from the arm's tally\n", esp_err_to_name(serr));
+        }
+    }
+
+    g_fold_cmd0_frames = 0;
+    bool init_called = false;
+    esp_err_t err = fold_one_init(400, &init_called);
+    if (!init_called) {
+        /* The driver was never reached (bus/host setup or allocation failed).
+         * That is not a measurement of sdmmc_card_init and is not a trial. */
+        sac_ran = false;
+        app_logf("  FOLD_INIT_NOT_CALLED: %s -- boot recorded INVALID\n",
+                 esp_err_to_name(err));
+    }
+
+    app_logf("\nFOLD_FIRST_INIT: arm=%d%s ok=%s err=%s (%d) driver_cmd0_frames=%u\n",
+             SD_FOLD_ARM, sac_ran ? "" : " (INVALID boot)",
+             err == ESP_OK ? "OK" : "FAIL", esp_err_to_name(err), (int)err,
+             (unsigned)g_fold_cmd0_frames);
+    fold_append(sac_ran ? (uint8_t)SD_FOLD_ARM : 0xFE, err == ESP_OK ? 1 : 0, sac_r1, err,
+                g_fold_cmd0_frames);
+    write_report_partition();   /* the measurement is durable before the mount */
+
+    if (SD_FOLD_ARM == 1 && sac_ran) {
+        /* End-to-end, read-only, AFTER the first-call result is recorded and
+         * flushed: format_if_mount_failed = false, listing only.  Running it on
+         * every sacrifice boot makes the last boot of the arm the task's
+         * "final sacrifice-arm boot" without a second firmware. */
+        bool mounted = try_spi_mount("fold e2e read-only", 400);
+        app_logf("FOLD_E2E_MOUNT: %s\n",
+                 mounted ? "mounted and listed the root directory" : "mount FAILED");
+    }
+
+    fold_report();
+    app_logf("\n########## FOLD COMPLETE ##########\n");
+    fflush(stdout);
+    write_report_partition();
+
+    for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
+}
+
+#else   /* the 0229/0234/0236/0238 probe, unchanged */
+
 void app_main(void)
 {
     vTaskDelay(pdMS_TO_TICKS(300));
@@ -1579,3 +1974,5 @@ void app_main(void)
 
     for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
 }
+
+#endif  /* SD_FOLD_TASK */

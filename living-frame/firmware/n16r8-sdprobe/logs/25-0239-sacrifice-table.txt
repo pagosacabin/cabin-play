@@ -1,0 +1,18 @@
+0239 sacrifice arm -- the board's own persisted cross-reset table, read back at the end of the arm.
+
+FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOT  7: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+FOLD_SLOT  8: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOT  9: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOT 10: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOT 11: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+FOLD_SLOT 12: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+FOLD_SLOT 13: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+FOLD_SLOT 14: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+FOLD_SLOTS: 14 valid for arm 1, 0 invalid, build_id=0827ce74
+FOLD_SUMMARY: arm=1 first_init_ok=14/14

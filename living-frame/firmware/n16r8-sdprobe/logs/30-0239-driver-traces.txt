@@ -1,0 +1,100 @@
+0239 -- the stock driver's own command/r1 trace, paired from its sdspi_host + sdspi_transaction
+log lines (parse_trace.py, committed under bench/fold-0239/).
+
+===== CONTROL boot that failed its first call (report-2) =====
+   1. CMD52 arg=0x80000c08 r1=0x3f resp0=ffffffff
+SUMMARY cmd0_frames=0 cmd8_frames=0
+
+===== CONTROL boot whose first call succeeded (report-1) =====
+   1. CMD52 arg=0x80000c08 r1=-- resp0=--
+   2. CMD0  arg=0x00000000 r1=0x00 resp0=ffffffff
+   3. CMD0  arg=0x00000000 r1=0x01 resp0=ffffffff
+   4. CMD8  arg=0x000001aa r1=0x01 resp0=aa010000
+   5. CMD5  arg=0x00000000 r1=0x05 resp0=ffffffff
+   6. CMD59 arg=0x00000001 r1=0x01 resp0=ffffffff
+   7. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+   8. CMD41 arg=0x40000000 r1=0x01 resp0=ffffffff
+   9. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+  10. CMD41 arg=0x40000000 r1=0x01 resp0=ffffffff
+  11. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+  12. CMD41 arg=0x40000000 r1=0x00 resp0=ffffffff
+  13. CMD58 arg=0x00000000 r1=0x00 resp0=0080ffc0
+  14. CMD10 arg=0x00000000 r1=0x00 resp0=03feff00
+  15. CMD9  arg=0x00000000 r1=0x00 resp0=40feff00
+  16. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  17. CMD51 arg=0x00000000 r1=0x00 resp0=87844502
+  18. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  19. CMD13 arg=0x00000000 r1=0x00 resp0=ffff0000
+  20. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  21. CMD51 arg=0x00000000 r1=0x00 resp0=87844502
+SUMMARY cmd0_frames=2 cmd8_frames=1
+SUMMARY cmd0_r1=0x00,0x01
+SUMMARY cmd8_r1=0x01
+SUMMARY cmd8_resp0=aa010000
+
+===== SACRIFICE boot (report-3) =====
+   1. CMD52 arg=0x80000c08 r1=0x04 resp0=ffffffff
+   2. CMD0  arg=0x00000000 r1=0x00 resp0=ffffffff
+   3. CMD0  arg=0x00000000 r1=0x01 resp0=ffffffff
+   4. CMD8  arg=0x000001aa r1=0x01 resp0=aa010000
+   5. CMD5  arg=0x00000000 r1=0x05 resp0=ffffffff
+   6. CMD59 arg=0x00000001 r1=0x01 resp0=ffffffff
+   7. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+   8. CMD41 arg=0x40000000 r1=0x01 resp0=ffffffff
+   9. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+  10. CMD41 arg=0x40000000 r1=0x01 resp0=ffffffff
+  11. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+  12. CMD41 arg=0x40000000 r1=0x00 resp0=ffffffff
+  13. CMD58 arg=0x00000000 r1=0x00 resp0=0080ffc0
+  14. CMD10 arg=0x00000000 r1=0x00 resp0=03feff00
+  15. CMD9  arg=0x00000000 r1=0x00 resp0=40feff00
+  16. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  17. CMD51 arg=0x00000000 r1=0x00 resp0=87844502
+  18. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  19. CMD13 arg=0x00000000 r1=0x00 resp0=ffff0000
+  20. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  21. CMD51 arg=0x00000000 r1=0x00 resp0=87844502
+  22. CMD52 arg=0x80000c08 r1=0x04 resp0=ffffffff
+  23. CMD0  arg=0x00000000 r1=0x00 resp0=ffffffff
+  24. CMD0  arg=0x00000000 r1=0x01 resp0=ffffffff
+  25. CMD8  arg=0x000001aa r1=0x01 resp0=aa010000
+  26. CMD5  arg=0x00000000 r1=0x05 resp0=ffffffff
+  27. CMD59 arg=0x00000001 r1=0x01 resp0=ffffffff
+  28. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+  29. CMD41 arg=0x40000000 r1=0x01 resp0=ffffffff
+  30. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+  31. CMD41 arg=0x40000000 r1=0x01 resp0=ffffffff
+  32. CMD55 arg=0x00000000 r1=0x01 resp0=ffffffff
+  33. CMD41 arg=0x40000000 r1=0x00 resp0=ffffffff
+  34. CMD58 arg=0x00000000 r1=0x00 resp0=0080ffc0
+  35. CMD10 arg=0x00000000 r1=0x00 resp0=03feff00
+  36. CMD9  arg=0x00000000 r1=0x00 resp0=40feff00
+  37. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  38. CMD51 arg=0x00000000 r1=0x00 resp0=87844502
+  39. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  40. CMD13 arg=0x00000000 r1=0x00 resp0=ff000000
+  41. CMD55 arg=0x00000000 r1=0x00 resp0=ffffffff
+  42. CMD51 arg=0x00000000 r1=0x00 resp0=87844502
+  43. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  44. CMD17 arg=0x00000000 r1=0x00 resp0=1000b8fa
+  45. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  46. CMD17 arg=0x00000800 r1=0x00 resp0=6d9058eb
+  47. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  48. CMD17 arg=0x00000801 r1=0x00 resp0=41615252
+  49. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  50. CMD17 arg=0x00003820 r1=0x00 resp0=ffffff00
+  51. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  52. CMD17 arg=0x00003821 r1=0x00 resp0=35002d42
+  53. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  54. CMD17 arg=0x00003822 r1=0x00 resp0=61006841
+  55. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  56. CMD17 arg=0x00003823 r1=0x00 resp0=00000000
+  57. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  58. CMD17 arg=0x00003820 r1=0x00 resp0=41434552
+  59. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+  60. CMD17 arg=0x00003840 r1=0x00 resp0=464c457f
+  61. CMD13 arg=0x00000000 r1=0x00 resp0=ffffff00
+SUMMARY cmd0_frames=4 cmd8_frames=2
+SUMMARY cmd0_r1=0x00,0x01,0x00,0x01
+SUMMARY cmd8_r1=0x01,0x01
+SUMMARY cmd8_resp0=aa010000,aa010000

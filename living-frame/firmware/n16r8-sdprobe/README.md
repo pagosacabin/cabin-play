@@ -445,3 +445,97 @@ and CMD17/CMD9/CMD10 reads only.
 
 Peer review: Copilot (Herdr pane t17) on the probe diff before the bench run —
 one pass, no findings, **Verdict: SHIP**.
+
+
+## 0239 — does a pre-sacrifice make the stock driver's first init clean?
+
+0238 cured the **raw** probe's first init pass with one throwaway CMD0 after the
+dummy clocks (13/13 vs 0/13). This task asks whether the same sacrifice carries
+over to the **stock ESP-IDF driver**: per boot, exactly one
+`sdmmc_card_init()` call is the measurement, and the arm decides whether a raw
+pre-sacrifice precedes it (`SD_FOLD_ARM`, build-time; leaving it undefined
+leaves the 0229/0234/0236/0238 probe byte-for-byte in place).
+
+```bash
+PLATFORMIO_BUILD_FLAGS="-DSD_FOLD_ARM=0" pio run -e n16r8-sdprobe -t upload   # control
+PLATFORMIO_BUILD_FLAGS="-DSD_FOLD_ARM=1" pio run -e n16r8-sdprobe -t upload   # sacrifice
+```
+
+One variable: 400 kHz, `SD_FIRSTPASS_DELAY_MS` stays 0, pull-ups unchanged, and
+the card is strictly read-only (raw init + reads; the sacrifice arm's only mount
+is `format_if_mount_failed = false`, listing only).
+
+### Measured: 12 host resets per arm, one init call per boot
+
+The tally is the board's own persisted table (NVS namespace `sdprobe0239`,
+keyed by a hash of the build stamp **and the arm**), read back at the end of
+each arm — `logs/24`, `logs/25`; per-boot reports `logs/22`, `logs/23`.
+
+| Arm | `-DSD_FOLD_ARM=` | first-call `sdmmc_card_init` OK / boots | failure shape |
+| --- | --- | :---: | --- |
+| Control | 0 | **11 / 19** (58 %) | 8 × `ESP_ERR_INVALID_CRC` (265) at `sdmmc_io_reset`; the driver never reached CMD0 |
+| Pre-sacrifice | 1 | **14 / 14** (100 %) | none |
+
+**Verdict: the pre-sacrifice does carry over — it makes the stock driver's first
+init reliable on this board (14/14 vs 11/19), because the bad first frame lands
+on the sacrificial CMD0 instead of on the driver's own first command.**
+
+The sacrifice's own response is the evidence that it caught the fault every
+time: `sac_r1 = 0x3f` ×9, `0x47` ×4, `0x7f` ×1 (14/14 boots) — the same
+misaligned-junk family 0236/0238 measured — and it was discarded, after which
+the driver's call was clean.
+
+### Where the first call actually fails — one command earlier than expected
+
+0234 said the driver "retries internally, so its success hides the first-pass
+fault". On this card the failing command is **not** CMD0: the driver's very first
+transaction is the SDIO reset (`CMD52`, inside `sdmmc_io_reset`, which
+`sdmmc_card_init` runs before `sdmmc_send_cmd_go_idle_state`), and that is what
+comes back as `r1=0x3f` and aborts the call with `ESP_ERR_INVALID_CRC`:
+
+```
+V sdspi_host: sdspi_host_start_command: slot=1, CMD52, arg=0x80000c08 flags=0x80 ...
+V sdspi_transaction: r1 = 0x3f hw_cmd.r[0]=0xffffffff
+I sdspi_transaction: cmd=52, R1 response: command CRC error
+E sdmmc_io: sdmmc_io_reset: unexpected return: 0x109
+```
+
+`driver_cmd0_frames` (counted from the driver's own log) is **2 on every boot
+that got past CMD52** and **0 on every boot that failed**: the driver's
+mandatory double CMD0 in SPI mode always ran when it was reached, so its
+internal retry is not what this fault defeats — the first transaction of the
+call is. In 0234 the stock `esp_vfs_fat_sdspi_mount` succeeded because the probe
+had already pushed hundreds of transactions through the bus in that same boot
+before the driver's init; the driver on a freshly reset bus fails ~2 boots in 5.
+
+### End-to-end on the final sacrifice boot
+
+Every sacrifice boot runs the mount after the first-call result is written to
+the report partition, so the arm's last boot is the end-to-end proof:
+`esp_vfs_fat_sdspi_mount` OK at 400 kHz, `ROOT_ENTRIES: 23` — the RECALBOX
+listing 0234 recorded (`logs/23`, `FOLD_E2E_MOUNT`).
+
+### Board state found and restored
+
+Arrived on the accepted 800x600 build (`logs/28`: `mode 800x600`, framebuffer
+`sha256 204578cc…`, `MATCH`, `362 vsync in 5.998 s`). Restored to the same build
+afterwards — `esptool verify-flash` → `Verification successful (digest matched)`,
+and the board's own report after the restore is **byte-identical** to the
+pre-state read-back (`logs/29`, diffed against `logs/28`).
+
+### Peer review (Copilot, Herdr pane t17) — four passes, each finding fixed
+
+1. **MAJOR** — a sacrifice whose bus setup failed still counted as a trial. Fixed:
+   `fold_presacrifice()` returns `esp_err_t`, and any failed step (bus init,
+   device add, dummy-clock burst, CMD0 transfer, trailing 8-clock cleanup) marks
+   the boot `arm=0xFE` (INVALID), excluded from the tally and from the mount.
+2. **NIT** — the table key was the build stamp alone, so two arm builds in the
+   same second could share a table. Fixed: the key hashes the stamp **and** the arm.
+3. **NIT** — `fold_one_init()` could fail before calling `sdmmc_card_init` and the
+   error was recorded as the call's result. Fixed with `bool *init_called`; an
+   uncalled init records INVALID.
+4. **MAJOR** — `sd_raw_cmd()` ignored the trailing 8-clock transfer's result, so a
+   sacrifice whose frame cleanup failed could still count. Fixed: that failure
+   sets `g_raw_tx_err` too (the base probe never reads the flag).
+
+Final verdict: **SHIP**. No GitHub PR in this repo; this section is the record.

@@ -1,0 +1,223 @@
+===== ARM 1 RESET 1 2026-11-22T05:05:00-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    SACRIFICE: R1=0x3f (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOTS: 2 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=2/2
+===== ARM 1 RESET 2 2026-11-22T05:05:46-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    SACRIFICE: R1=0x3f (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOTS: 3 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=3/3
+===== ARM 1 RESET 3 2026-11-22T05:06:32-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    SACRIFICE: R1=0x3f (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOTS: 4 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=4/4
+===== ARM 1 RESET 4 2026-11-22T05:07:18-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    SACRIFICE: R1=0x3f (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOTS: 5 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=5/5
+===== ARM 1 RESET 5 2026-11-22T05:08:04-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    SACRIFICE: R1=0x3f (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOTS: 6 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=6/6
+===== ARM 1 RESET 6 2026-11-22T05:08:50-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff 
+    SACRIFICE: R1=0x47 (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  7: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOTS: 7 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=7/7
+===== ARM 1 RESET 7 2026-11-22T05:09:36-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    SACRIFICE: R1=0x3f (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  7: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT  8: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOTS: 8 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=8/8
+===== ARM 1 RESET 8 2026-11-22T05:10:22-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    SACRIFICE: R1=0x3f (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  7: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT  8: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  9: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOTS: 9 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=9/9
+===== ARM 1 RESET 9 2026-11-22T05:11:08-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x3f payload[0]=ff ff ff c2 3f ff ff ff 
+    SACRIFICE: R1=0x3f (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  7: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT  8: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  9: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT 10: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOTS: 10 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=10/10
+===== ARM 1 RESET 10 2026-11-22T05:11:54-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff 
+    SACRIFICE: R1=0x47 (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  7: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT  8: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  9: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT 10: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT 11: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOTS: 11 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=11/11
+===== ARM 1 RESET 11 2026-11-22T05:12:40-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff 
+    SACRIFICE: R1=0x47 (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  7: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT  8: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  9: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT 10: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT 11: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT 12: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOTS: 12 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=12/12
+===== ARM 1 RESET 12 2026-11-22T05:13:26-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 1 (pre-sacrifice then init), ONE sdmmc_card_init call per boot
+  --- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+      SACRIFICE CMD0  arg=0x00000000: R1=0x47 payload[0]=ff ff f8 47 ff ff ff ff 
+    SACRIFICE: R1=0x47 (discarded); device removed, SPI2 freed before the driver initialises it
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=1 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_E2E_MOUNT: mounted and listed the root directory
+  FOLD_SLOT  1: arm=1 first_init=OK err=0(0x0000) sac_r1=0x7f cmd0_frames=2
+  FOLD_SLOT  2: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  3: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  4: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  5: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  6: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  7: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT  8: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT  9: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT 10: arm=1 first_init=OK err=0(0x0000) sac_r1=0x3f cmd0_frames=2
+  FOLD_SLOT 11: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT 12: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOT 13: arm=1 first_init=OK err=0(0x0000) sac_r1=0x47 cmd0_frames=2
+  FOLD_SLOTS: 13 valid for arm 1, 0 invalid, build_id=0827ce74
+  FOLD_SUMMARY: arm=1 first_init_ok=13/13
+===== LOOP DONE 2026-11-22T05:14:12-07:00

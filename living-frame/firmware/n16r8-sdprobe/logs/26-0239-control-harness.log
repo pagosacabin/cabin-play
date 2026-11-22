@@ -1,0 +1,235 @@
+===== ARM 0 RESET 1 2026-11-22T04:52:16-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=0 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOTS: 7 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=5/7
+===== ARM 0 RESET 2 2026-11-22T04:53:02-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: FAIL ESP_ERR_INVALID_CRC (265)
+  FOLD_FIRST_INIT: arm=0 ok=FAIL err=ESP_ERR_INVALID_CRC (265) driver_cmd0_frames=0
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOTS: 8 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=5/8
+===== ARM 0 RESET 3 2026-11-22T04:53:48-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=0 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOTS: 9 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=6/9
+===== ARM 0 RESET 4 2026-11-22T04:54:34-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=0 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOTS: 10 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=7/10
+===== ARM 0 RESET 5 2026-11-22T04:55:19-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: FAIL ESP_ERR_INVALID_CRC (265)
+  FOLD_FIRST_INIT: arm=0 ok=FAIL err=ESP_ERR_INVALID_CRC (265) driver_cmd0_frames=0
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOTS: 11 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=7/11
+===== ARM 0 RESET 6 2026-11-22T04:56:05-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=0 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 12: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOTS: 12 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=8/12
+===== ARM 0 RESET 7 2026-11-22T04:56:51-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=0 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 12: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 13: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOTS: 13 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=9/13
+===== ARM 0 RESET 8 2026-11-22T04:57:37-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: FAIL ESP_ERR_INVALID_CRC (265)
+  FOLD_FIRST_INIT: arm=0 ok=FAIL err=ESP_ERR_INVALID_CRC (265) driver_cmd0_frames=0
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 12: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 13: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 14: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOTS: 14 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=9/14
+===== ARM 0 RESET 9 2026-11-22T04:58:23-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: FAIL ESP_ERR_INVALID_CRC (265)
+  FOLD_FIRST_INIT: arm=0 ok=FAIL err=ESP_ERR_INVALID_CRC (265) driver_cmd0_frames=0
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 12: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 13: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 14: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 15: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOTS: 15 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=9/15
+===== ARM 0 RESET 10 2026-11-22T04:59:09-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: FAIL ESP_ERR_INVALID_CRC (265)
+  FOLD_FIRST_INIT: arm=0 ok=FAIL err=ESP_ERR_INVALID_CRC (265) driver_cmd0_frames=0
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 12: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 13: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 14: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 15: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 16: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOTS: 16 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=9/16
+===== ARM 0 RESET 11 2026-11-22T04:59:56-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: OK name=SR512 speed=400 kHz size=488156 MB
+  FOLD_FIRST_INIT: arm=0 ok=OK err=ESP_OK (0) driver_cmd0_frames=2
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 12: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 13: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 14: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 15: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 16: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 17: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOTS: 17 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=10/17
+===== ARM 0 RESET 12 2026-11-22T05:00:42-07:00
+  esptool rc=0  Hard resetting via RTS pin... 
+  FOLD_ARM: 0 (control, init only), ONE sdmmc_card_init call per boot
+    FOLD_FIRST_INIT_RAW: FAIL ESP_ERR_INVALID_CRC (265)
+  FOLD_FIRST_INIT: arm=0 ok=FAIL err=ESP_ERR_INVALID_CRC (265) driver_cmd0_frames=0
+  FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 12: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 13: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 14: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 15: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 16: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOT 17: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+  FOLD_SLOT 18: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+  FOLD_SLOTS: 18 valid for arm 0, 0 invalid, build_id=8e9e0223
+  FOLD_SUMMARY: arm=0 first_init_ok=10/18
+===== LOOP DONE 2026-11-22T05:01:28-07:00

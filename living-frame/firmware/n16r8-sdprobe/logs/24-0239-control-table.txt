@@ -1,0 +1,24 @@
+0239 control arm -- the board's own persisted cross-reset table, read back at the end of the arm
+(read_flash 0x310000 0x10000 after the last boot). This is the authoritative tally.
+
+FOLD_SLOT  1: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+FOLD_SLOT  2: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT  3: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT  4: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+FOLD_SLOT  5: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT  6: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT  7: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT  8: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+FOLD_SLOT  9: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT 10: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT 11: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+FOLD_SLOT 12: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT 13: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT 14: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+FOLD_SLOT 15: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+FOLD_SLOT 16: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+FOLD_SLOT 17: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOT 18: arm=0 first_init=FAIL err=265(0x0109) sac_r1=0xff cmd0_frames=0
+FOLD_SLOT 19: arm=0 first_init=OK err=0(0x0000) sac_r1=0xff cmd0_frames=2
+FOLD_SLOTS: 19 valid for arm 0, 0 invalid, build_id=8e9e0223
+FOLD_SUMMARY: arm=0 first_init_ok=11/19

@@ -1,0 +1,27 @@
+Board restored to the accepted 800x600 build after the run (same boot's report):
+
+
+
+########## PHOTOGRAPH ON THE 64-COLOUR BUILD ##########
+build      : Nov 20 2026 17:23:09
+source     : hummingbird.jpg (1280x931), converted by tools/convert_photo64.py
+mode       : 800x600 raster from the converter (800x600)
+conversion : portrait cover-crop, Floyd-Steinberg error diffusion
+             in gamma space over the 64 RGB222 colours (0228 tests this one variable)
+rotation   : 90deg counter-clockwise (180deg from the 0226 test card)
+embedded   : 480000 B at 0x3c038334
+framebuffer: 0x3c0c0998, 480000 B in PSRAM (integrity ok)
+sha256     : runtime 204578cc3339baf944345090680c7178f653be7fa79f8fcb83cf82b8ff3bd306
+sha256     : tool    204578cc3339baf944345090680c7178f653be7fa79f8fcb83cf82b8ff3bd306
+sha256     : MATCH - streamed framebuffer is the converted photograph
+resolution : 800x600 native, 1 fb pixel = 1 DAC byte = 1 output pixel
+colour     : 8 bpp = 64 colours (RGB222 through the 6-bit DAC)
+timing     : pclk 40000000 Hz, h 128+88+800+40, v 4+23+600+1 -> 60.32 Hz configured
+data pins  : bit0=R_LSB/5 bit1=R_MSB/4 bit2=G_LSB/7 bit3=G_MSB/6 bit4=B_LSB/16 bit5=B_MSB/15; hsync 17, vsync 18, both active-low
+panel      : streaming (no_fb, 15-line bounce buffers, 12000 B each)
+measured   : 362 vsync in 5.998 s -> 60.35 Hz refresh
+fills      : 14473 bounce fills -> 40.0 per frame (expected 40.0)
+sha256     : after 6.0 s streaming: unchanged (framebuffer not disturbed during scanout)
+
+
+[report magic=0x30323237 len=1411]

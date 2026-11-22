@@ -539,3 +539,54 @@ pre-state read-back (`logs/29`, diffed against `logs/28`).
    sets `g_raw_tx_err` too (the base probe never reads the flag).
 
 Final verdict: **SHIP**. No GitHub PR in this repo; this section is the record.
+
+---
+
+# 0240 — kit card: format, mount, write, read back
+
+Stephen designated **the 1 GB kit SDSC card** as scratch (the card 0229 identified:
+CSD v1, 960 MB, CID `05 00 0c 61 73 64 66 67 22 00 00 13 a4 01 9a 00`, serial
+`0x000013a4`) and approved erasing it, so 0230's rung 3 got its write-path test.
+
+The kit build (`SD_FOLD_ARM=1 SD_KIT_TASK=1`) adds a destructive arm to this probe:
+
+1. **identity gate** — raw CID/CSD read, refuses anything that is not this card
+   (CID serial `0x000013a4` **and** SDSC/byte-addressed/900-1200 MB). An empty holder,
+   the 512 GB Recalbox card, or any other ~1 GB card stops the run before a write;
+2. the 0239 pre-sacrifice, then **one** `sdmmc_card_init` (the measurement);
+3. mount (plain, one retry, then a flag-carrying mount only to obtain a card handle),
+   then an **explicit** `esp_vfs_fat_sdcard_format()` — the erase is never inferred from a
+   successful mount;
+4. a 128 KiB deterministic pattern written, read back in place, then read again after
+   unmount → remount; board-side mbedtls SHA-256 on all three passes, and
+   `bench/kitcard0240/expected_pattern.py` recomputes the same bytes on the host.
+
+## Result of the 2026-11-22 06:56-06:59 MST run — stopped at driver init
+
+| Item | Measured |
+| --- | --- |
+| Seated card | **the kit card** — gate PASS, CID `05 00 0c 61 73 64 66 67 22 00 00 13 a4 01 9a 00`, serial `0x000013a4`, CSD v1, 960 MB, `OCR 80 ff 80 00`, CCS=0 |
+| Pre-sacrifice | ran, R1=`0x01` (idle), discarded |
+| `sdmmc_card_init` (400 kHz) | **FAIL `ESP_ERR_NOT_SUPPORTED` (262)** at `sdmmc_init_spi_crc` |
+| Failure shape | CMD52 R1=`0x05` (tolerated) → CMD0 → CMD8 R7 `0xaa0100f0` → **CMD5 error `0x107`** ("not IO card") → **CMD59 R1=`0x05` illegal** → `sdmmc_init_spi_crc returned 0x106` |
+| Mount attempts 1, 2 and 3 | all FAIL `ESP_ERR_NOT_SUPPORTED` (262), same stage |
+| Format / write | **not attempted** — the firmware stops at the mount failure by design |
+| Card content | untouched: no format call ran, no write path was reached |
+
+So the answer to 0239's open question is **no**: the pre-sacrifice does not rescue this card.
+0239's fold was measured on the 512 GB SR512 card (14/14 first-init OK, mount OK); the same
+firmware on the kit card fails at the same `CMD59`-after-`CMD5` step 0229 named. The fault
+follows the card, not the fold, the wiring or the clock. Per this task's constraints there is
+no in-task workaround ladder: the two real options are a card that tolerates CMD5, or a raw
+sector writer that bypasses `sdmmc_init_spi_crc` (a different task).
+
+Logs: `logs/31-0240-board-pre-state.txt` (pre-flash), `logs/32-0240-kitcard-gate-and-init.txt`
+(the full report read back from `0x310000`), `logs/33-0240-board-restored-800x600.txt`.
+The board was restored to the accepted 800x600 build and verified from its own report
+(framebuffer `sha256 204578cc…bd306`, MATCH).
+
+Peer review (Copilot pane t17, 2026-11-22): three passes. Findings — (1) BLOCKER the gate
+admitted any ~1 GB SDSC card, fixed by requiring the CID serial; (2) MEDIUM
+`format_if_mount_failed` cannot be reported as the format, fixed by always formatting
+explicitly; (3) MEDIUM the unmount result was ignored, fixed by requiring it for a PASS.
+Final verdict **SHIP** at `f2fcbe9`.

@@ -1795,6 +1795,10 @@ static void fold_driver_log_levels(void)
 #define KIT_CHUNK          4096u
 #define KIT_CAP_MIN_BYTES  (900ull * 1024ull * 1024ull)
 #define KIT_CAP_MAX_BYTES  (1200ull * 1024ull * 1024ull)
+/* The kit card's own CID serial, as recorded by 0229 from its raw CID
+ * (05 00 0c 61 73 64 66 67 22 00 00 13 a4 01 9a 00 -> PSN 0x000013a4).  This is
+ * the identity half of the gate: capacity alone would admit any 1 GB SDSC card. */
+#define KIT_CARD_PSN       0x000013a4u
 
 /* The driver's verbose log is what names an init failure, but it would also
  * log every block of a 128 KiB write and overflow the 60 kB report before the
@@ -1930,16 +1934,26 @@ static bool kit_raw_identity(void)
     spi_bus_remove_device(dev);
     spi_bus_free(SPI2_HOST);
 
+    uint32_t psn = 0;
     if (have_cid) {
+        /* CID layout: MID[0] OID[1..2] PNM[3..7] PRV[8] PSN[9..12] MDT[13..14]
+         * CRC[15].  The serial was mis-parsed by one byte until peer review
+         * (2026-11-22) caught it: 0229 recorded this card's raw CID as
+         *   05 00 0c 61 73 64 66 67 22 00 00 13 a4 01 9a 00
+         * and serial 0x000013a4 sits at bytes 10..13, not 9..12 (the 0x22 at
+         * byte 9 is PRV).  Both readings are printed so the record is checkable
+         * without trusting either parse. */
         char name[6] = {0};
         for (int i = 0; i < 5; i++) name[i] = (char)cid[3 + i];
-        uint32_t psn = ((uint32_t)cid[9] << 24) | ((uint32_t)cid[10] << 16) |
-                       ((uint32_t)cid[11] << 8) | (uint32_t)cid[12];
+        uint32_t psn_9_12  = ((uint32_t)cid[9]  << 24) | ((uint32_t)cid[10] << 16) |
+                             ((uint32_t)cid[11] << 8)  | (uint32_t)cid[12];
+        psn = ((uint32_t)cid[10] << 24) | ((uint32_t)cid[11] << 16) |
+              ((uint32_t)cid[12] << 8)  | (uint32_t)cid[13];
         app_logf("  CID: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
                  cid[0], cid[1], cid[2], cid[3], cid[4], cid[5], cid[6], cid[7],
                  cid[8], cid[9], cid[10], cid[11], cid[12], cid[13], cid[14], cid[15]);
-        app_logf("  CID_MID: 0x%02x  CID_NAME: %.5s  CID_PSN: 0x%08" PRIx32 "\n",
-                 cid[0], name, psn);
+        app_logf("  CID_MID: 0x%02x  CID_NAME: %.5s  CID_PSN: 0x%08" PRIx32 "  "
+                 "(old 9..12 parse: 0x%08" PRIx32 ")\n", cid[0], name, psn, psn_9_12);
     } else {
         app_logf("  CID: read FAILED\n");
     }
@@ -1960,18 +1974,23 @@ static bool kit_raw_identity(void)
         app_logf("  CSD: read FAILED\n");
     }
 
-    /* The gate: v1 (SDSC) structure, byte addressing, and a capacity in the
-     * 1 GB class.  A 512 GB SDXC card fails all three; an empty holder fails
-     * the READY test above. */
+    /* The gate is IDENTITY as well as geometry (peer review, 2026-11-22: a
+     * capacity band alone would admit any 1 GB SDSC card and format it).
+     * Pass requires: CID read, CID serial == the kit card's recorded serial,
+     * CSD v1 (SDSC), byte addressing, and capacity in the 1 GB class.  The 512 GB
+     * Recalbox card fails all four; an empty holder fails the READY test above. */
+    bool cid_ok    = have_cid && psn == KIT_CARD_PSN;
     bool is_sdsc   = have_csd && structure == 0;
     bool byte_addr = !ccs;
     bool cap_ok    = have_csd && bytes >= KIT_CAP_MIN_BYTES && bytes <= KIT_CAP_MAX_BYTES;
-    bool gate      = is_sdsc && byte_addr && cap_ok;
+    bool gate      = cid_ok && is_sdsc && byte_addr && cap_ok;
 
-    app_logf("KIT_GATE: %s (sdsc=%d byte_addressed=%d capacity_in_900MB..1200MB=%d)\n",
-             gate ? "PASS -- seated card is the ~1 GB kit SDSC card"
+    app_logf("KIT_GATE: %s (cid_serial_matches_0x%08" PRIx32 "=%d sdsc=%d "
+             "byte_addressed=%d capacity_in_900MB..1200MB=%d)\n",
+             gate ? "PASS -- seated card is the kit card (identity + geometry)"
                   : "FAIL -- STOP, nothing will be formatted or written",
-             (int)is_sdsc, (int)byte_addr, (int)cap_ok);
+             (uint32_t)KIT_CARD_PSN, (int)cid_ok, (int)is_sdsc, (int)byte_addr,
+             (int)cap_ok);
     return gate;
 }
 
@@ -2026,11 +2045,14 @@ static bool kit_mount(const char *tag, bool format_if_failed, sdmmc_card_t **out
     return true;
 }
 
-static void kit_unmount(sdmmc_card_t *card)
+/* Returns the unmount result: the cross-remount half of the proof only means
+ * something if the volume really was unmounted (peer review, 2026-11-22). */
+static esp_err_t kit_unmount(sdmmc_card_t *card)
 {
     esp_err_t err = esp_vfs_fat_sdcard_unmount("/sdcard", card);
     app_logf("  UNMOUNT: %s\n", err == ESP_OK ? "ok" : esp_err_to_name(err));
     spi_bus_free(SPI2_HOST);
+    return err;
 }
 
 static void kit_sha_hex(const uint8_t *d, char *out /* 65 */)
@@ -2142,16 +2164,20 @@ void app_main(void)
              (int)init_called, ierr == ESP_OK ? "OK" : esp_err_to_name(ierr), (int)ierr);
     write_report_partition();
 
-    /* ---- step 3: mount -- one attempt, one retry, then format-on-mount. */
+    /* ---- step 3: mount -- one attempt, one retry, then a flag-carrying mount
+     * only to obtain a card handle.  The erase itself is ALWAYS the explicit
+     * esp_vfs_fat_sdcard_format() below: format_if_mount_failed formats only
+     * when that mount attempt's own plain mount failed first, so it cannot be
+     * reported as the format that happened (peer review, 2026-11-22). */
     sdmmc_card_t *card = NULL;
     bool mounted = kit_mount("attempt 1, format_if_mount_failed=false", false, &card);
-    bool formatted_by_mount = false;
+    bool format_flag_needed = false;
     if (!mounted) {
         mounted = kit_mount("attempt 2 (retry), format_if_mount_failed=false", false, &card);
     }
     if (!mounted) {
         mounted = kit_mount("attempt 3, format_if_mount_failed=true", true, &card);
-        formatted_by_mount = mounted;
+        format_flag_needed = mounted;
     }
     write_report_partition();
 
@@ -2162,18 +2188,14 @@ void app_main(void)
         for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
     }
 
-    if (formatted_by_mount) {
-        app_logf("KIT_FORMAT_METHOD: esp_vfs_fat_sdspi_mount(format_if_mount_failed=true) "
-                 "-- FatFS f_mkfs ran inside the mount\n");
-    } else {
-        esp_err_t ferr = esp_vfs_fat_sdcard_format("/sdcard", card);
-        app_logf("KIT_FORMAT_METHOD: esp_vfs_fat_sdcard_format (FatFS f_mkfs, FAT32) "
-                 "-> %s\n", ferr == ESP_OK ? "OK" : esp_err_to_name(ferr));
-        if (ferr != ESP_OK) {
-            app_logf("\nKIT_STOP: format failed; no write attempted.\n");
-            write_report_partition();
-            for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
-        }
+    esp_err_t ferr = esp_vfs_fat_sdcard_format("/sdcard", card);
+    app_logf("KIT_FORMAT_METHOD: esp_vfs_fat_sdcard_format (FatFS f_mkfs, FAT32) -> %s "
+             "(mount handle obtained with format_if_mount_failed=%d)\n",
+             ferr == ESP_OK ? "OK" : esp_err_to_name(ferr), (int)format_flag_needed);
+    if (ferr != ESP_OK) {
+        app_logf("\nKIT_STOP: format failed; no write attempted.\n");
+        write_report_partition();
+        for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
     }
 
     uint64_t total = 0, freeb = 0;
@@ -2202,18 +2224,30 @@ void app_main(void)
     int rrc = kit_pass("KIT_READBACK", false, buf, sha_r);
     write_report_partition();
 
-    kit_unmount(card);
+    esp_err_t urc = kit_unmount(card);
     vTaskDelay(pdMS_TO_TICKS(500));
 
     sdmmc_card_t *card2 = NULL;
-    bool remounted = kit_mount("remount after unmount, format_if_mount_failed=false",
-                               false, &card2);
+    bool remounted = false;
     int mrc = -1;
-    if (remounted) {
-        mrc = kit_pass("KIT_REMOUNT_READ", false, buf, sha_m);
-        kit_unmount(card2);
+    if (urc != ESP_OK) {
+        /* Without a successful unmount the "survived a remount" claim would be
+         * vacuous: the volume may still have been mounted throughout. */
+        app_logf("  KIT_REMOUNT_READ: skipped -- the unmount failed (%s), so a remount "
+                 "would not prove anything\n", esp_err_to_name(urc));
     } else {
-        app_logf("  KIT_REMOUNT_READ: mount failed -- cross-remount read not measured\n");
+        remounted = kit_mount("remount after unmount, format_if_mount_failed=false",
+                              false, &card2);
+        if (remounted) {
+            mrc = kit_pass("KIT_REMOUNT_READ", false, buf, sha_m);
+            esp_err_t urc2 = kit_unmount(card2);
+            if (urc2 != ESP_OK) {
+                app_logf("  KIT_REMOUNT_READ: second unmount failed (%s)\n",
+                         esp_err_to_name(urc2));
+            }
+        } else {
+            app_logf("  KIT_REMOUNT_READ: mount failed -- cross-remount read not measured\n");
+        }
     }
     heap_caps_free(buf);
     write_report_partition();
@@ -2222,10 +2256,10 @@ void app_main(void)
     app_logf("KIT_HASH_WRITTEN:   %s\n", sha_w);
     app_logf("KIT_HASH_READBACK:  %s\n", sha_r);
     app_logf("KIT_HASH_REMOUNT:   %s\n", sha_m);
-    app_logf("KIT_CHAIN: write=%s readback=%s remount=%s\n",
+    app_logf("KIT_CHAIN: write=%s readback=%s unmount=%s remount_read=%s\n",
              wrc == 0 ? "ok" : "FAIL", rrc == 0 ? "ok" : "FAIL",
-             mrc == 0 ? "ok" : "FAIL");
-    bool all = (wrc == 0 && rrc == 0 && mrc == 0 &&
+             urc == ESP_OK ? "ok" : "FAIL", mrc == 0 ? "ok" : "FAIL");
+    bool all = (wrc == 0 && rrc == 0 && mrc == 0 && urc == ESP_OK &&
                 strcmp(sha_w, sha_r) == 0 && strcmp(sha_w, sha_m) == 0);
     app_logf("KIT_VERDICT: %s\n",
              all ? "PASS -- format/mount/write/read-back complete, all three hashes match"

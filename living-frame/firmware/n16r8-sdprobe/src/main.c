@@ -163,6 +163,33 @@
 #define SD_KIT_FLOW 0
 #endif
 
+/* 0241 -- the NEW card's write path.  Same chain as 0240 (identity read ->
+ * 0239 pre-sacrifice -> one stock-driver init -> explicit format -> 128 KiB
+ * pattern -> read back -> unmount/remount -> read back again), with one
+ * difference: the gate AUTHORIZES any seated card except the two identities
+ * this bench must never touch.  The 1 GB kit card is refused because 0240
+ * already measured it, and the 512 GB SanDisk SR512 (Recalbox) is refused
+ * absolutely -- it is never scratch, under any reading of any task.
+ *
+ * Built as `-DSD_FOLD_ARM=1 -DSD_NEWCARD_TASK=1`.  The destructive path is
+ * still gated: DESTRUCTIVE only to a card that passes the authorization test.
+ *   PLATFORMIO_BUILD_FLAGS="-DSD_FOLD_ARM=1 -DSD_NEWCARD_TASK=1" pio run -e n16r8-sdprobe
+ */
+#ifdef SD_NEWCARD_TASK
+#if !SD_FOLD_TASK
+#error "SD_NEWCARD_TASK needs SD_FOLD_ARM=1 (it reuses the 0239 pre-sacrifice)"
+#endif
+#ifndef SD_KIT_FLOW
+#define SD_KIT_FLOW 1
+#endif
+#define SD_NEWCARD_POLICY 1
+#define TASK_NO "0241"
+#else
+#define SD_NEWCARD_POLICY 0
+#define TASK_NO "0240"
+#endif
+
+
 #define PIN_SCK   12
 #define PIN_MOSI  11
 #define PIN_MISO  13
@@ -1791,6 +1818,12 @@ static void fold_driver_log_levels(void)
 #if SD_KIT_FLOW
 
 #define KIT_PATH           "/sdcard/KITCARD.BIN"
+#if SD_NEWCARD_POLICY
+/* 0241: a distinct filename so nobody confuses the two cards' test files. */
+#undef  KIT_PATH
+#define KIT_PATH           "/sdcard/NEWCARD.BIN"
+#define KIT_NEVER_SCRATCH_BYTES (400ull * 1024ull * 1024ull * 1024ull)
+#endif
 #define KIT_FILE_BYTES     (128u * 1024u)     /* 32 chunks of 4 KiB, > the 64 KiB floor */
 #define KIT_CHUNK          4096u
 #define KIT_CAP_MIN_BYTES  (900ull * 1024ull * 1024ull)
@@ -1830,7 +1863,7 @@ static void kit_pattern(uint8_t *b, size_t n, uint32_t off)
  * card.  Returns true only when every gate test passes. */
 static bool kit_raw_identity(void)
 {
-    app_logf("\n=== 0240 STEP 1: SEATED-CARD IDENTITY (raw SPI, read-only) ===\n");
+    app_logf("\n=== " TASK_NO " STEP 1: SEATED-CARD IDENTITY (raw SPI, read-only) ===\n");
 
     spi_bus_config_t bus = {
         .mosi_io_num = PIN_MOSI,
@@ -1976,6 +2009,36 @@ static bool kit_raw_identity(void)
      * Pass requires: CID read, CID serial == the kit card's recorded serial,
      * CSD v1 (SDSC), byte addressing, and capacity in the 1 GB class.  The 512 GB
      * Recalbox card fails all four; an empty holder fails the READY test above. */
+#if SD_NEWCARD_POLICY
+    /* 0241 policy: AUTHORIZE the seated card, except the two it must never
+     * touch.  Refused, no exceptions:
+     *   - the 1 GB kit card (serial 0x000013a4) -- 0240 already measured it;
+     *   - anything at or above 400 GiB -- the never-scratch class that the
+     *     512 GB SanDisk SR512 (Recalbox) falls in, refused with margin rather
+     *     than by a single capacity equality that a relabelled card could miss.
+     * Anything else with a readable CID is the card Stephen seated for 0241. */
+    bool is_kit        = have_cid && psn == KIT_CARD_PSN;
+    bool never_scratch = have_csd && bytes >= KIT_NEVER_SCRATCH_BYTES;
+    bool gate          = have_cid && have_csd && !is_kit && !never_scratch;
+
+    app_logf("NEWCARD_GATE: %s (cid_read=%d is_kit_card_0x%08" PRIx32 "=%d "
+             "capacity=%llu MB never_scratch_ge_400GiB=%d)\n",
+             gate ? "AUTHORIZED -- not the kit card and not the 512 GB Recalbox card"
+                  : "STOP -- nothing will be formatted or written",
+             (int)have_cid, (uint32_t)KIT_CARD_PSN, (int)is_kit,
+             (unsigned long long)(bytes / (1024ull * 1024ull)),
+             (int)never_scratch);
+    if (is_kit) {
+        app_logf("NEWCARD_GATE: the seated card is the 1 GB KIT card -- 0240 "
+                 "already measured it; no format, no write.\n");
+    }
+    if (never_scratch) {
+        app_logf("NEWCARD_GATE: the seated card is in the NEVER-SCRATCH class "
+                 "(>= 400 GiB, i.e. the 512 GB Recalbox card); no format, no "
+                 "write, refused absolutely.\n");
+    }
+    return gate;
+#else
     bool cid_ok    = have_cid && psn == KIT_CARD_PSN;
     bool is_sdsc   = have_csd && structure == 0;
     bool byte_addr = !ccs;
@@ -1989,6 +2052,7 @@ static bool kit_raw_identity(void)
              (uint32_t)KIT_CARD_PSN, (int)cid_ok, (int)is_sdsc, (int)byte_addr,
              (int)cap_ok);
     return gate;
+#endif
 }
 
 /* Mount the card through the stock driver + FatFS.  Returns a live mount on
@@ -2129,10 +2193,17 @@ void app_main(void)
     esp_log_set_vprintf(report_vprintf);
     fold_driver_log_levels();
 
-    app_logf("\n\n########## 0240: KIT CARD FORMAT / WRITE / READ BACK ##########\n");
+    app_logf("\n\n########## " TASK_NO ": CARD FORMAT / WRITE / READ BACK ##########\n");
     app_logf("build: %s %s\n", __DATE__, __TIME__);
     app_logf("KIT_FILE: %s, %u bytes, chunk %u bytes, clock 400 kHz\n",
              KIT_PATH, (unsigned)KIT_FILE_BYTES, (unsigned)KIT_CHUNK);
+#if SD_NEWCARD_POLICY
+    app_logf("NEWCARD_POLICY: format authorized for any seated card with a readable "
+             "CID except the 1 GB kit card (serial 0x%08" PRIx32 ") and any card "
+             ">= %llu GiB (the 512 GB Recalbox card is never scratch)\n",
+             (uint32_t)KIT_CARD_PSN,
+             (unsigned long long)(KIT_NEVER_SCRATCH_BYTES / (1024ull * 1024ull * 1024ull)));
+#endif
 
     report_identity();
     write_report_partition();
@@ -2144,7 +2215,13 @@ void app_main(void)
     write_report_partition();
     if (!gate) {
         app_logf("\nKIT_STOP: identity gate failed -- no format, no write. "
+#if SD_NEWCARD_POLICY
+                 "This task authorizes a card that is neither the 1 GB kit card nor "
+                 "the 512 GB Recalbox card; the seated card is one of those (or could "
+                 "not be identified).\n");
+#else
                  "Wrong card or empty holder; this task authorizes the kit card only.\n");
+#endif
         write_report_partition();
         for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
     }
@@ -2249,7 +2326,7 @@ void app_main(void)
     heap_caps_free(buf);
     write_report_partition();
 
-    app_logf("\n=== 0240 RESULT ===\n");
+    app_logf("\n=== " TASK_NO " RESULT ===\n");
     app_logf("KIT_HASH_WRITTEN:   %s\n", sha_w);
     app_logf("KIT_HASH_READBACK:  %s\n", sha_r);
     app_logf("KIT_HASH_REMOUNT:   %s\n", sha_m);
@@ -2261,7 +2338,7 @@ void app_main(void)
     app_logf("KIT_VERDICT: %s\n",
              all ? "PASS -- format/mount/write/read-back complete, all three hashes match"
                  : "FAIL -- see the stage lines above");
-    app_logf("\n########## 0240 COMPLETE ##########\n");
+    app_logf("\n########## " TASK_NO " COMPLETE ##########\n");
     write_report_partition();
 
     for (;;) vTaskDelay(pdMS_TO_TICKS(5000));

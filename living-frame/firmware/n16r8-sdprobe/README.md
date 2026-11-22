@@ -381,7 +381,8 @@ arrives one byte late (`ff 00 00 00 01 aa`). The frame is **shifted**, not slow.
 
 `SD_FRAMING_VARIANT` (build-time, `PLATFORMIO_BUILD_FLAGS`) selects the variant;
 nothing else moves — clock 400 kHz, `SD_FIRSTPASS_DELAY_MS` stays 0, pull-ups as
-in 0236, card strictly read-only.
+in 0236, and no card write of any kind (raw init + reads only; the probe's FAT
+mount is the base probe's and is unchanged).
 
 | Variant | `-DSD_FRAMING_VARIANT=` | First pass | READY |
 | --- | --- | --- | --- |

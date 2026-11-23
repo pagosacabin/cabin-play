@@ -114,9 +114,23 @@
 #define CARD_PSN_KIT   0x000013a4u
 #define CARD_PSN_SR512 0xe4845e78u
 
-/* ---- report sink --------------------------------------------------------- */
+/* ---- report sink ---------------------------------------------------------
+ * The report partition is the log, but the panel streams from PSRAM through a
+ * bounce ISR, and a flash erase (64 KiB, tens of ms) stalls the cache that ISR
+ * reads PSRAM through -- the RGB FIFO underflows.  So the whole partition is
+ * erased ONCE at boot, before the panel starts, and every later persist is a
+ * single 4 KiB sector write with no erase (a few ms, inside the bounce
+ * budget).  Each persist is a record: magic, length, text.  The reader walks
+ * the sectors in order and prints the text of every valid record.
+ * ------------------------------------------------------------------------- */
+#define REPORT_SECTOR   4096
+#define REPORT_SECTORS  16
+#define REPORT_MAGIC    0x30323433u   /* "0243" */
+
 static char  g_report[60000];
 static size_t g_report_len;
+static const esp_partition_t *s_report_part;
+static int s_report_sector;
 
 static void app_logf(const char *fmt, ...)
 {
@@ -134,15 +148,56 @@ static void app_logf(const char *fmt, ...)
     }
 }
 
-static void write_report(void)
+/* Open the log.  The partition is erased only when it does not already hold
+ * 0243 records: an earlier boot's log (e.g. the stage run before this show run)
+ * is kept and this run appends after it.  Called before the panel starts, so an
+ * erase is safe here and only here. */
+static void report_open(void)
 {
-    const esp_partition_t *part = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t)0x40, "report");
-    if (part == NULL) return;
-    esp_partition_erase_range(part, 0, part->size);
-    uint32_t header[2] = { 0x30323433u, (uint32_t)g_report_len };  /* "0243" */
-    esp_partition_write(part, 0, header, sizeof(header));
-    esp_partition_write(part, sizeof(header), g_report, g_report_len);
+    s_report_part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+                                             (esp_partition_subtype_t)0x40, "report");
+    s_report_sector = 0;
+    if (s_report_part == NULL) return;
+
+    uint32_t hdr[2] = {0, 0};
+    if (esp_partition_read(s_report_part, 0, hdr, sizeof hdr) == ESP_OK &&
+        hdr[0] == REPORT_MAGIC && hdr[1] > 0 && hdr[1] <= REPORT_SECTOR - 8) {
+        while (s_report_sector < REPORT_SECTORS) {
+            size_t addr = (size_t)s_report_sector * REPORT_SECTOR;
+            if (esp_partition_read(s_report_part, addr, hdr, sizeof hdr) != ESP_OK) break;
+            if (hdr[0] != REPORT_MAGIC || hdr[1] == 0 || hdr[1] > REPORT_SECTOR - 8) break;
+            s_report_sector++;
+        }
+        app_logf("REPORT: continuing the existing log at sector %d\n", s_report_sector);
+        return;
+    }
+    esp_partition_erase_range(s_report_part, 0, s_report_part->size);
+}
+
+/* Persist everything logged since the last flush, in 4 KiB records.  No erase. */
+static void report_flush(void)
+{
+    if (s_report_part == NULL || g_report_len == 0) return;
+    size_t off = 0;
+    while (off < g_report_len && s_report_sector < REPORT_SECTORS) {
+        size_t chunk = g_report_len - off;
+        if (chunk > REPORT_SECTOR - 8) chunk = REPORT_SECTOR - 8;
+        uint32_t hdr[2] = { REPORT_MAGIC, (uint32_t)chunk };
+        size_t addr = (size_t)s_report_sector * REPORT_SECTOR;
+        if (esp_partition_write(s_report_part, addr, hdr, sizeof hdr) != ESP_OK ||
+            esp_partition_write(s_report_part, addr + sizeof hdr, g_report + off, chunk) != ESP_OK) {
+            return;   /* a failed persist must not take the display down */
+        }
+        s_report_sector++;
+        off += chunk;
+    }
+    if (off >= g_report_len) {
+        g_report_len = 0;
+    } else if (off > 0) {
+        memmove(g_report, g_report + off, g_report_len - off);
+        g_report_len -= off;
+    }
+    /* Out of sectors: keep logging in RAM; the earlier records still stand. */
 }
 
 /* ---- SHA-256 ------------------------------------------------------------
@@ -614,7 +669,7 @@ static bool frame_load(const frame_t *fr, uint8_t *dst, uint32_t *got, uint32_t 
     /* A short/zero first read off this card is a retryable I/O result, not a
      * verdict on the file: 0243's first run lost FRAME01.BIN to a 0-byte first
      * fread that a second open read fine.  One retry, logged, then decide. */
-    for (int attempt = 0; attempt < 2; attempt++) {
+    for (int attempt = 0; attempt < 3; attempt++) {
         if (attempt) {
             app_logf("  RETRY %s: first read returned %u B (errno %d)\n", fr->name,
                      (unsigned)total, ierr);
@@ -731,15 +786,16 @@ static bool stage_one(const esp_partition_t *part, int i, const char *name)
 
 static void stage_main(void)
 {
+    report_open();
     app_logf("\n########## 0243 STAGE: frames -> /sdcard/FRAMES ##########\n");
     app_logf("build: %s %s\n", __DATE__, __TIME__);
-    if (!sha_kat()) { write_report(); abort(); }
+    if (!sha_kat()) { report_flush(); abort(); }
 
     const esp_partition_t *part = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t)0x41, FRAMES_PART);
     if (part == NULL) {
         app_logf("FATAL: no '%s' data partition in the table\n", FRAMES_PART);
-        write_report();
+        report_flush();
         abort();
     }
     app_logf("frames partition: %s @ 0x%" PRIx32 ", %" PRIu32 " B (%d frames of %d B)\n",
@@ -750,37 +806,47 @@ static void stage_main(void)
     if (nframes > 10) nframes = 10;   /* the card holds the ten this task staged */
     if (nframes <= 0) {
         app_logf("FATAL: partition holds no whole frame\n");
-        write_report();
+        report_flush();
         abort();
     }
 
     uint8_t r1 = 0xFF;
     if (fold_presacrifice(&r1) != ESP_OK) {
         app_logf("PARKED: pre-sacrifice failed; not mounting, not writing\n");
-        write_report();
+        report_flush();
         abort();
     }
 
     sdmmc_card_t *card = NULL;
     if (!card_mount("stage", &card)) {
         app_logf("PARKED: mount failed; nothing written\n");
-        write_report();
+        report_flush();
         abort();
     }
 
     /* Identity gate: only 0241's card.  Every other card -- the 1 GB kit card,
      * the 512 GB Recalbox SR512, anything unknown -- stops the run here. */
     uint32_t psn = (uint32_t)card->cid.serial;
-    app_logf("CARD_ID: name=%.*s psn=0x%08" PRIx32 "\n", 8, card->cid.name, psn);
-    if (psn != CARD_PSN_SD32G) {
-        app_logf("GATE: REFUSED -- psn 0x%08" PRIx32 " is not 0241's SanDisk (0x%08" PRIx32
-                 "); kit=0x%08" PRIx32 " recalbox=0x%08" PRIx32 ". Nothing written.\n",
-                 psn, CARD_PSN_SD32G, CARD_PSN_KIT, CARD_PSN_SR512);
-        write_report();
+    uint64_t cap_mb = (uint64_t)card->csd.capacity * card->csd.sector_size / (1024 * 1024);
+    bool psn_ok  = (psn == CARD_PSN_SD32G);
+    bool name_ok = (memcmp(card->cid.name, "SD32G", 5) == 0);
+    bool cap_ok  = (cap_mb >= 28000 && cap_mb <= 34000);
+    bool is_kit  = (psn == CARD_PSN_KIT);
+    bool is_recalbox = (psn == CARD_PSN_SR512) || (cap_mb >= 400 * 1024);
+    app_logf("CARD_ID: name=%.*s psn=0x%08" PRIx32 " capacity=%llu MB\n",
+             8, card->cid.name, psn, (unsigned long long)cap_mb);
+    app_logf("GATE_TESTS: psn_0241=%d name_SD32G=%d capacity_28_34GB=%d is_kit=%d "
+             "is_recalbox=%d\n", (int)psn_ok, (int)name_ok, (int)cap_ok, (int)is_kit,
+             (int)is_recalbox);
+    if (!(psn_ok && name_ok && cap_ok) || is_kit || is_recalbox) {
+        app_logf("GATE: REFUSED -- not unambiguously 0241's SanDisk (expect psn 0x%08" PRIx32
+                 ", name SD32G, ~30436 MB). Nothing written.\n", CARD_PSN_SD32G);
+        report_flush();
         card_unmount(card);
         abort();
     }
-    app_logf("GATE: AUTHORIZED -- 0241's SanDisk; writing only %s/\n", FRAMES_DIR);
+    app_logf("GATE: AUTHORIZED -- 0241's SanDisk (psn + CID name + capacity agree); "
+             "writing only %s/\n", FRAMES_DIR);
 
     struct stat st;
     if (stat("/sdcard/NEWCARD.BIN", &st) == 0) {
@@ -793,7 +859,7 @@ static void stage_main(void)
     if (stat(FRAMES_DIR, &st) != 0) {
         if (mkdir(FRAMES_DIR, 0777) != 0) {
             app_logf("FATAL: mkdir %s failed (errno %d)\n", FRAMES_DIR, errno);
-            write_report();
+            report_flush();
             card_unmount(card);
             abort();
         }
@@ -821,10 +887,10 @@ static void stage_main(void)
     } else {
         app_logf("PRESENT_AFTER: /sdcard/NEWCARD.BIN MISSING (errno %d)\n", errno);
     }
-    write_report();
+    report_flush();
     card_unmount(card);
     app_logf("STAGE: done; board halted (this build does not display)\n");
-    write_report();
+    report_flush();
     for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
@@ -843,7 +909,7 @@ static void fb_alloc(void)
         s_fb[i] = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!s_fb[i]) {
             app_logf("FATAL: no PSRAM for framebuffer %d\n", i);
-            write_report();
+            report_flush();
             abort();
         }
     }
@@ -866,17 +932,18 @@ static void show_embedded(const char *why)
 
 static void slideshow_main(void)
 {
+    report_open();
     app_logf("\n########## 0243 SLIDESHOW ##########\n");
     app_logf("build      : %s %s\n", __DATE__, __TIME__);
     app_logf("mode       : %dx%d, 1 fb byte = 1 DAC byte = 1 pixel, %d s dwell\n",
              OUT_W, OUT_H, DWELL_MS / 1000);
     app_logf("fallback   : embedded %s raster (%s), converter tools/convert_photo64.py\n",
              PHOTO64_MODE, PHOTO64_SPACE);
-    if (!sha_kat()) { write_report(); abort(); }
+    if (!sha_kat()) { report_flush(); abort(); }
     if (sizeof(PHOTO64_IMAGE) != FB_BYTES) {
         app_logf("FATAL: embedded raster is %u B, framebuffer needs %d B\n",
                  (unsigned)sizeof(PHOTO64_IMAGE), FB_BYTES);
-        write_report();
+        report_flush();
         abort();
     }
 
@@ -921,11 +988,11 @@ static void slideshow_main(void)
     esp_err_t perr = panel_start(&panel);
     if (perr != ESP_OK) {
         app_logf("FATAL: panel start failed: %s\n", esp_err_to_name(perr));
-        write_report();
+        report_flush();
         abort();
     }
     app_logf("panel: streaming (no_fb, %d-line bounce buffers, %d B each)\n", BB_LINES, BB_PX);
-    write_report();
+    report_flush();
 
     int cur = (first >= 0) ? first : -1;
     int64_t t_start = esp_timer_get_time();
@@ -961,7 +1028,7 @@ static void slideshow_main(void)
 
         if (next < 0) {
             app_logf("LOOP_STALL: no loadable frame after %s; holding it\n", fr[cur].name);
-            write_report();
+            report_flush();
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
@@ -977,7 +1044,7 @@ static void slideshow_main(void)
          * and rewrites 60 kB of flash, which disables the cache the bounce
          * ISR depends on.  Persist once per full loop (and on the wrap) so the
          * screen is not disturbed on every step. */
-        if (seq == nfr + 1 || seq % nfr == 0) write_report();
+        if (seq == nfr + 1 || seq % nfr == 0) report_flush();
     }
 }
 

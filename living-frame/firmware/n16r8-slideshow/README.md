@@ -80,15 +80,25 @@ logs/                      the bench runs quoted in the 0243 reply
   partition tool will run.**  A 9 MB table was rejected with "does not fit in
   configured flash size 8MB" until `board_upload.flash_size = 16MB` was set next
   to `board_build.flash_size`.
-* **A report write during scanout is not free.**  Erasing/writing the report
-  partition disables the cache the bounce-buffer ISR reads PSRAM through, so the
-  log is kept in RAM and persisted once per full loop (and on the wrap), not on
-  every step.
+* **A report write during scanout is not free.**  A flash erase (64 KiB, tens
+  of ms) disables the cache the bounce-buffer ISR reads PSRAM through and the
+  RGB FIFO underflows.  The partition is therefore erased **once at boot, before
+  the panel starts**, and every later persist is a single already-erased 4 KiB
+  sector write (`magic, len, text`) — a few ms, inside the bounce budget.  The
+  reader walks the sectors in order; a later boot appends after the previous
+  run's records instead of erasing them, which is why one dump shows the stage
+  run and the slideshow run one after the other.
 * **The SHA-256 is computed in software** (carried over from 0241, whose mbedtls
   digest came back with its first 8 bytes zeroed inside the card-I/O path).  Its
   known-answer test caught this project's own arithmetic: a 480,000-byte
   zero-fill hashes to 117 whole 4 KiB blocks plus a remainder, and the first KAT
   silently hashed only 479,232 B.  The KAT now uses 1 MiB of zeros.
+* **The card gate wants more than a serial number.**  The stage build refuses
+  to write unless the seated card's CID serial, CID name (`SD32G`) **and**
+  capacity (28-34 GB) all match 0241's SanDisk, and it refuses the 1 GB kit card
+  and the 512 GB Recalbox SR512 explicitly.  A relabelled card that duplicated
+  all three would still pass: the write is limited to `/sdcard/FRAMES/`, and
+  nothing here formats or repartitions.
 * **The FT232R console on this bench delivers nothing** (0225).  Every claim in
   the reply comes from the `report` partition, read back with esptool — which
   also resets the board, so a report is only read when the run it describes is

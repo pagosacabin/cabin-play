@@ -1,30 +1,41 @@
-report from task 0243 (2623 B):
+report from task 0243, stage run (2 records):
 
 ########## 0243 STAGE: frames -> /sdcard/FRAMES ##########
-build: Nov 22 2026 21:33:29
+build: Nov 22 2026 22:00:37
 SHA_KAT: abc ok; 1 MiB of zeros ok
 frames partition: frames @ 0x400000, 5242880 B (10 frames of 480000 B)
 
 --- 0239 PRE-SACRIFICE (raw bus, before the driver) ---
-  SACRIFICE: R1=0x47 (discarded); bus released
+  SACRIFICE: R1=0x44 (discarded); bus released
 
 --- SD MOUNT [stage] ---
   MOUNT_OK[stage]: card=SD32G psn=0xc6bd0f92 speed=400 kHz size=30436 MB
-CARD_ID: name=SD32G psn=0xc6bd0f92
-GATE: AUTHORIZED -- 0241's SanDisk; writing only /sdcard/FRAMES/
+CARD_ID: name=SD32G psn=0xc6bd0f92 capacity=30436 MB
+GATE_TESTS: psn_0241=1 name_SD32G=1 capacity_28_34GB=1 is_kit=0 is_recalbox=0
+GATE: AUTHORIZED -- 0241's SanDisk (psn + CID name + capacity agree); writing only /sdcard/FRAMES/
 PRESENT: /sdcard/NEWCARD.BIN 131072 B (0241 evidence, left untouched)
-MKDIR /sdcard/FRAMES: created
-STAGE FRAME01.BIN: wrote 480000 B in 10568 ms, read back 480000 B in 11194 ms, sha 93d22833a3956ac27386fe0f1905e039dae88ade29d97844d402ae663977d9a0 MATCH
-STAGE FRAME02.BIN: wrote 480000 B in 10554 ms, read back 480000 B in 11194 ms, sha fd4610b11aee3c422203f0a6fcd0effae54be26a2e28de6cccfa08a135d4f8c7 MATCH
-STAGE FRAME03.BIN: wrote 480000 B in 10562 ms, read back 480000 B in 11194 ms, sha 0b14db9555fce6862dacbbdb90e62473f8b4d034d90a926f15abc13e7385a0ea MATCH
-STAGE FRAME04.BIN: wrote 480000 B in 10552 ms, read back 480000 B in 11194 ms, sha 844b4348f9bbff5cd5407fe0f66dcb2029ce3d5a51a02bc261242f72a8bf5b7f MATCH
-STAGE FRAME05.BIN: wrote 480000 B in 10551 ms, read back 480000 B in 11194 ms, sha 4d3fb365714b3ea623e1e3e05800f3c9a50b6847e9065ed1454cdad05661bf07 MATCH
-STAGE FRAME06.BIN: wrote 480000 B in 10558 ms, read back 480000 B in 11194 ms, sha 88b066e9a16772d700a8a44cdf8cd8b82bb542e6e40fb1a8d8f859098e7255b0 MATCH
-STAGE FRAME07.BIN: wrote 480000 B in 10554 ms, read back 480000 B in 11194 ms, sha f139036854e2e4009cfff550287926a908b3efbdf002fc2ef32f2aa5633911e2 MATCH
-STAGE FRAME08.BIN: wrote 480000 B in 10554 ms, read back 480000 B in 11194 ms, sha 2c9b7a0dc7894132dcf78770dfe830243ede126887217337b92aa0817624f381 MATCH
-STAGE FRAME09.BIN: wrote 480000 B in 10559 ms, read back 480000 B in 11194 ms, sha 88cb7fc21526b8cf9ac55a72053a66fa5cc0cfb60f91bd02a3d79e56e3c953c1 MATCH
-STAGE FRAME10.BIN: wrote 480000 B in 10574 ms, read back 480000 B in 11194 ms, sha f368f81543b197b2cf126192fd7370fdae8b8bd29b912ddf1bf9561d9df79be4 MATCH
-STAGE_SUMMARY: 10/10 files written and verified in 217.8 s
+MKDIR /sdcard/FRAMES: already present
+STAGE FRAME01.BIN: wrote 480000 B in 10589 ms, read back 480000 B in 11194 ms, sha 93d22833a3956ac27386fe0f1905e039dae88ade29d97844d402ae663977d9a0 MATCH
+STAGE FRAME02.BIN: wrote 480000 B in 10539 ms, read back 480000 B in 11194 ms, sha fd4610b11aee3c422203f0a6fcd0effae54be26a2e28de6cccfa08a135d4f8c7 MATCH
+STAGE FRAME03.BIN: wrote 480000 B in 10547 ms, read back 480000 B in 11194 ms, sha 0b14db9555fce6862dacbbdb90e62473f8b4d034d90a926f15abc13e7385a0ea MATCH
+STAGE FRAME04.BIN: wrote 480000 B in 10545 ms, read back 480000 B in 11203 ms, sha 844b4348f9bbff5cd5407fe0f66dcb2029ce3d5a51a02bc261242f72a8bf5b7f MATCH
+STAGE FRAME05.BIN: wrote 480000 B in 10541 ms, read back 480000 B in 11194 ms, sha 4d3fb365714b3ea623e1e3e05800f3c9a50b6847e9065ed1454cdad05661bf07 MATCH
+STAGE FRAME06.BIN: wrote 480000 B in 10540 ms, read back 480000 B in 11194 ms, sha 88b066e9a16772d700a8a44cdf8cd8b82bb542e6e40fb1a8d8f859098e7255b0 MATCH
+STAGE FRAME07.BIN: wrote 480000 B in 10542 ms, read back 480000 B in 11194 ms, sha f139036854e2e4009cfff550287926a908b3efbdf002fc2ef32f2aa5633911e2 MATCH
+STAGE FRAME08.BIN: wrote 480000 B in 10574 ms, read back 480000 B in 11196 ms, sha 2c9b7a0dc7894132dcf78770dfe830243ede126887217337b92aa0817624f381 MATCH
+STAGE FRAME09.BIN: wrote 480000 B in 10540 ms, read back 480000 B in 11194 ms, sha 88cb7fc21526b8cf9ac55a72053a66fa5cc0cfb60f91bd02a3d79e56e3c953c1 MATCH
+STAGE FRAME10.BIN: wrote 480000 B in 10539 ms, read back 480000 B in 11194 ms, sha f368f81543b197b2cf126192fd7370fdae8b8bd29b912ddf1bf9561d9df79be4 MATCH
+STAGE_SUMMARY: 10/10 files written and verified in 218.3 s
+  FILE FRAME01.BIN 480000 B
+  FILE FRAME02.BIN 480000 B
+  FILE FRAME03.BIN 480000 B
+  FILE FRAME04.BIN 480000 B
+  FILE FRAME05.BIN 480000 B
+  FILE FRAME06.BIN 480000 B
+  FILE FRAME07.BIN 480000 B
+  FILE FRAME08.BIN 480000 B
+  FILE FRAME09.BIN 480000 B
+  FILE FRAME10.BIN 480000 B
   SCAN: 10 frame file(s) in /sdcard/FRAMES
   DIR FRAME01.BIN 480000 B
   DIR FRAME02.BIN 480000 B

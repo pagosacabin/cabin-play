@@ -399,7 +399,18 @@ static int report_vprintf(const char *fmt, va_list ap)
     int n = vsnprintf(line, sizeof(line), fmt, ap);
     if (n > 0) {
         size_t len = (size_t)n < sizeof(line) ? (size_t)n : sizeof(line) - 1;
-        if (g_report_len + len < sizeof(g_report)) {
+        bool to_report = true;
+#if SD_NEWCARD_POLICY
+        /* 0241: the report partition is 64 KiB and the driver emits hundreds of
+         * DEBUG/VERBOSE lines per mount at 400 kHz, which filled the 60 kB
+         * buffer before the format even started -- every later line (the format
+         * result, all three read-back hashes and the verdict) was silently
+         * dropped.  Keep only INFO and above in the report; the D/V lines still
+         * go to the UART.  esp_log's default format puts the level letter and a
+         * space first. */
+        if ((line[0] == 'D' || line[0] == 'V') && line[1] == ' ') to_report = false;
+#endif
+        if (to_report && g_report_len + len < sizeof(g_report)) {
             memcpy(g_report + g_report_len, line, len);
             g_report_len += len;
         }
@@ -1830,6 +1841,9 @@ static void fold_driver_log_levels(void)
 #undef  KIT_PATH
 #define KIT_PATH           "/sdcard/NEWCARD.BIN"
 #define KIT_NEVER_SCRATCH_BYTES (400ull * 1024ull * 1024ull * 1024ull)
+/* Host-computed value from bench/kitcard0240/expected_pattern.py; the task
+ * states the same constant. */
+#define KIT_EXPECT_SHA "9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd"
 #endif
 #define KIT_FILE_BYTES     (128u * 1024u)     /* 32 chunks of 4 KiB, > the 64 KiB floor */
 #define KIT_CHUNK          4096u
@@ -1859,6 +1873,40 @@ static void kit_quiet_driver(void)
     esp_log_level_set("sdmmc_init", ESP_LOG_WARN);
     esp_log_level_set("sdmmc_io", ESP_LOG_WARN);
 }
+
+#if SD_NEWCARD_POLICY
+/* ---- 0241 stage timing + heartbeat ---------------------------------------
+ * f_mkfs on a 30 GB card writes thousands of FAT sectors in one blocking call
+ * and the report buffer only reaches flash at a flush, so a stalled format and
+ * a slow one look identical from the host.  Record the elapsed time of every
+ * stage, and flush a heartbeat line from a second task while the format runs,
+ * so a later report read-back says which of the two it was. */
+static volatile const char *g_nc_stage = "boot";
+static volatile uint32_t    g_nc_stage_ms;
+static volatile bool        g_nc_hb_stop;
+
+static uint32_t nc_up_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+
+static void nc_set_stage(const char *s)
+{
+    g_nc_stage = s;
+    g_nc_stage_ms = nc_up_ms();
+}
+
+static void nc_heartbeat_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(20000));
+        if (g_nc_hb_stop) break;
+        app_logf("HEARTBEAT: up=%" PRIu32 "s stage=%s elapsed=%" PRIu32 "s\n",
+                 nc_up_ms() / 1000, (const char *)g_nc_stage,
+                 (nc_up_ms() - (uint32_t)g_nc_stage_ms) / 1000);
+        write_report_partition();
+    }
+    vTaskDelete(NULL);
+}
+#endif
 
 /* Deterministic payload: byte i = ((i*31) + ((i>>9)*7) + ((i>>17)*131)) ^ 0xA5,
  * all in uint32 arithmetic.  The host tool recomputes the same bytes, so the
@@ -2157,7 +2205,7 @@ static bool kit_raw_identity(void)
              RECALBOX_CARD_PSN, (int)is_recalbox_psn,
              (unsigned long long)(bytes / (1024ull * 1024ull)),
              (unsigned long long)(KIT_NEVER_SCRATCH_BYTES / (1ull << 30)),
-             structure);
+             (int)never_scratch, structure);
     if (is_kit) {
         app_logf("NEWCARD_GATE: the seated card is the 1 GB KIT card -- 0240 "
                  "already measured it; no format, no write.\n");
@@ -2222,7 +2270,19 @@ static bool kit_mount(const char *tag, bool format_if_failed, sdmmc_card_t **out
     esp_vfs_fat_mount_config_t mcfg = {
         .format_if_mount_failed = format_if_failed,
         .max_files = 4,
+#if SD_NEWCARD_POLICY
+        /* 0241: f_mkfs clears the ENTIRE FAT area, so the FAT size sets the
+         * format's cost.  At 4 KiB clusters a 32 GB card needs ~62 MB of FAT
+         * (~122k sectors); at the 64 KiB maximum (512 B x 128 sectors, the
+         * IDF ceiling) it needs ~3.8 MB (~7.6k sectors).  Measured on this
+         * bench at 400 kHz: 0.41 s/sector with the driver's VERBOSE log on,
+         * so this is the difference between ~14 h and ~10 min.  Cluster size
+         * is the only knob touched -- clock, CS handling, pull-ups and the
+         * zero delay are unchanged. */
+        .allocation_unit_size = 64 * 1024,
+#else
         .allocation_unit_size = 0,
+#endif
     };
     sdmmc_card_t *card = NULL;
     err = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot, &mcfg, &card);
@@ -2260,17 +2320,124 @@ static void kit_sha_hex(const uint8_t *d, char *out /* 65 */)
 
 /* One pass over the file: write it (mode "wb") or read it (mode "rb"),
  * hashing what crosses the API.  Returns 0 on success, -1 on the first error. */
+#if SD_NEWCARD_POLICY
+/* Byte-exact read-back accounting, filled in by kit_pass on read passes. */
+static uint32_t s_cmp_ok, s_cmp_bad, s_cmp_first;
+
+/* ---------------------------------------------------------------------------
+ * 0241: self-contained SHA-256.
+ *
+ * mbedtls' digest came back with its first 8 bytes zeroed whenever it was
+ * computed in this function's card-I/O path -- reproducibly, on all three
+ * passes, with the remaining 24 bytes exactly right, and with both in-firmware
+ * known-answer tests (3-byte and 128 KiB chunked) passing in the same boot.
+ * Since the digest is the deliverable's evidence, it is computed here instead,
+ * and checked against the same two known answers at boot before it is trusted.
+ * ------------------------------------------------------------------------- */
+typedef struct {
+    uint32_t h[8];
+    uint64_t total;
+    uint8_t  blk[64];
+    size_t   fill;
+} sw_sha256_t;
+
+static const uint32_t S256_K[64] = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+    0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+    0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+    0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+    0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+    0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+};
+
+static uint32_t s256_rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+
+static void s256_block(sw_sha256_t *s, const uint8_t *p)
+{
+    uint32_t w[64];
+    for (int i = 0; i < 16; i++) {
+        w[i] = ((uint32_t)p[i * 4] << 24) | ((uint32_t)p[i * 4 + 1] << 16) |
+               ((uint32_t)p[i * 4 + 2] << 8) | (uint32_t)p[i * 4 + 3];
+    }
+    for (int i = 16; i < 64; i++) {
+        uint32_t s0 = s256_rotr(w[i - 15], 7) ^ s256_rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+        uint32_t s1 = s256_rotr(w[i - 2], 17) ^ s256_rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    uint32_t a = s->h[0], b = s->h[1], c = s->h[2], d = s->h[3];
+    uint32_t e = s->h[4], f = s->h[5], g = s->h[6], hh = s->h[7];
+    for (int i = 0; i < 64; i++) {
+        uint32_t S1 = s256_rotr(e, 6) ^ s256_rotr(e, 11) ^ s256_rotr(e, 25);
+        uint32_t ch = (e & f) ^ ((~e) & g);
+        uint32_t t1 = hh + S1 + ch + S256_K[i] + w[i];
+        uint32_t S0 = s256_rotr(a, 2) ^ s256_rotr(a, 13) ^ s256_rotr(a, 22);
+        uint32_t mj = (a & b) ^ (a & c) ^ (b & c);
+        uint32_t t2 = S0 + mj;
+        hh = g; g = f; f = e; e = d + t1;
+        d = c; c = b; b = a; a = t1 + t2;
+    }
+    s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d;
+    s->h[4] += e; s->h[5] += f; s->h[6] += g; s->h[7] += hh;
+}
+
+static void s256_init(sw_sha256_t *s)
+{
+    s->h[0] = 0x6a09e667; s->h[1] = 0xbb67ae85; s->h[2] = 0x3c6ef372; s->h[3] = 0xa54ff53a;
+    s->h[4] = 0x510e527f; s->h[5] = 0x9b05688c; s->h[6] = 0x1f83d9ab; s->h[7] = 0x5be0cd19;
+    s->total = 0; s->fill = 0;
+}
+
+static void s256_update(sw_sha256_t *s, const uint8_t *p, size_t n)
+{
+    s->total += n;
+    while (n--) {
+        s->blk[s->fill++] = *p++;
+        if (s->fill == 64) { s256_block(s, s->blk); s->fill = 0; }
+    }
+}
+
+static void s256_final(sw_sha256_t *s, uint8_t out[32])
+{
+    uint64_t bits = s->total * 8ull;
+    uint8_t pad = 0x80;
+    s256_update(s, &pad, 1);
+    uint8_t z = 0;
+    while (s->fill != 56) s256_update(s, &z, 1);
+    uint8_t len[8];
+    for (int i = 0; i < 8; i++) len[i] = (uint8_t)(bits >> (56 - 8 * i));
+    s256_update(s, len, 8);
+    for (int i = 0; i < 8; i++) {
+        out[i * 4]     = (uint8_t)(s->h[i] >> 24);
+        out[i * 4 + 1] = (uint8_t)(s->h[i] >> 16);
+        out[i * 4 + 2] = (uint8_t)(s->h[i] >> 8);
+        out[i * 4 + 3] = (uint8_t)(s->h[i]);
+    }
+}
+#endif
 static int kit_pass(const char *tag, bool write, uint8_t *buf, char *hex_out)
 {
+#if SD_NEWCARD_POLICY
+    if (!write) { s_cmp_ok = 0; s_cmp_bad = 0; s_cmp_first = 0xFFFFFFFFu; }
+#endif
     FILE *f = fopen(KIT_PATH, write ? "wb" : "rb");
     if (!f) {
         app_logf("  %s_OPEN: FAILED (errno %d)\n", tag, errno);
         return -1;
     }
 
+#if SD_NEWCARD_POLICY
+    sw_sha256_t ctx;
+    s256_init(&ctx);
+#else
     mbedtls_sha256_context ctx;
     mbedtls_sha256_init(&ctx);
     mbedtls_sha256_starts(&ctx, 0);
+#endif
 
     uint32_t done = 0;
     int rc = 0;
@@ -2291,7 +2458,28 @@ static int kit_pass(const char *tag, bool write, uint8_t *buf, char *hex_out)
             rc = -1;
             break;
         }
+#if SD_NEWCARD_POLICY
+        /* Independent of SHA-256 (whose digest came back damaged in the first
+         * runs): a byte-exact comparison of the read-back against the same
+         * deterministic pattern the write pass generated. */
+        if (!write && rc == 0) {
+            static uint8_t cmp[KIT_CHUNK];
+            kit_pattern(cmp, want, done);
+            for (uint32_t k = 0; k < want; k++) {
+                if (buf[k] != cmp[k]) {
+                    if (s_cmp_bad == 0) s_cmp_first = done + k;
+                    s_cmp_bad++;
+                } else {
+                    s_cmp_ok++;
+                }
+            }
+        }
+#endif
+#if SD_NEWCARD_POLICY
+        s256_update(&ctx, buf, want);
+#else
         mbedtls_sha256_update(&ctx, buf, want);
+#endif
         done += want;
     }
 
@@ -2302,9 +2490,34 @@ static int kit_pass(const char *tag, bool write, uint8_t *buf, char *hex_out)
     if (fclose(f) != 0) { app_logf("  %s_CLOSE: FAILED (errno %d)\n", tag, errno); rc = -1; }
 
     uint8_t digest[32];
+#if SD_NEWCARD_POLICY
+    s256_final(&ctx, digest);
+#else
     mbedtls_sha256_finish(&ctx, digest);
     mbedtls_sha256_free(&ctx);
+#endif
     kit_sha_hex(digest, hex_out);
+#if SD_NEWCARD_POLICY
+    /* The first full run printed 16 leading zeros in all three hashes while the
+     * trailing 48 characters matched the host value exactly, so the report must
+     * carry the digest as words as well as as a string: that distinguishes a
+     * compute fault from a formatting one without another guess. */
+    {
+        uint32_t w[8];
+        memcpy(w, digest, sizeof w);
+        app_logf("  %s_DIGEST_WORDS: %08" PRIx32 " %08" PRIx32 " %08" PRIx32 " "
+                 "%08" PRIx32 " %08" PRIx32 " %08" PRIx32 " %08" PRIx32 " %08" PRIx32 "\n",
+                 tag, w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]);
+        app_logf("  %s_VS_EXPECTED: %s\n", tag,
+                 strcmp(hex_out, KIT_EXPECT_SHA) == 0 ? "MATCH" : "MISMATCH");
+        if (!write) {
+            app_logf("  %s_BYTES: %" PRIu32 " of %u matched, %" PRIu32 " mismatched, "
+                     "first mismatch offset %d (-1 = none)\n", tag, s_cmp_ok,
+                     (unsigned)KIT_FILE_BYTES, s_cmp_bad,
+                     s_cmp_bad ? (int)s_cmp_first : -1);
+        }
+    }
+#endif
 
     struct stat st;
     if (stat(KIT_PATH, &st) == 0) {
@@ -2342,6 +2555,92 @@ void app_main(void)
 #endif
 
     report_identity();
+#if SD_NEWCARD_POLICY
+    /* Known-answer self-test of the hash path BEFORE any card work.  The first
+     * run rendered the first 8 digest bytes as zeros with the remaining 24
+     * bytes exactly right, so the report must show whether the digest or its
+     * hex formatting is at fault, in the same build that quotes the hashes. */
+    {
+        static const char kexp[] =
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        uint8_t kd[32];
+        mbedtls_sha256_context k;
+        mbedtls_sha256_init(&k);
+        mbedtls_sha256_starts(&k, 0);
+        mbedtls_sha256_update(&k, (const uint8_t *)"abc", 3);
+        mbedtls_sha256_finish(&k, kd);
+        mbedtls_sha256_free(&k);
+        char khex[65];
+        kit_sha_hex(kd, khex);
+        app_logf("SHA_KAT: sha256(\"abc\") = %s\nSHA_KAT_EXPECT:              %s\n"
+                 "SHA_KAT: %s\n", khex, kexp,
+                 strcmp(khex, kexp) == 0 ? "MATCH -- hash path is sound"
+                                         : "MISMATCH -- hash path is NOT sound");
+
+        /* Second KAT: the exact 128 KiB / 4 KiB-chunk path kit_pass uses, so a
+         * length- or buffer-dependent defect cannot hide behind the short one. */
+        uint8_t *kb = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!kb) kb = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_8BIT);
+        if (kb) {
+            mbedtls_sha256_context k2;
+            mbedtls_sha256_init(&k2);
+            mbedtls_sha256_starts(&k2, 0);
+            for (uint32_t off = 0; off < KIT_FILE_BYTES; off += KIT_CHUNK) {
+                uint32_t want = KIT_FILE_BYTES - off;
+                if (want > KIT_CHUNK) want = KIT_CHUNK;
+                kit_pattern(kb, want, off);
+                mbedtls_sha256_update(&k2, kb, want);
+            }
+            uint8_t d2[32];
+            mbedtls_sha256_finish(&k2, d2);
+            mbedtls_sha256_free(&k2);
+            char h2[65];
+            kit_sha_hex(d2, h2);
+            app_logf("SHA_KAT2: pattern(128 KiB, 4 KiB chunks) = %s\n"
+                     "SHA_KAT2_EXPECT:                            "
+                     "9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd\n"
+                     "SHA_KAT2: %s\n", h2,
+                     strcmp(h2, "9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd") == 0
+                         ? "MATCH -- chunked path is sound" : "MISMATCH");
+            heap_caps_free(kb);
+        } else {
+            app_logf("SHA_KAT2: skipped (no buffer)\n");
+        }
+
+        /* The software SHA-256 that the file passes actually use: same two
+         * known answers, so it is verified in this boot before it is trusted. */
+        {
+            sw_sha256_t s1;
+            uint8_t d3[32];
+            char h3[65];
+            s256_init(&s1);
+            s256_update(&s1, (const uint8_t *)"abc", 3);
+            s256_final(&s1, d3);
+            kit_sha_hex(d3, h3);
+            app_logf("SW_SHA_KAT:  sha256(\"abc\") = %s -> %s\n", h3,
+                     strcmp(h3, kexp) == 0 ? "MATCH" : "MISMATCH");
+
+            sw_sha256_t s2;
+            uint8_t *kb2 = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+            if (kb2) {
+                s256_init(&s2);
+                for (uint32_t off = 0; off < KIT_FILE_BYTES; off += KIT_CHUNK) {
+                    uint32_t want = KIT_FILE_BYTES - off;
+                    if (want > KIT_CHUNK) want = KIT_CHUNK;
+                    kit_pattern(kb2, want, off);
+                    s256_update(&s2, kb2, want);
+                }
+                uint8_t d4[32];
+                char h4[65];
+                s256_final(&s2, d4);
+                kit_sha_hex(d4, h4);
+                app_logf("SW_SHA_KAT2: pattern(128 KiB) = %s -> %s\n", h4,
+                         strcmp(h4, KIT_EXPECT_SHA) == 0 ? "MATCH" : "MISMATCH");
+                heap_caps_free(kb2);
+            }
+        }
+    }
+#endif
     write_report_partition();
 
     vTaskDelay(pdMS_TO_TICKS(250));
@@ -2398,7 +2697,58 @@ void app_main(void)
         for (;;) vTaskDelay(pdMS_TO_TICKS(5000));
     }
 
+#if SD_NEWCARD_POLICY
+    /* Quiet the per-transaction log BEFORE the format: at 115200 baud the
+     * driver's VERBOSE lines cost ~0.41 s per sector and f_mkfs writes
+     * thousands of them.  The stage results below are appended to the report
+     * either way. */
+    kit_quiet_driver();
+
+    /* Raw sector throughput on THIS card, THIS boot.  The format's cost is
+     * thousands of such sectors, so this is the measurement that says whether
+     * the format can finish in one session at 400 kHz.  LBA 0x2000 lies inside
+     * the volume that is about to be reformatted, so the write is not a loss. */
+    {
+        uint8_t *sb = heap_caps_malloc(4096, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (sb) {
+            uint32_t ok = 0, t0 = nc_up_ms();
+            for (int i = 0; i < 8; i++) {
+                memset(sb, (int)(0x5a ^ i), 4096);
+                if (sdmmc_write_sectors(card, sb, 0x2000 + (size_t)i * 8, 8) == ESP_OK) ok++;
+            }
+            uint32_t t1 = nc_up_ms();
+            uint32_t rok = 0, t2 = nc_up_ms();
+            for (int i = 0; i < 2; i++) {
+                if (sdmmc_read_sectors(card, sb, 0x2000 + (size_t)i * 8, 8) == ESP_OK) rok++;
+            }
+            uint32_t t3 = nc_up_ms();
+            app_logf("KIT_RAW_RATE: write %u/8 x 4096 B in %" PRIu32 " ms = %" PRIu32 " B/s; "
+                     "read %u/2 x 4096 B in %" PRIu32 " ms = %" PRIu32 " B/s\n",
+                     (unsigned)ok, t1 - t0,
+                     (t1 > t0) ? (ok * 4096u * 1000u / (t1 - t0)) : 0u,
+                     (unsigned)rok, t3 - t2,
+                     (t3 > t2) ? (rok * 4096u * 1000u / (t3 - t2)) : 0u);
+            heap_caps_free(sb);
+        } else {
+            app_logf("KIT_RAW_RATE: no 4 KiB internal buffer available\n");
+        }
+        write_report_partition();
+    }
+
+    app_logf("KIT_FORMAT_START: f_mkfs clearing the FAT area (allocation unit 64 KiB); "
+             "this is the long step on this bench\n");
+    write_report_partition();
+    nc_set_stage("FORMAT");
+    xTaskCreate(nc_heartbeat_task, "nc_hb", 3072, NULL, 3, NULL);
+    uint32_t fmt_t0 = nc_up_ms();
+#endif
     esp_err_t ferr = esp_vfs_fat_sdcard_format("/sdcard", card);
+#if SD_NEWCARD_POLICY
+    uint32_t fmt_ms = nc_up_ms() - fmt_t0;
+    g_nc_hb_stop = true;
+    nc_set_stage("FORMAT_DONE");
+    app_logf("KIT_FORMAT_ELAPSED: %" PRIu32 " ms\n", fmt_ms);
+#endif
     app_logf("KIT_FORMAT_METHOD: esp_vfs_fat_sdcard_format (FatFS f_mkfs, FAT32) -> %s "
              "(mount handle obtained with format_if_mount_failed=%d)\n",
              ferr == ESP_OK ? "OK" : esp_err_to_name(ferr), (int)format_flag_needed);
@@ -2420,6 +2770,16 @@ void app_main(void)
     /* ---- step 4: write, read back in place, unmount, remount, read again. */
     kit_quiet_driver();
     uint8_t *buf = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#if SD_NEWCARD_POLICY
+    /* 0241: prefer INTERNAL RAM for the hash buffer.  With a PSRAM buffer the
+     * SHA-256 digest came back with its first 8 bytes zeroed on all three
+     * passes (digest words 0x00000000 0x00000000 a8ad981c ...), while the same
+     * chunked hash over a PSRAM buffer computed before any SPI DMA ran was
+     * correct -- i.e. the digest, not the data, was damaged.  4 KiB of internal
+     * RAM removes the PSRAM/DMA interaction from the measurement. */
+    if (buf) { heap_caps_free(buf); buf = NULL; }
+    buf = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#endif
     if (!buf) buf = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_8BIT);
     if (!buf) {
         app_logf("KIT_STOP: no %u-byte buffer available\n", (unsigned)KIT_CHUNK);
@@ -2428,10 +2788,16 @@ void app_main(void)
     }
 
     char sha_w[65] = {0}, sha_r[65] = {0}, sha_m[65] = {0};
+    nc_set_stage("WRITE");
+    uint32_t pass_t0 = nc_up_ms();
     int wrc = kit_pass("KIT_WRITE", true, buf, sha_w);
+    app_logf("KIT_WRITE_ELAPSED: %" PRIu32 " ms\n", nc_up_ms() - pass_t0);
     write_report_partition();
 
+    nc_set_stage("READBACK");
+    pass_t0 = nc_up_ms();
     int rrc = kit_pass("KIT_READBACK", false, buf, sha_r);
+    app_logf("KIT_READBACK_ELAPSED: %" PRIu32 " ms\n", nc_up_ms() - pass_t0);
     write_report_partition();
 
     esp_err_t urc = kit_unmount(card);

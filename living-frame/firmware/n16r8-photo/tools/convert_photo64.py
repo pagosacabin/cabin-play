@@ -146,10 +146,16 @@ def main():
     sha = hashlib.sha256(data).hexdigest()
 
     # previews
+    # A DAC level is v/3 of full-scale *voltage*, and the monitor applies its own
+    # gamma to that voltage, so level v reaches the eye as code (v/3)^(1/2.2) --
+    # [0, 155, 212, 255], not [0, 85, 170, 255].  Rendering previews with the
+    # linear byte values made every preview darker and redder than the panel.
+    disp = np.array([0, 255 * (1 / 3) ** (1 / GAMMA),
+                     255 * (2 / 3) ** (1 / GAMMA), 255], dtype=np.uint8)
     rgb = np.zeros((LH, LW, 3), dtype=np.uint8)
-    rgb[:, :, 0] = (raster & 3) * 85
-    rgb[:, :, 1] = ((raster >> 2) & 3) * 85
-    rgb[:, :, 2] = ((raster >> 4) & 3) * 85
+    rgb[:, :, 0] = disp[raster & 3]
+    rgb[:, :, 1] = disp[(raster >> 2) & 3]
+    rgb[:, :, 2] = disp[(raster >> 4) & 3]
     tag = "" if args.space == "linear" else "-gamma"
     raster_png = args.out.replace(".bin", f"{tag}-raster.png")
     seen_png = args.out.replace(".bin", f"{tag}-as-seen.png")

@@ -1,0 +1,131 @@
+
+
+########## 0241: CARD FORMAT / WRITE / READ BACK ##########
+build: Nov 22 2026 17:50:47
+KIT_FILE: /sdcard/NEWCARD.BIN, 131072 bytes, chunk 4096 bytes, clock 400 kHz
+NEWCARD_POLICY: format authorized for any seated card with a readable CID except the 1 GB kit card (serial 0x000013a4) and any card >= 400 GiB (the 512 GB Recalbox card is never scratch)
+
+=== 1. IDENTITY ===
+CHIP: esp32-s3 cores=2 rev=v0.2
+IDF: 5.5.0
+MAC: c4:9e:7e:08:6d:f4
+SD_PINS: SCK=12 MOSI=11 MISO=13 CS=10 CARD_DETECT=14
+SHA_KAT: sha256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+SHA_KAT_EXPECT:              ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+SHA_KAT: MATCH -- hash path is sound
+SHA_KAT2: pattern(128 KiB, 4 KiB chunks) = 9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd
+SHA_KAT2_EXPECT:                            9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd
+SHA_KAT2: MATCH -- chunked path is sound
+SW_SHA_KAT:  sha256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad -> MATCH
+SW_SHA_KAT2: pattern(128 KiB) = 9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd -> MATCH
+
+=== 0241 STEP 1: SEATED-CARD IDENTITY (raw SPI, read-only) ===
+    CMD0  arg=0x00000000: NO RESPONSE (raw ff ff ff ff ff ff ff ff )
+    CMD8  arg=0x000001aa: NO RESPONSE (raw ff ff ff ff ff ff ff ff ff ff ff ff )
+  IDENTITY_INIT attempt 1: CMD0=0xff CMD8=0xff (no valid R7 echo)
+    CMD0  arg=0x00000000: NO RESPONSE (raw ff ff ff ff ff ff ff ff )
+    CMD8  arg=0x000001aa: NO RESPONSE (raw ff ff ff ff ff ff ff ff ff ff ff ff )
+  IDENTITY_INIT attempt 2: CMD0=0xff CMD8=0xff (no valid R7 echo)
+    CMD0  arg=0x00000000: NO RESPONSE (raw ff ff ff ff ff ff ff ff )
+    CMD8  arg=0x000001aa: NO RESPONSE (raw ff ff ff ff ff ff ff ff ff ff ff ff )
+  IDENTITY_INIT attempt 3: CMD0=0xff CMD8=0xff (no valid R7 echo)
+    CMD0  arg=0x00000000: NO RESPONSE (raw ff ff ff ff ff ff ff ff )
+    CMD8  arg=0x000001aa: NO RESPONSE (raw ff ff ff ff ff ff ff ff ff ff ff ff )
+  IDENTITY_INIT attempt 4: CMD0=0xff CMD8=0xff (no valid R7 echo)
+    CMD0  arg=0x00000000: NO RESPONSE (raw ff ff ff ff ff ff ff ff )
+    CMD8  arg=0x000001aa: NO RESPONSE (raw ff ff ff ff ff ff ff ff ff ff ff ff )
+  IDENTITY_INIT attempt 5: CMD0=0xff CMD8=0xff (no valid R7 echo)
+    CMD0  arg=0x00000000: NO RESPONSE (raw ff ff ff ff ff ff ff ff )
+    CMD8  arg=0x000001aa: NO RESPONSE (raw ff ff ff ff ff ff ff ff ff ff ff ff )
+  IDENTITY_INIT attempt 6: CMD0=0xff CMD8=0xff (no valid R7 echo)
+    CMD0  arg=0x00000000: NO RESPONSE (raw ff ff ff ff ff ff ff ff )
+    CMD8  arg=0x000001aa: NO RESPONSE (raw ff ff ff ff ff ff ff ff ff ff ff ff )
+  IDENTITY_INIT attempt 7: CMD0=0xff CMD8=0xff (no valid R7 echo)
+    CMD0  arg=0x00000000: R1=0x58 payload[0]=ff 58 00 1f ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x00 payload[4]=ff 00 00 00 01 aa ff ff ff ff ff ff 
+  IDENTITY_INIT attempt 8: CMD0=0x58 CMD8=0x00 (no valid R7 echo)
+    CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD8  arg=0x000001aa: R1=0x01 payload[4]=ff 01 00 00 01 aa ff ff ff ff ff ff 
+  IDENTITY_INIT attempt 9: CMD0=0x01 CMD8=0x01 (R7 echoes 0x1AA)
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD55 arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+    CMD41 arg=0x40000000: R1=0x00 payload[0]=ff 00 ff ff ff ff ff ff 
+  IDENTITY_INIT: ACMD41 R1=0x00 after 61 ms
+    CMD58 arg=0x00000000: R1=0x00 payload[4]=ff 00 c0 ff 80 00 ff ff ff ff ff ff 
+  OCR: c0 ff 80 00  OCR_CCS=1  ADDRESSING=BLOCK (SDHC/SDXC)
+  CID_IDENTITY: 3x_identical=1 crc7 stored=0x63 calc=0x63 ok=1 | crc16 stored=0x831d calc=0x831d ok=1 present=1
+  CSD_IDENTITY: 3x_identical=1 crc7 stored=0xc3 calc=0xc3 ok=1 | crc16 stored=0xa35b calc=0xa35b ok=1 present=1
+    CMD58 arg=0x00000000: R1=0x00 payload[4]=ff 00 c0 ff 80 00 ff ff ff ff ff ff 
+  IDENTITY_VERIFY: cid_verified=1 csd_verified=1 ocr_2x_identical=1
+  CID: 03 53 44 53 44 33 32 47 85 c6 bd 0f 92 01 97 63
+  CID_MID: 0x03  CID_NAME: SD32G  CID_PSN: 0xc6bd0f92
+  CSD: 40 0e 00 32 5b 59 00 00 ed c8 7f 80 0a 40 40 c3
+  CSD_STRUCTURE: v2  CAPACITY: 30436 MB (31914983424 bytes)
+NEWCARD_GATE: AUTHORIZED -- not the kit card and not the 512 GB Recalbox card
+NEWCARD_GATE_TESTS: identity_verified=1 ocr_csd_class_consistent=1 size_plausible=1 is_kit_0x000013a4=0 is_recalbox_SR512=0 is_recalbox_psn_0xe4845e78=0 capacity=30436 MB never_scratch_ge_400GiB=0 csd_structure=1
+
+--- 0239 PRE-SACRIFICE (raw bus, before the driver is initialised) ---
+    SACRIFICE CMD0  arg=0x00000000: R1=0x01 payload[0]=ff 01 ff ff ff ff ff ff 
+  SACRIFICE: R1=0x01 (discarded); device removed, SPI2 freed before the driver initialises it
+KIT_PRESACRIFICE: ran r1=0x01
+
+--- 0239 ONE sdmmc_card_init, stock driver, 400 kHz ---
+I (4838) sdspi_transaction: cmd=52, R1 response: command not supported
+I (4958) sdspi_transaction: cmd=5, R1 response: command not supported
+  FOLD_FIRST_INIT_RAW: OK name=SD32G speed=400 kHz size=30436 MB
+KIT_DRIVER_INIT: called=1 result=OK (0)
+
+--- KIT MOUNT [attempt 1, format_if_mount_failed=false] ---
+I (5648) sdspi_transaction: cmd=52, R1 response: command not supported
+I (5768) sdspi_transaction: cmd=5, R1 response: command not supported
+  MOUNT_OK[attempt 1, format_if_mount_failed=false]: card=SD32G speed=400 kHz size=30436 MB format_if_mount_failed=0
+KIT_RAW_RATE: write 8/8 x 4096 B in 779 ms = 42064 B/s; read 2/2 x 4096 B in 178 ms = 46022 B/s
+KIT_FORMAT_START: f_mkfs clearing the FAT area (allocation unit 64 KiB); this is the long step on this bench
+I (7858) vfs_fat_sdmmc: Formatting card, allocation unit size=65536
+HEARTBEAT: up=26s stage=FORMAT elapsed=19s
+HEARTBEAT: up=47s stage=FORMAT elapsed=40s
+HEARTBEAT: up=67s stage=FORMAT elapsed=60s
+HEARTBEAT: up=87s stage=FORMAT elapsed=80s
+HEARTBEAT: up=107s stage=FORMAT elapsed=100s
+HEARTBEAT: up=127s stage=FORMAT elapsed=120s
+HEARTBEAT: up=147s stage=FORMAT elapsed=141s
+HEARTBEAT: up=168s stage=FORMAT elapsed=161s
+HEARTBEAT: up=188s stage=FORMAT elapsed=181s
+KIT_FORMAT_ELAPSED: 190937 ms
+KIT_FORMAT_METHOD: esp_vfs_fat_sdcard_format (FatFS f_mkfs, FAT32) -> OK (mount handle obtained with format_if_mount_failed=0)
+KIT_VOLUME: total=31910985728 B free=31910920192 B
+  KIT_WRITE_DIGEST_WORDS: 84cbdf9f 2eb78d75 a8ad981c a7470ad1 eb4599cb 7dd4aff3 29be5f0a bd1d0714
+  KIT_WRITE_VS_EXPECTED: MATCH
+  KIT_WRITE_RESULT: ok 131072 bytes, file size 131072, sha256 9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd
+KIT_WRITE_ELAPSED: 3397 ms
+  KIT_READBACK_DIGEST_WORDS: 84cbdf9f 2eb78d75 a8ad981c a7470ad1 eb4599cb 7dd4aff3 29be5f0a bd1d0714
+  KIT_READBACK_VS_EXPECTED: MATCH
+  KIT_READBACK_BYTES: 131072 of 131072 matched, 0 mismatched, first mismatch offset -1 (-1 = none)
+  KIT_READBACK_RESULT: ok 131072 bytes, file size 131072, sha256 9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd
+KIT_READBACK_ELAPSED: 4126 ms
+  UNMOUNT: ok
+
+--- KIT MOUNT [remount after unmount, format_if_mount_failed=false] ---
+  MOUNT_OK[remount after unmount, format_if_mount_failed=false]: card=SD32G speed=400 kHz size=30436 MB format_if_mount_failed=0
+  KIT_REMOUNT_READ_DIGEST_WORDS: 84cbdf9f 2eb78d75 a8ad981c a7470ad1 eb4599cb 7dd4aff3 29be5f0a bd1d0714
+  KIT_REMOUNT_READ_VS_EXPECTED: MATCH
+  KIT_REMOUNT_READ_BYTES: 131072 of 131072 matched, 0 mismatched, first mismatch offset -1 (-1 = none)
+  KIT_REMOUNT_READ_RESULT: ok 131072 bytes, file size 131072, sha256 9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd
+  UNMOUNT: ok
+
+=== 0241 RESULT ===
+KIT_HASH_WRITTEN:   9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd
+KIT_HASH_READBACK:  9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd
+KIT_HASH_REMOUNT:   9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd
+KIT_CHAIN: write=ok readback=ok unmount=ok remount_read=ok
+KIT_VERDICT: PASS -- format/mount/write/read-back complete, all three hashes match
+
+########## 0241 COMPLETE ##########
+
+
+[report magic=0x30323239 len=8346]

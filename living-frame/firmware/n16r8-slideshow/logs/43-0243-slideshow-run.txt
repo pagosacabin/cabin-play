@@ -1,0 +1,40 @@
+report from task 0243 (2165 B):
+
+########## 0243 SLIDESHOW ##########
+build      : Nov 22 2026 21:45:18
+mode       : 800x600, 1 fb byte = 1 DAC byte = 1 pixel, 10 s dwell
+fallback   : embedded 800x600 raster (gamma), converter tools/convert_photo64.py
+SHA_KAT: abc ok; 1 MiB of zeros ok
+framebuffers: 0x3c0d0998 / 0x3c14699c, 480000 B each in PSRAM (integrity ok)
+
+--- 0239 PRE-SACRIFICE (raw bus, before the driver) ---
+  SACRIFICE: R1=0x3f (discarded); bus released
+
+--- SD MOUNT [show] ---
+  MOUNT_OK[show]: card=SD32G psn=0xc6bd0f92 speed=400 kHz size=30436 MB
+CARD: /sdcard/NEWCARD.BIN 131072 B (0241 evidence)
+  FILE FRAME01.BIN 480000 B
+  FILE FRAME02.BIN 480000 B
+  FILE FRAME03.BIN 480000 B
+  FILE FRAME04.BIN 480000 B
+  FILE FRAME05.BIN 480000 B
+  FILE FRAME06.BIN 480000 B
+  FILE FRAME07.BIN 480000 B
+  FILE FRAME08.BIN 480000 B
+  FILE FRAME09.BIN 480000 B
+  FILE FRAME10.BIN 480000 B
+  SCAN: 10 frame file(s) in /sdcard/FRAMES
+FRAME seq=1 idx=1 FRAME01.BIN: 480000 B read in 11205 ms, sha 93d22833a3956ac2
+PLAY: 10 frame(s), order FRAME01.BIN .. FRAME10.BIN
+panel: streaming (no_fb, 15-line bounce buffers, 12000 B each)
+FRAME seq=2 FRAME02.BIN: 480000 B (read 12137 ms), shown at 12.138 s, step 12.138 s, sha fd4610b11aee3c42
+FRAME seq=3 FRAME03.BIN: 480000 B (read 12053 ms), shown at 24.193 s, step 12.053 s, sha 0b14db9555fce686
+FRAME seq=4 FRAME04.BIN: 480000 B (read 12133 ms), shown at 36.327 s, step 12.133 s, sha 844b4348f9bbff5c
+FRAME seq=5 FRAME05.BIN: 480000 B (read 12050 ms), shown at 48.379 s, step 12.051 s, sha 4d3fb365714b3ea6
+FRAME seq=6 FRAME06.BIN: 480000 B (read 12135 ms), shown at 60.515 s, step 12.136 s, sha 88b066e9a16772d7
+FRAME seq=7 FRAME07.BIN: 480000 B (read 12051 ms), shown at 72.568 s, step 12.052 s, sha f139036854e2e400
+FRAME seq=8 FRAME08.BIN: 480000 B (read 12135 ms), shown at 84.704 s, step 12.135 s, sha 2c9b7a0dc7894132
+FRAME seq=9 FRAME09.BIN: 480000 B (read 12050 ms), shown at 96.755 s, step 12.051 s, sha 88cb7fc21526b8cf
+FRAME seq=10 FRAME10.BIN: 480000 B (read 12137 ms), shown at 108.893 s, step 12.138 s, sha f368f81543b197b2
+FRAME seq=11 FRAME01.BIN: 480000 B (read 12049 ms), shown at 121.123 s, step 12.050 s, sha 93d22833a3956ac2
+

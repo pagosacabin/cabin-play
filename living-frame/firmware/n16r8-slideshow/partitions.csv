@@ -1,0 +1,11 @@
+# 0243: 0227/0229 layout plus one extra partition.
+#   * report  -- this bench's log sink (the FT232R console is dead, 0225)
+#   * frames  -- the ten 800x600 rasters staged from the host with esptool, then
+#                copied to /sdcard/FRAMES by the stage build.  5 MiB is exactly
+#                ten 480,000 B frames with no room for an eleventh by accident.
+# Name,     Type, SubType,   Offset,    Size,
+nvs,        data, nvs,       0x9000,    0x6000,
+phy_init,   data, phy,       0xf000,    0x1000,
+factory,    app,  factory,   0x10000,   0x300000,
+report,     data, 0x40,      0x310000,  0x10000,
+frames,     data, 0x41,      0x400000,  0x500000,

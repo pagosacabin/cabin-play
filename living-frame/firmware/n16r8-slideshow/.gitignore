@@ -1,0 +1,6 @@
+.pio/
+sdkconfig.n16r8-*
+sdkconfig.old
+bench/*.bin
+frames/
+frames-src/

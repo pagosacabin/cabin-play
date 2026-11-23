@@ -89,6 +89,10 @@
 #endif
 
 uint8_t *s_fb;   /* shared with live.c */
+/* Double buffering (0244 peer review, finding 4): the bounce ISR must never read
+ * a buffer that is being drawn into.  live.c draws into its own back buffer and
+ * publishes it here with a single pointer store, so a frame appears atomically. */
+uint8_t *volatile s_fb_live;
 static volatile uint32_t s_vsync_count;
 static volatile uint32_t s_fill_count;
 
@@ -137,7 +141,7 @@ static bool IRAM_ATTR bounce_fill(esp_lcd_panel_handle_t panel, void *bounce_buf
 {
     (void)panel; (void)user_ctx;
     s_fill_count++;
-    memcpy(bounce_buf, s_fb + pos_px, (size_t)len_bytes);
+    memcpy(bounce_buf, (const uint8_t *)s_fb_live + pos_px, (size_t)len_bytes);
     return false;
 }
 
@@ -325,6 +329,7 @@ void app_main(void)
         abort();
     }
     memcpy(s_fb, PHOTO64_IMAGE, FB_BYTES);
+    s_fb_live = s_fb;   /* published before scanout starts */
 
     /* Hash what will actually be streamed, not what was compiled in. */
     char runtime_sha[65];

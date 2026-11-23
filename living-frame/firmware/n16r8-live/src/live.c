@@ -1,25 +1,31 @@
 /*
  * 0244 -- frame side live loop: button, countdown, SHOOT trigger, ESP-NOW
- * receive, SD library write, and the ~10 s slideshow over that library.
+ * receive, SD library write, ~10 s slideshow over that library.
  *
- * Wiring (frame board YD-ESP32-S3 N16R8):
- *   SD   SCK 12 / MOSI 11 / MISO 13 / CS 10   (0241's proven pins, 400 kHz mount)
+ * Wiring (YD-ESP32-S3 N16R8):
+ *   SD   SCK 12 / MOSI 11 / MISO 13 / CS 10   (0241's pins, 400 kHz mount)
  *   VGA  data 5,4,7,6,16,15 / hsync 17 / vsync 18
- *   Button  GPIO14 to GND, internal pull-up, active-low   (the pin map records 14 as spare)
+ *   Button  GPIO14 to GND, pull-up, active-low (pin map's recorded spare)
  *
- * Flow, and nothing more:
- *   press -> panel shows 3, 2, 1 (one per second) -> send 'F','T' to the camera
- *   -> camera captures, filters, sends 1,280 chunks -> this side verifies the
- *   SHA-256, writes the frame to /sdcard/LIVE/LIVE####.BIN, shows it, and
- *   resumes cycling the whole LIVE library at DWELL_MS.
+ * Peer-review fixes folded in (Copilot, 2026-11-23):
+ *   1  chunk coverage is tracked in a bitmap and a frame is only accepted when
+ *      every chunk of it arrived -- the hash alone can be satisfied by stale bytes
+ *   2  store is hardened: max-index+1 naming, fflush/fclose checked, partial file
+ *      unlinked, so a hole in the sequence cannot overwrite a higher-numbered file
+ *   3  the receive callback only assembles bytes; SHA, SD write, display and the
+ *      ESP-NOW ack all happen in this loop, never in the WiFi callback
+ *   4  two buffers: drawing happens in the buffer that is NOT being scanned out,
+ *      and it is published with one pointer store (main.c reads s_fb_live)
+ *   6  packets are gated on the camera's MAC and carry a per-boot session id
+ *   8  the library scan matches exactly LIVEdddd.BIN
  *
- * The library is deliberately separate from 0243's /sdcard/FRAMES (800x600) and
- * from /NEWCARD.BIN: this build is 640x480 and never touches either.
- * Nothing here formats a card: format_if_mount_failed is false throughout.
+ * Library is separate from 0243's /sdcard/FRAMES (800x600) and from /NEWCARD.BIN.
+ * Nothing here formats a card: format_if_mount_failed is false everywhere.
  */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -37,14 +43,14 @@
 #include "driver/sdspi_host.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs_fat.h"
-#include "mbedtls/sha256.h"
 #include "esp_lcd_panel_ops.h"
+#include "mbedtls/sha256.h"
 
-extern uint8_t *s_fb;                          /* main.c: the live framebuffer */
+extern uint8_t *s_fb;
+extern uint8_t *volatile s_fb_live;
 extern void app_logf(const char *fmt, ...);
 extern void write_report(void);
 
-#define LIVE_TAG "0244"
 #define PIN_SCK   12
 #define PIN_MOSI  11
 #define PIN_MISO  13
@@ -62,13 +68,19 @@ extern void write_report(void);
 #ifndef OUT_H
 #define OUT_H 480
 #endif
-#define FB_BYTES ((uint32_t)OUT_W * (uint32_t)OUT_H)
+#define FB_BYTES  ((uint32_t)OUT_W * (uint32_t)OUT_H)
+#define CHUNKS    ((FB_BYTES + PAYLOAD - 1) / PAYLOAD)
 
 static uint8_t s_cam_mac[6] = { 0xF0, 0x16, 0x1D, 0xAE, 0x2B, 0x20 };
-static uint8_t *s_rx;
-static volatile uint32_t s_rx_expect, s_rx_got;
-static volatile bool s_rx_active, s_frame_ready, s_shooting, s_need_report;
-static volatile uint32_t s_lib_count, s_shown_sha_wait;
+static uint8_t *s_rx;                 /* receive buffer */
+static uint8_t *s_buf[2];             /* draw buffers, one published at a time */
+static int      s_w;                  /* index of the buffer NOT on screen */
+static uint8_t  s_seen[CHUNKS / 8 + 1];
+static volatile uint32_t s_expect_len, s_seen_chunks;
+static volatile uint16_t s_sess;
+static volatile bool s_rx_active, s_pending, s_shooting, s_need_report;
+static volatile uint32_t s_lib_max, s_lib_count;
+static uint8_t  s_rx_hash[32];
 static sdmmc_card_t *s_card;
 static bool s_mounted;
 
@@ -81,13 +93,6 @@ static void sha_hex(const uint8_t *d, size_t n, char out[65])
 }
 
 /* ---- SD ----------------------------------------------------------------- */
-/* ---- 0239 fold ----------------------------------------------------------
- * This card does not answer the stock driver cold: it needs 74+ clocks with CS
- * high and one throwaway CMD0 on the raw bus first, then the bus released so the
- * driver can initialise SPI2 itself.  Value and intent are 0239's; without it
- * esp_vfs_fat_sdspi_mount returns ESP_ERR_TIMEOUT (263) -- which is exactly what
- * the first 0244 run logged.
- */
 static const char *g_cmd_tag = "";
 static bool g_raw_tx_err;
 
@@ -144,6 +149,9 @@ static uint8_t sd_raw_cmd(spi_device_handle_t dev, uint8_t cmd, uint32_t arg,
     return rx[idx];
 }
 
+/* 0239 fold: 74+ clocks with CS high, one throwaway CMD0 on the raw bus at
+ * 400 kHz, then release the bus so the stock driver can initialise SPI2.  This
+ * card returns ESP_ERR_TIMEOUT (263) without it. */
 static esp_err_t fold_presacrifice(void)
 {
     spi_bus_config_t bus = {
@@ -184,12 +192,8 @@ static esp_err_t fold_presacrifice(void)
 static bool card_mount(void)
 {
     spi_bus_config_t bus = {
-        .mosi_io_num = PIN_MOSI,
-        .miso_io_num = PIN_MISO,
-        .sclk_io_num = PIN_SCK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = 4096,
+        .mosi_io_num = PIN_MOSI, .miso_io_num = PIN_MISO, .sclk_io_num = PIN_SCK,
+        .quadwp_io_num = -1, .quadhd_io_num = -1, .max_transfer_sz = 4096,
     };
     if (spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
         app_logf("live       : spi_bus_initialize failed\n");
@@ -201,17 +205,17 @@ static bool card_mount(void)
 
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = SPI2_HOST;
-    host.max_freq_khz = 400;               /* 0241/0243 proved 400 kHz on this rig */
+    host.max_freq_khz = 400;
 
     esp_vfs_fat_mount_config_t mcfg = {
-        .format_if_mount_failed = false,   /* never formats */
+        .format_if_mount_failed = false,     /* never formats */
         .max_files = 4,
         .allocation_unit_size = 0,
     };
     esp_err_t err = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &slot, &mcfg, &s_card);
     if (err != ESP_OK) {
         app_logf("live       : SD mount failed: %s (%d)\n", esp_err_to_name(err), (int)err);
-        spi_bus_free(SPI2_HOST);     /* release so the next attempt's fold can init */
+        spi_bus_free(SPI2_HOST);             /* next fold must be able to init */
         return false;
     }
     app_logf("live       : SD mounted, %.*s psn=0x%08x, %llu MB\n",
@@ -222,30 +226,48 @@ static bool card_mount(void)
     return true;
 }
 
-static uint32_t live_scan(void)
+/* finding 8: only LIVEdddd.BIN counts, and the next index is max+1 */
+static void live_scan(void)
 {
     DIR *d = opendir(LIVE_DIR);
-    if (!d) return 0;
-    uint32_t n = 0;
+    s_lib_count = 0;
+    s_lib_max = 0;
+    if (!d) return;
     struct dirent *e;
-    while ((e = readdir(d)) != NULL)
-        if (e->d_name[0] != '.' && strstr(e->d_name, ".BIN")) n++;
+    uint32_t maxidx = 0, n = 0;
+    while ((e = readdir(d)) != NULL) {
+        const char *nm = e->d_name;
+        if (strlen(nm) != 12 || strncmp(nm, "LIVE", 4) != 0 || strcmp(nm + 8, ".BIN") != 0)
+            continue;
+        bool digits = true;
+        for (int i = 4; i < 8; i++) if (nm[i] < '0' || nm[i] > '9') digits = false;
+        if (!digits) continue;
+        uint32_t idx = (uint32_t)atoi(nm + 4);
+        if (idx + 1 > maxidx) maxidx = idx + 1;
+        n++;
+    }
     closedir(d);
-    return n;
+    s_lib_count = n;
+    s_lib_max = maxidx;      /* next file to write */
 }
 
+/* finding 2: no partial file survives, and a hole cannot overwrite a file */
 static bool live_store(const uint8_t *frame, char *path_out, size_t path_len)
 {
     if (!s_mounted) return false;
-    snprintf(path_out, path_len, LIVE_DIR "/LIVE%04u.BIN", (unsigned)s_lib_count);
+    snprintf(path_out, path_len, LIVE_DIR "/LIVE%04u.BIN", (unsigned)s_lib_max);
     FILE *f = fopen(path_out, "wb");
     if (!f) { app_logf("live       : cannot open %s\n", path_out); return false; }
     size_t wr = fwrite(frame, 1, FB_BYTES, f);
-    fclose(f);
-    if (wr != FB_BYTES) {
-        app_logf("live       : short write %u of %u\n", (unsigned)wr, (unsigned)FB_BYTES);
+    bool flushed = (fflush(f) == 0);
+    bool closed = (fclose(f) == 0);
+    if (wr != FB_BYTES || !flushed || !closed) {
+        app_logf("live       : write failed wr=%u flush=%d close=%d -> unlinking\n",
+                 (unsigned)wr, (int)flushed, (int)closed);
+        unlink(path_out);
         return false;
     }
+    s_lib_max++;
     s_lib_count++;
     return true;
 }
@@ -257,77 +279,88 @@ static bool live_load(uint32_t i)
     snprintf(path, sizeof(path), LIVE_DIR "/LIVE%04u.BIN", (unsigned)i);
     FILE *f = fopen(path, "rb");
     if (!f) return false;
-    size_t rd = fread(s_fb, 1, FB_BYTES, f);
+    uint8_t *dst = s_buf[s_w];               /* never the buffer on screen */
+    size_t rd = fread(dst, 1, FB_BYTES, f);
     fclose(f);
-    return rd == FB_BYTES;
+    if (rd != FB_BYTES) return false;
+    s_fb_live = dst;                         /* atomic publish */
+    s_w ^= 1;
+    return true;
 }
 
 /* ---- countdown ---------------------------------------------------------- */
-/* 3x5 block digits, scaled -- no font project, just enough to read across a room */
 static const uint8_t DIG[3][5] = {
     { 0x7, 0x1, 0x3, 0x1, 0x7 },   /* 3 */
     { 0x7, 0x1, 0x7, 0x4, 0x7 },   /* 2 */
     { 0x2, 0x6, 0x2, 0x2, 0x7 },   /* 1 */
 };
 
-static void draw_countdown(int step)   /* step 3,2,1 -> index 0,1,2 */
+static void draw_countdown(int step)
 {
     const int blk = 36, gw = 3 * blk, gh = 5 * blk;
-    memset(s_fb, 0x00, FB_BYTES);                       /* black card */
+    uint8_t *dst = s_buf[s_w];               /* off-screen buffer, then publish */
+    memset(dst, 0x00, FB_BYTES);
     int x0 = (OUT_W - gw) / 2, y0 = (OUT_H - gh) / 2;
     const uint8_t *g = DIG[3 - step];
     for (int r = 0; r < 5; r++)
         for (int c = 0; c < 3; c++)
             if (g[r] & (0x4 >> c))
                 for (int y = 0; y < blk; y++) {
-                    uint8_t *row = s_fb + (size_t)(y0 + r * blk + y) * OUT_W + x0 + c * blk;
-                    memset(row, 0x3f, blk);              /* white in RGB222 */
+                    uint8_t *row = dst + (size_t)(y0 + r * blk + y) * OUT_W + x0 + c * blk;
+                    memset(row, 0x3f, blk);
                 }
+    s_fb_live = dst;
+    s_w ^= 1;
 }
 
 /* ---- esp-now ------------------------------------------------------------ */
+static inline void seen_set(uint32_t idx)
+{
+    uint32_t byte = idx >> 3, bit = idx & 7;
+    if (!(s_seen[byte] & (1u << bit))) {
+        s_seen[byte] |= (uint8_t)(1u << bit);
+        s_seen_chunks++;
+    }
+}
+
 static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
-    (void)info;
+    /* finding 6: only the configured camera, and only a matching session */
+    if (memcmp(info->src_addr, s_cam_mac, 6) != 0) return;
     if (len < 4) return;
-    if (data[0] == 'F' && data[1] == 'S' && len >= 6) {
-        s_rx_expect = (uint32_t)data[2] | ((uint32_t)data[3] << 8) |
-                      ((uint32_t)data[4] << 16) | ((uint32_t)data[5] << 24);
-        s_rx_got = 0;
-        s_rx_active = (s_rx_expect == FB_BYTES);
-    } else if (data[0] == 'F' && data[1] == 'D' && s_rx_active) {
+
+    if (data[0] == 'F' && data[1] == 'S' && len >= 8) {
+        uint32_t l = (uint32_t)data[2] | ((uint32_t)data[3] << 8) |
+                     ((uint32_t)data[4] << 16) | ((uint32_t)data[5] << 24);
+        uint16_t sess = (uint16_t)(data[6] | (data[7] << 8));
+        if (l != FB_BYTES) { s_rx_active = false; return; }
+        s_expect_len = l;
+        s_sess = sess;
+        memset(s_seen, 0, sizeof s_seen);
+        s_seen_chunks = 0;
+        s_rx_active = true;
+        return;
+    }
+    if (data[0] == 'F' && data[1] == 'D' && s_rx_active) {
         uint32_t idx = (uint32_t)data[2] | ((uint32_t)data[3] << 8);
         size_t off = (size_t)idx * PAYLOAD, n = (size_t)len - 4;
-        if (off + n <= FB_BYTES) { memcpy(s_rx + off, data + 4, n); s_rx_got += n; }
-    } else if (data[0] == 'F' && data[1] == 'E' && s_rx_active && len >= 34) {
-        uint8_t hash[32];
-        mbedtls_sha256(s_rx, FB_BYTES, hash, 0);
+        if (idx >= CHUNKS || off + n > FB_BYTES) return;
+        memcpy(s_rx + off, data + 4, n);
+        seen_set(idx);
+        return;
+    }
+    if (data[0] == 'F' && data[1] == 'E' && s_rx_active && len >= 36) {
+        uint16_t sess = (uint16_t)(data[2] | (data[3] << 8));
+        if (sess != s_sess) { s_rx_active = false; return; }
         s_rx_active = false;
-        if (memcmp(hash, data + 2, 32) == 0) {
-            char got_hex[65], want_hex[65];
-            for (int i = 0; i < 32; i++) {
-                sprintf(got_hex + i * 2, "%02x", hash[i]);
-                sprintf(want_hex + i * 2, "%02x", data[2 + i]);
-            }
-            got_hex[64] = want_hex[64] = 0;
-            memcpy(s_fb, s_rx, FB_BYTES);
-            char path[64] = "(not stored)";
-            bool stored = live_store(s_rx, path, sizeof(path));
-            app_logf("live       : frame ok, sent sha %s, stored sha %s, %s %s, library %u\n",
-                     want_hex, got_hex, stored ? "written" : "NOT written", path,
-                     (unsigned)s_lib_count);
-            s_frame_ready = true;
-            s_need_report = true;   /* persisted from the loop, not the callback:
-                                     * a flash write in the recv path can fault the
-                                     * bounce ISR that is reading PSRAM */
-            uint8_t ack[34];
-            ack[0] = 'F'; ack[1] = 'A';
-            memcpy(ack + 2, hash, 32);
-            esp_now_send(s_cam_mac, ack, sizeof(ack));
-        } else {
-            app_logf("live       : frame REJECTED (sha mismatch), got %u of %u\n",
-                     (unsigned)s_rx_got, (unsigned)s_rx_expect);
+        /* finding 1: a complete frame or nothing -- the hash alone is not enough */
+        if (s_seen_chunks != CHUNKS) {
+            app_logf("live       : INCOMPLETE frame, %u of %u chunks, dropped\n",
+                     (unsigned)s_seen_chunks, (unsigned)CHUNKS);
+            return;
         }
+        memcpy(s_rx_hash, data + 4, 32);
+        s_pending = true;           /* finding 3: work happens in the loop */
     }
 }
 
@@ -340,12 +373,51 @@ static bool shoot(void)
     return true;
 }
 
+/* runs in the loop, never in the WiFi callback */
+static void finish_frame(void)
+{
+    char want_hex[65], got_hex[65];
+    uint8_t hash[32];
+    mbedtls_sha256(s_rx, FB_BYTES, hash, 0);
+    for (int i = 0; i < 32; i++) {
+        sprintf(want_hex + i * 2, "%02x", s_rx_hash[i]);
+        sprintf(got_hex + i * 2, "%02x", hash[i]);
+    }
+    want_hex[64] = got_hex[64] = 0;
+
+    if (memcmp(hash, s_rx_hash, 32) != 0) {
+        app_logf("live       : frame REJECTED, sent %s got %s\n", want_hex, got_hex);
+        return;
+    }
+    uint8_t *dst = s_buf[s_w];               /* off-screen, then publish */
+    memcpy(dst, s_rx, FB_BYTES);
+    char path[64] = "(not stored)";
+    bool stored = live_store(dst, path, sizeof(path));
+    s_fb_live = dst;
+    s_w ^= 1;
+    app_logf("live       : frame ok, sent sha %s, stored sha %s, %s %s, library %u\n",
+             want_hex, got_hex, stored ? "written" : "NOT written", path,
+             (unsigned)s_lib_count);
+
+    uint8_t ack[34];
+    ack[0] = 'F'; ack[1] = 'A';
+    memcpy(ack + 2, hash, 32);
+    esp_now_send(s_cam_mac, ack, sizeof(ack));
+    s_need_report = true;
+}
+
 /* ---- the loop ----------------------------------------------------------- */
 void live_start(esp_lcd_panel_handle_t panel)
 {
     (void)panel;
     s_rx = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
-    if (!s_rx) { app_logf("live       : no PSRAM for rx buffer\n"); return; }
+    s_buf[0] = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
+    s_buf[1] = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
+    if (!s_rx || !s_buf[0] || !s_buf[1]) {
+        app_logf("live       : no PSRAM for rx/back buffers\n");
+        return;
+    }
+    s_w = 0;
 
     gpio_config_t io = {
         .pin_bit_mask = 1ULL << PIN_BTN,
@@ -375,13 +447,12 @@ void live_start(esp_lcd_panel_handle_t panel)
     peer.channel = CHANNEL;
     peer.ifidx = WIFI_IF_STA;
     esp_now_add_peer(&peer);
-    app_logf("live       : esp-now on ch %d, peer %02x:%02x:%02x:%02x:%02x:%02x\n",
+    app_logf("live       : esp-now ch %d, peer %02x:%02x:%02x:%02x:%02x:%02x\n",
              CHANNEL, s_cam_mac[0], s_cam_mac[1], s_cam_mac[2], s_cam_mac[3],
              s_cam_mac[4], s_cam_mac[5]);
 
-    /* 0239: first-init on this rig is intermittent (11/19 cold, 14/14 with
-     * retries).  Each attempt re-runs the fold and releases the bus on failure,
-     * so a CRC/timeout on attempt 1 is not a dead card. */
+    /* first-init is intermittent (INVALID_CRC 265 cold); each attempt re-runs
+     * the fold and the failure path frees SPI2 */
     for (int attempt = 1; attempt <= 6 && !s_mounted; attempt++) {
         fold_presacrifice();
         s_mounted = card_mount();
@@ -390,9 +461,9 @@ void live_start(esp_lcd_panel_handle_t panel)
             vTaskDelay(pdMS_TO_TICKS(250));
         }
     }
-    s_lib_count = s_mounted ? live_scan() : 0;
-    app_logf("live       : %s library holds %u frames at %s\n",
-             s_mounted ? "SD" : "no-SD", (unsigned)s_lib_count, LIVE_DIR);
+    if (s_mounted) live_scan();
+    app_logf("live       : %s library holds %u frames, next index %u in %s\n",
+             s_mounted ? "SD" : "no-SD", (unsigned)s_lib_count, (unsigned)s_lib_max, LIVE_DIR);
     write_report();
 
     int64_t last_show = esp_timer_get_time();
@@ -401,40 +472,48 @@ void live_start(esp_lcd_panel_handle_t panel)
     int64_t level_since = esp_timer_get_time();
 
     for (;;) {
-        int level = gpio_get_level(PIN_BTN);
         int64_t now = esp_timer_get_time();
+        int level = gpio_get_level(PIN_BTN);
 
-        /* debounced falling edge: press = 1 -> 0 held for 30 ms */
         if (level != last_level) { last_level = level; level_since = now; }
         if (level == 0 && now - level_since > 30000 && !s_shooting) {
-            s_shooting = true;                       /* presses during the flow are ignored */
+            s_shooting = true;
             app_logf("live       : BUTTON pressed, library %u frames\n", (unsigned)s_lib_count);
             for (int step = 3; step >= 1; step--) {
                 draw_countdown(step);
                 app_logf("live       : countdown %d\n", step);
                 vTaskDelay(pdMS_TO_TICKS(1000));
             }
-            s_frame_ready = false;
+            s_pending = false;
             shoot();
-            int64_t deadline = esp_timer_get_time() + 30000000LL;   /* 30 s budget */
-            while (!s_frame_ready && esp_timer_get_time() < deadline)
-                vTaskDelay(pdMS_TO_TICKS(100));
-            app_logf("live       : %s\n", s_frame_ready ? "photo received and on screen"
-                                                        : "TIMEOUT waiting for the frame");
+            int64_t deadline = esp_timer_get_time() + 30000000LL;
+            while (!s_pending && esp_timer_get_time() < deadline)
+                vTaskDelay(pdMS_TO_TICKS(50));
+            if (s_pending) { s_pending = false; finish_frame(); app_logf("live       : photo received and on screen\n"); }
+            else app_logf("live       : TIMEOUT waiting for the frame\n");
             s_shooting = false;
             last_show = esp_timer_get_time();
             show_idx = 0;
-            write_report();
+            s_need_report = true;
         }
 
-        /* slideshow: one library image per DWELL_MS, looping */
-        if (!s_shooting && s_lib_count && esp_timer_get_time() - last_show > (int64_t)DWELL_MS * 1000) {
+        /* a frame that arrived outside a press still gets finished */
+        if (s_pending && !s_shooting) { s_pending = false; finish_frame(); }
+
+        if (!s_shooting && s_lib_count &&
+            esp_timer_get_time() - last_show > (int64_t)DWELL_MS * 1000) {
             last_show = esp_timer_get_time();
-            if (show_idx >= s_lib_count) show_idx = 0;
-            if (live_load(show_idx))
-                app_logf("live       : show %u of %u\n", (unsigned)(show_idx + 1), (unsigned)s_lib_count);
-            show_idx++;
+            uint32_t tries = 0;
+            while (tries++ < s_lib_count) {
+                if (live_load(show_idx % (s_lib_max ? s_lib_max : 1))) {
+                    app_logf("live       : show %u\n", (unsigned)show_idx);
+                    show_idx++;
+                    break;
+                }
+                show_idx++;
+            }
         }
+
         if (s_need_report && !s_shooting) { s_need_report = false; write_report(); }
         vTaskDelay(pdMS_TO_TICKS(20));
     }

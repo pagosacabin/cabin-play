@@ -51,6 +51,7 @@ static uint8_t s_bayer[4][4];
 static float   s_gain[3] = { 1.0f, 1.0f, 1.0f };
 
 static uint8_t *s_frame;
+static uint16_t s_sess;          /* per-boot session id (0244 review finding 6) */
 static volatile bool s_shoot;
 static volatile uint32_t s_shots;
 static volatile bool s_cb_done;
@@ -218,7 +219,9 @@ static void send_frame(void)
     pkt[3] = (uint8_t)((FB_BYTES >> 8) & 0xFF);
     pkt[4] = (uint8_t)((FB_BYTES >> 16) & 0xFF);
     pkt[5] = (uint8_t)((FB_BYTES >> 24) & 0xFF);
-    send_pkt(pkt, 6);
+    pkt[6] = (uint8_t)(s_sess & 0xFF);
+    pkt[7] = (uint8_t)(s_sess >> 8);
+    send_pkt(pkt, 8);
 
     uint32_t t0 = millis(), sent = 0;
     for (size_t off = 0, idx = 0; off < FB_BYTES; off += PAYLOAD, idx++, sent++) {
@@ -229,11 +232,13 @@ static void send_frame(void)
         send_pkt(pkt, HDR + n);
         if ((idx & 15) == 0) delay(1);
     }
-    uint8_t end[34];
+    uint8_t end[36];
     end[0] = 'F'; end[1] = 'E';
+    end[2] = (uint8_t)(s_sess & 0xFF);
+    end[3] = (uint8_t)(s_sess >> 8);
     for (int i = 0; i < 32; i++) {
         char b[3] = { hex[i * 2], hex[i * 2 + 1], 0 };
-        end[2 + i] = (uint8_t)strtol(b, NULL, 16);
+        end[4 + i] = (uint8_t)strtol(b, NULL, 16);
     }
     send_pkt(end, sizeof(end));
 
@@ -269,6 +274,7 @@ void setup(void)
     Serial.println("\n=== Freenove CAM (0244): waits for SHOOT, sends one frame ===");
     s_frame = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
     if (!s_frame) { Serial.println("no PSRAM for frame"); return; }
+    s_sess = (uint16_t)(esp_random() & 0xFFFF);
     build_quant_table();
     if (!camera_start()) { Serial.println("camera  : init failed"); return; }
     Serial.printf("camera  : pid 0x%02x, VGA RGB565, no library on this side\n",

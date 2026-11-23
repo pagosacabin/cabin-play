@@ -213,7 +213,7 @@ static void send_frame(void)
     char hex[65];
     sha_hex(s_frame, FB_BYTES, hex);
 
-    uint8_t pkt[HDR + PAYLOAD];
+    uint8_t pkt[HDR + 2 + PAYLOAD];
     pkt[0] = 'F'; pkt[1] = 'S';
     pkt[2] = (uint8_t)(FB_BYTES & 0xFF);
     pkt[3] = (uint8_t)((FB_BYTES >> 8) & 0xFF);
@@ -227,9 +227,11 @@ static void send_frame(void)
     for (size_t off = 0, idx = 0; off < FB_BYTES; off += PAYLOAD, idx++, sent++) {
         pkt[0] = 'F'; pkt[1] = 'D';
         pkt[2] = (uint8_t)(idx & 0xFF); pkt[3] = (uint8_t)((idx >> 8) & 0xFF);
+        pkt[4] = (uint8_t)(s_sess & 0xFF);          /* session id on every chunk */
+        pkt[5] = (uint8_t)(s_sess >> 8);
         size_t n = (FB_BYTES - off) < PAYLOAD ? (FB_BYTES - off) : PAYLOAD;
-        memcpy(pkt + HDR, s_frame + off, n);
-        send_pkt(pkt, HDR + n);
+        memcpy(pkt + HDR + 2, s_frame + off, n);
+        send_pkt(pkt, HDR + 2 + n);
         if ((idx & 15) == 0) delay(1);
     }
     uint8_t end[36];

@@ -255,6 +255,13 @@ static void live_scan(void)
 static bool live_store(const uint8_t *frame, char *path_out, size_t path_len)
 {
     if (!s_mounted) return false;
+    uint64_t total = 0, freeb = 0;
+    if (esp_vfs_fat_info(SD_MOUNT, &total, &freeb) == ESP_OK &&
+        freeb < (uint64_t)FB_BYTES + 65536) {
+        app_logf("live       : SD full (%llu B free), frame not stored\n",
+                 (unsigned long long)freeb);
+        return false;
+    }
     snprintf(path_out, path_len, LIVE_DIR "/LIVE%04u.BIN", (unsigned)s_lib_max);
     FILE *f = fopen(path_out, "wb");
     if (!f) { app_logf("live       : cannot open %s\n", path_out); return false; }
@@ -342,10 +349,18 @@ static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int le
         return;
     }
     if (data[0] == 'F' && data[1] == 'D' && s_rx_active) {
+        if (len < 6) return;
+        uint16_t sess = (uint16_t)(data[4] | (data[5] << 8));
+        if (sess != s_sess) return;                 /* stale/foreign chunk */
         uint32_t idx = (uint32_t)data[2] | ((uint32_t)data[3] << 8);
-        size_t off = (size_t)idx * PAYLOAD, n = (size_t)len - 4;
-        if (idx >= CHUNKS || off + n > FB_BYTES) return;
-        memcpy(s_rx + off, data + 4, n);
+        size_t off = (size_t)idx * PAYLOAD, n = (size_t)len - 6;
+        size_t want = (idx + 1 == CHUNKS) ? (FB_BYTES - off) : PAYLOAD;
+        if (idx >= CHUNKS || off + n > FB_BYTES || n != want) {
+            app_logf("live       : chunk %u rejected (len %u want %u)\n",
+                     (unsigned)idx, (unsigned)n, (unsigned)want);
+            return;
+        }
+        memcpy(s_rx + off, data + 6, n);
         seen_set(idx);
         return;
     }
@@ -474,9 +489,12 @@ void live_start(esp_lcd_panel_handle_t panel)
     for (;;) {
         int64_t now = esp_timer_get_time();
         int level = gpio_get_level(PIN_BTN);
+        static bool armed = true;
 
         if (level != last_level) { last_level = level; level_since = now; }
-        if (level == 0 && now - level_since > 30000 && !s_shooting) {
+        if (level == 1) armed = true;      /* a press needs a seen release first */
+        if (level == 0 && armed && now - level_since > 30000 && !s_shooting) {
+            armed = false;                 /* a held button cannot retrigger */
             s_shooting = true;
             app_logf("live       : BUTTON pressed, library %u frames\n", (unsigned)s_lib_count);
             for (int step = 3; step >= 1; step--) {

@@ -27,8 +27,8 @@
 #include <esp_wifi.h>
 #include <esp_camera.h>
 #include <esp_heap_caps.h>
-#include "mbedtls/sha256.h"
 #include "secrets.h"
+#include "mbedtls/sha256.h"
 
 /* frame board's own WiFi station MAC, from the 0225 probe report */
 static uint8_t PEER[6] = { 0xC4, 0x9E, 0x7E, 0x08, 0x6D, 0xF4 };
@@ -54,7 +54,7 @@ static uint8_t *s_frame;
 static uint16_t s_sess;          /* per-boot session id (0244 review finding 6) */
 static volatile bool s_shoot;
 static volatile uint32_t s_shots;
-static volatile bool s_cb_done;
+static volatile bool s_cb_done, s_last_ok;
 static uint32_t s_ok, s_fail;
 static volatile uint32_t s_cb_count;   /* callbacks seen, for windowed sending */
 
@@ -78,7 +78,8 @@ static volatile uint32_t s_cb_count;   /* callbacks seen, for windowed sending *
 static void on_sent(const uint8_t *mac, esp_now_send_status_t st)
 {
     (void)mac;
-    if (st == ESP_NOW_SEND_SUCCESS) s_ok++; else s_fail++;
+    s_last_ok = (st == ESP_NOW_SEND_SUCCESS);
+    if (s_last_ok) s_ok++; else s_fail++;
     s_cb_done = true;
     s_cb_count++;
 }
@@ -98,13 +99,20 @@ static void on_recv(const uint8_t *mac, const uint8_t *data, int len)
     }
 }
 
+/* 0247: a chunk that comes back ESP_NOW_SEND_FAIL is retried in place, up to
+ * three attempts.  The frame-level SHA still decides whether the picture is
+ * accepted; this just stops a single lost chunk from costing a whole frame. */
 static bool send_pkt(const uint8_t *buf, size_t len)
 {
-    s_cb_done = false;
-    if (esp_now_send(PEER, buf, len) != ESP_OK) { s_fail++; return false; }
-    uint32_t t0 = millis();
-    while (!s_cb_done && millis() - t0 < 40) delay(1);
-    return s_cb_done;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        s_cb_done = false;
+        s_last_ok = false;
+        if (esp_now_send(PEER, buf, len) != ESP_OK) { s_fail++; continue; }
+        uint32_t t0 = millis();
+        while (!s_cb_done && millis() - t0 < 40) delay(1);
+        if (s_cb_done && s_last_ok) return true;
+    }
+    return false;
 }
 
 static void build_quant_table(void)
@@ -128,6 +136,11 @@ static void build_quant_table(void)
             s_bayer[y][x] = (uint8_t)((B[y][x] + 0.5f) * 255.0f / 16.0f);
 }
 
+/* 0247: gains are computed fresh for every shot.  The old 60/40 smoothing against
+ * the previous frame was a streaming leftover -- one press per minute means it
+ * smoothed across scenes, not within one.  And a black frame divides by zero:
+ * ma/mr is inf/NaN, the 0.5..2.0 clamps are false for NaN, so the filter used to
+ * carry NaN until reboot.  Bail to identity on any near-zero channel. */
 static void wb_update(const uint8_t *cam)
 {
     if (WB_STRENGTH <= 0.0f) return;
@@ -141,13 +154,17 @@ static void wb_update(const uint8_t *cam)
         n++;
     }
     float mr = sr / (float)n, mg = sg / (float)n, mb = sb / (float)n;
+    if (mr < 1.0f || mg < 1.0f || mb < 1.0f) {       /* black or near-black frame */
+        s_gain[0] = s_gain[1] = s_gain[2] = 1.0f;
+        return;
+    }
     float ma = (mr + mg + mb) / 3.0f;
     float raw[3] = { ma / mr, ma / mg, ma / mb };
     for (int c = 0; c < 3; c++) {
         float g = 1.0f + WB_STRENGTH * (raw[c] - 1.0f);
-        if (g < 0.5f) g = 0.5f;
+        if (!(g > 0.5f)) g = 0.5f;                   /* NaN-safe: NaN -> 0.5 */
         if (g > 2.0f) g = 2.0f;
-        s_gain[c] = 0.6f * s_gain[c] + 0.4f * g;
+        s_gain[c] = g;                               /* no carry-over between shots */
     }
 }
 
@@ -270,6 +287,7 @@ static void take_shot(const char *why)
     build_raster(fb->buf, s_frame);
     esp_camera_fb_return(fb);
     s_shots++;
+    s_sess++;                   /* 0247: one session id per frame, not per boot */
     Serial.printf("shoot   : %s, shot %u, warmup %d, wb r %.3f g %.3f b %.3f (strength %.2f)\n",
                   why, (unsigned)s_shots, WARMUP_FRAMES,
                   (double)s_gain[0], (double)s_gain[1], (double)s_gain[2], (double)WB_STRENGTH);
@@ -289,6 +307,11 @@ void setup(void)
     Serial.printf("camera  : pid 0x%02x, VGA RGB565, no library on this side\n",
                   esp_camera_sensor_get()->id.PID);
 
+    /* 0247: the association stays, and that is a measured decision, not inertia.
+     * Running the STA unassociated on the same channel was tried with power save
+     * off and TX power forced to 19.5 dBm: fail 0, but 6544-6959 ms per frame
+     * against 1692-2097 ms while associated.  The AP's beacons and the driver's
+     * associated rate table are worth more than the credentials cost. */
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -300,7 +323,8 @@ void setup(void)
     esp_now_register_send_cb(on_sent);
     esp_now_register_recv_cb(on_recv);
     /* PHY rate: 24 Mbps on the STA interface if the stack exposes it */
-    esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_24M);
+    esp_err_t rerr = esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_24M);
+    Serial.printf("rate    : espnow 24M -> %s\n", esp_err_to_name(rerr));
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, PEER, 6);
     peer.channel = CHANNEL;

@@ -396,6 +396,17 @@ static bool shoot(void)
     return true;
 }
 
+/* 0247: a failed shot must not leave the countdown digit on the panel.  The
+ * buffer that is not being scanned out still holds the frame shown before the
+ * countdown, so publishing it again puts the picture back. */
+static void restore_previous(const char *why)
+{
+    uint8_t *prev = s_buf[s_w];
+    s_fb_live = prev;
+    s_w ^= 1;
+    app_logf("live       : previous frame restored to the panel (%s)\n", why);
+}
+
 /* runs in the loop, never in the WiFi callback */
 static void finish_frame(void)
 {
@@ -410,6 +421,8 @@ static void finish_frame(void)
 
     if (memcmp(hash, s_rx_hash, 32) != 0) {
         app_logf("live       : frame REJECTED, sent %s got %s\n", want_hex, got_hex);
+        s_need_report = true;
+        restore_previous("hash mismatch");
         return;
     }
     /* 0245 rung 1: publish first, store second.  The photo is verified and in
@@ -528,12 +541,20 @@ void live_start(esp_lcd_panel_handle_t panel)
                 vTaskDelay(pdMS_TO_TICKS(1000));
             }
             s_pending = false;
-            shoot();
-            int64_t deadline = esp_timer_get_time() + 30000000LL;
+            if (!shoot()) app_logf("live       : SHOOT send failed\n");
+            /* 0247: 12 s is ample -- the transfer is 1.7-2.1 s and the camera's
+             * warm-up is ~1 s.  The old 30 s only made a failure slower to see. */
+            int64_t deadline = esp_timer_get_time() + 12000000LL;
             while (!s_pending && esp_timer_get_time() < deadline)
                 vTaskDelay(pdMS_TO_TICKS(50));
-            if (s_pending) { s_pending = false; finish_frame(); app_logf("live       : photo received and on screen\n"); }
-            else app_logf("live       : TIMEOUT waiting for the frame\n");
+            if (s_pending) {
+                s_pending = false;
+                finish_frame();
+                app_logf("live       : photo received and on screen\n");
+            } else {
+                app_logf("live       : TIMEOUT waiting for the frame (12 s)\n");
+                restore_previous("timeout");
+            }
             s_shooting = false;
             last_show = esp_timer_get_time();
             show_idx = 0;
@@ -547,7 +568,9 @@ void live_start(esp_lcd_panel_handle_t panel)
             esp_timer_get_time() - last_show > (int64_t)DWELL_MS * 1000) {
             last_show = esp_timer_get_time();
             uint32_t tries = 0;
-            while (tries++ < s_lib_count) {
+            /* 0247: indices run to s_lib_max and the naming scheme allows holes,
+             * so bounding the search by the file count can burn whole 10 s cycles */
+            while (tries++ < (s_lib_max ? s_lib_max : 1)) {
                 if (live_load(show_idx % (s_lib_max ? s_lib_max : 1))) {
                     app_logf("live       : show %u\n", (unsigned)show_idx);
                     show_idx++;

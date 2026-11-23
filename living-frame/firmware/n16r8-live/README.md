@@ -10,7 +10,7 @@ the physical button that starts the photo flow.
     press (GPIO14 -> GND, pull-up, 30 ms debounce)
       -> panel shows 3, 2, 1 (one second each, block digits)
       -> 'F','T' SHOOT to the camera
-      -> 1,280 ESP-NOW chunks arrive (~5.5 s)
+      -> 1,280 ESP-NOW chunks arrive (~1.6 s while associated; ~6.5 s unassociated)
       -> SHA-256 checked against the sender's; on a match the frame is written
          to /sdcard/LIVE/LIVE####.BIN (307,200 B) and shown
       -> cycling resumes over the whole LIVE library at 10 s per image

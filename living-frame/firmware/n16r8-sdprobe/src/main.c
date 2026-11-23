@@ -1893,6 +1893,18 @@ static void nc_set_stage(const char *s)
     g_nc_stage_ms = nc_up_ms();
 }
 
+/* 0241 peer review (MAJOR, 2026-11-22): the known-answer tests and the
+ * expected-hash comparisons must be able to FAIL the run, not just print
+ * MISMATCH.  Every KAT goes through here; the verdict requires this flag. */
+static bool g_nc_kat_ok = true;
+
+static bool nc_kat_check(const char *got, const char *exp)
+{
+    bool ok = (strcmp(got, exp) == 0);
+    if (!ok) g_nc_kat_ok = false;
+    return ok;
+}
+
 static void nc_heartbeat_task(void *arg)
 {
     (void)arg;
@@ -2487,6 +2499,16 @@ static int kit_pass(const char *tag, bool write, uint8_t *buf, char *hex_out)
         done += want;
     }
 
+#if SD_NEWCARD_POLICY
+    /* Peer review (MEDIUM, 2026-11-22): a byte mismatch has to fail the pass,
+     * not only be counted -- otherwise KIT_CHAIN can read readback=ok while the
+     * bytes differ, which is the exact claim this task exists to make. */
+    if (!write && rc == 0 && s_cmp_bad != 0) {
+        app_logf("  %s_BYTES: %" PRIu32 " mismatched -- pass marked FAIL\n", tag, s_cmp_bad);
+        rc = -1;
+    }
+#endif
+
     if (write && rc == 0) {
         if (fflush(f) != 0) { app_logf("  %s_FLUSH: FAILED (errno %d)\n", tag, errno); rc = -1; }
         if (fsync(fileno(f)) != 0) { app_logf("  %s_FSYNC: FAILED (errno %d)\n", tag, errno); rc = -1; }
@@ -2578,8 +2600,8 @@ void app_main(void)
         kit_sha_hex(kd, khex);
         app_logf("SHA_KAT: sha256(\"abc\") = %s\nSHA_KAT_EXPECT:              %s\n"
                  "SHA_KAT: %s\n", khex, kexp,
-                 strcmp(khex, kexp) == 0 ? "MATCH -- hash path is sound"
-                                         : "MISMATCH -- hash path is NOT sound");
+                 nc_kat_check(khex, kexp) ? "MATCH -- hash path is sound"
+                                          : "MISMATCH -- hash path is NOT sound");
 
         /* Second KAT: the exact 128 KiB / 4 KiB-chunk path kit_pass uses, so a
          * length- or buffer-dependent defect cannot hide behind the short one. */
@@ -2604,7 +2626,7 @@ void app_main(void)
                      "SHA_KAT2_EXPECT:                            "
                      "9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd\n"
                      "SHA_KAT2: %s\n", h2,
-                     strcmp(h2, "9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd") == 0
+                     nc_kat_check(h2, "9fdfcb84758db72e1c98ada8d10a47a7cb9945ebf3afd47d0a5fbe2914071dbd")
                          ? "MATCH -- chunked path is sound" : "MISMATCH");
             heap_caps_free(kb);
         } else {
@@ -2622,7 +2644,7 @@ void app_main(void)
             s256_final(&s1, d3);
             kit_sha_hex(d3, h3);
             app_logf("SW_SHA_KAT:  sha256(\"abc\") = %s -> %s\n", h3,
-                     strcmp(h3, kexp) == 0 ? "MATCH" : "MISMATCH");
+                     nc_kat_check(h3, kexp) ? "MATCH" : "MISMATCH");
 
             sw_sha256_t s2;
             uint8_t *kb2 = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -2639,7 +2661,7 @@ void app_main(void)
                 s256_final(&s2, d4);
                 kit_sha_hex(d4, h4);
                 app_logf("SW_SHA_KAT2: pattern(128 KiB) = %s -> %s\n", h4,
-                         strcmp(h4, KIT_EXPECT_SHA) == 0 ? "MATCH" : "MISMATCH");
+                         nc_kat_check(h4, KIT_EXPECT_SHA) ? "MATCH" : "MISMATCH");
                 heap_caps_free(kb2);
             }
         }
@@ -2840,7 +2862,9 @@ void app_main(void)
              wrc == 0 ? "ok" : "FAIL", rrc == 0 ? "ok" : "FAIL",
              urc == ESP_OK ? "ok" : "FAIL", mrc == 0 ? "ok" : "FAIL");
     bool all = (wrc == 0 && rrc == 0 && mrc == 0 && urc == ESP_OK &&
+                g_nc_kat_ok &&
                 strcmp(sha_w, sha_r) == 0 && strcmp(sha_w, sha_m) == 0);
+    if (!g_nc_kat_ok) app_logf("KIT_KAT: a known-answer test failed -- verdict forced to FAIL\n");
     app_logf("KIT_VERDICT: %s\n",
              all ? "PASS -- format/mount/write/read-back complete, all three hashes match"
                  : "FAIL -- see the stage lines above");

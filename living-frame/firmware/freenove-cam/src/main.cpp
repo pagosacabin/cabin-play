@@ -56,6 +56,7 @@ static volatile bool s_shoot;
 static volatile uint32_t s_shots;
 static volatile bool s_cb_done;
 static uint32_t s_ok, s_fail;
+static volatile uint32_t s_cb_count;   /* callbacks seen, for windowed sending */
 
 #define PWDN_GPIO_NUM  -1
 #define RESET_GPIO_NUM -1
@@ -79,6 +80,7 @@ static void on_sent(const uint8_t *mac, esp_now_send_status_t st)
     (void)mac;
     if (st == ESP_NOW_SEND_SUCCESS) s_ok++; else s_fail++;
     s_cb_done = true;
+    s_cb_count++;
 }
 
 static void on_recv(const uint8_t *mac, const uint8_t *data, int len)
@@ -223,6 +225,11 @@ static void send_frame(void)
     pkt[7] = (uint8_t)(s_sess >> 8);
     send_pkt(pkt, 8);
 
+    /* 0245 rung 3, attempt 1: an 8-deep window of in-flight chunks measured
+     * 9.6 s with 435-1696 failures per frame -- the radio drops under that
+     * pressure and the retries make it slower, not faster.  Reverted to
+     * stop-and-wait, which is the shape that holds fail 0.  The PHY rate change
+     * below is measured separately. */
     uint32_t t0 = millis(), sent = 0;
     for (size_t off = 0, idx = 0; off < FB_BYTES; off += PAYLOAD, idx++, sent++) {
         pkt[0] = 'F'; pkt[1] = 'D';
@@ -292,6 +299,8 @@ void setup(void)
     if (esp_now_init() != ESP_OK) { Serial.println("esp_now_init failed"); return; }
     esp_now_register_send_cb(on_sent);
     esp_now_register_recv_cb(on_recv);
+    /* PHY rate: 24 Mbps on the STA interface if the stack exposes it */
+    esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_24M);
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, PEER, 6);
     peer.channel = CHANNEL;

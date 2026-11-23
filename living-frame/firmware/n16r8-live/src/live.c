@@ -59,6 +59,11 @@ extern void write_report(void);
 #define SD_MOUNT  "/sdcard"
 #define LIVE_DIR  "/sdcard/LIVE"
 #define DWELL_MS  10000
+#ifndef SD_MOUNT_KHZ
+#define SD_MOUNT_KHZ 16000        /* settled rung: the ladder in 0245 climbed 400k -> 16 MHz
+                                     with 3 cold boots at each step, zero mount regressions
+                                     and hash-exact stores throughout */
+#endif
 #define PAYLOAD   240
 #define CHANNEL   6
 
@@ -79,6 +84,7 @@ static uint8_t  s_seen[CHUNKS / 8 + 1];
 static volatile uint32_t s_expect_len, s_seen_chunks;
 static volatile uint16_t s_sess;
 static volatile bool s_rx_active, s_pending, s_shooting, s_need_report;
+static volatile int64_t s_shoot_us, s_fs_us;   /* 0245 timing instrumentation */
 static volatile uint32_t s_lib_max, s_lib_count;
 static uint8_t  s_rx_hash[32];
 static sdmmc_card_t *s_card;
@@ -205,7 +211,7 @@ static bool card_mount(void)
 
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = SPI2_HOST;
-    host.max_freq_khz = 400;
+    host.max_freq_khz = SD_MOUNT_KHZ;
 
     esp_vfs_fat_mount_config_t mcfg = {
         .format_if_mount_failed = false,     /* never formats */
@@ -346,6 +352,7 @@ static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int le
         memset(s_seen, 0, sizeof s_seen);
         s_seen_chunks = 0;
         s_rx_active = true;
+        s_fs_us = esp_timer_get_time();         /* 0245: transfer-start timestamp */
         return;
     }
     if (data[0] == 'F' && data[1] == 'D' && s_rx_active) {
@@ -382,6 +389,7 @@ static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int le
 static bool shoot(void)
 {
     uint8_t msg[2] = { 'F', 'T' };
+    s_shoot_us = esp_timer_get_time();          /* 0245: SHOOT-sent timestamp */
     if (esp_now_send(s_cam_mac, msg, sizeof(msg)) != ESP_OK) return false;
     app_logf("live       : SHOOT sent to %02x:%02x:%02x:%02x:%02x:%02x\n",
              s_cam_mac[0], s_cam_mac[1], s_cam_mac[2], s_cam_mac[3], s_cam_mac[4], s_cam_mac[5]);
@@ -404,15 +412,32 @@ static void finish_frame(void)
         app_logf("live       : frame REJECTED, sent %s got %s\n", want_hex, got_hex);
         return;
     }
+    /* 0245 rung 1: publish first, store second.  The photo is verified and in
+     * PSRAM, so the panel shows it while the SD write runs behind it.  The ack
+     * still means "stored": a failed write is logged as shown-but-not-kept and
+     * no ack goes out. */
     uint8_t *dst = s_buf[s_w];               /* off-screen, then publish */
     memcpy(dst, s_rx, FB_BYTES);
-    char path[64] = "(not stored)";
-    bool stored = live_store(dst, path, sizeof(path));
-    s_fb_live = dst;
+    int64_t pub_us = esp_timer_get_time();
+    s_fb_live = dst;                         /* on screen -- before any SD work */
     s_w ^= 1;
-    app_logf("live       : frame ok, sent sha %s, stored sha %s, %s %s, library %u\n",
+    app_logf("timing     : shoot->display %lld ms, fs->display %lld ms\n",
+             s_shoot_us ? (long long)((pub_us - s_shoot_us) / 1000) : -1LL,
+             s_fs_us ? (long long)((pub_us - s_fs_us) / 1000) : -1LL);
+
+    char path[64] = "(not stored)";
+    int64_t st0 = esp_timer_get_time();
+    bool stored = live_store(dst, path, sizeof(path));
+    int64_t store_ms = (esp_timer_get_time() - st0) / 1000;
+    app_logf("live       : frame ok, sent sha %s, stored sha %s, %s %s, library %u, store %lld ms\n",
              want_hex, got_hex, stored ? "written" : "NOT written", path,
-             (unsigned)s_lib_count);
+             (unsigned)s_lib_count, (long long)store_ms);
+
+    if (!stored) {
+        app_logf("live       : STORE FAILED - shown but not kept, no ack sent\n");
+        s_need_report = true;
+        return;
+    }
 
     uint8_t ack[34];
     ack[0] = 'F'; ack[1] = 'A';

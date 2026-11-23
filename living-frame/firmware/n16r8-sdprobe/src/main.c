@@ -2535,7 +2535,7 @@ static int kit_pass(const char *tag, bool write, uint8_t *buf, char *hex_out)
                  "%08" PRIx32 " %08" PRIx32 " %08" PRIx32 " %08" PRIx32 " %08" PRIx32 "\n",
                  tag, w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]);
         app_logf("  %s_VS_EXPECTED: %s\n", tag,
-                 strcmp(hex_out, KIT_EXPECT_SHA) == 0 ? "MATCH" : "MISMATCH");
+                 nc_kat_check(hex_out, KIT_EXPECT_SHA) ? "MATCH" : "MISMATCH");
         if (!write) {
             app_logf("  %s_BYTES: %" PRIu32 " of %u matched, %" PRIu32 " mismatched, "
                      "first mismatch offset %d (-1 = none)\n", tag, s_cmp_ok,
@@ -2630,7 +2630,8 @@ void app_main(void)
                          ? "MATCH -- chunked path is sound" : "MISMATCH");
             heap_caps_free(kb);
         } else {
-            app_logf("SHA_KAT2: skipped (no buffer)\n");
+            app_logf("SHA_KAT2: SKIPPED (no buffer) -- verdict forced to FAIL\n");
+            g_nc_kat_ok = false;
         }
 
         /* The software SHA-256 that the file passes actually use: same two
@@ -2648,6 +2649,10 @@ void app_main(void)
 
             sw_sha256_t s2;
             uint8_t *kb2 = heap_caps_malloc(KIT_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+            if (!kb2) {
+                app_logf("SW_SHA_KAT2: SKIPPED (no buffer) -- verdict forced to FAIL\n");
+                g_nc_kat_ok = false;
+            }
             if (kb2) {
                 s256_init(&s2);
                 for (uint32_t off = 0; off < KIT_FILE_BYTES; off += KIT_CHUNK) {

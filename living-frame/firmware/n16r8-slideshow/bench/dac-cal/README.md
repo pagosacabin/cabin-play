@@ -15,6 +15,7 @@ Paths are relative to `living-frame/firmware/n16r8-slideshow/`:
 ```
 bench/dac-cal/test-frames/DAC-R0.BIN … DAC-B3.BIN   12 files, 480,000 B each (800x600, 1 byte/pixel)
 bench/dac-cal/test-frames/SHA256SUMS                sha256 of each file
+bench/dac-cal/check_table_equivalence.c             proves the table restructure moved no level
 tools/make_dac_frames.py                            generator (deterministic)
 ```
 

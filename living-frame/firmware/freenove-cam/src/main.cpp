@@ -118,11 +118,19 @@ static bool send_pkt(const uint8_t *buf, size_t len)
 /* 0250: per-channel DAC level table.  s_dac_v[ch][v] is the drive level of code
  * v on channel ch (R, G, B) as a fraction of THAT channel's full scale V[3].
  *
- * The shipped numbers are the ideal resistor ladder {0, 1/3, 2/3, 1}, so this
- * build behaves as the previous one did.  Rung 3 of 0250 replaces each row with
- * the measured V[v]/V[3] from the bench meter table -- the rows exist separately
- * because a per-channel level error is the thing being calibrated; a single
- * shared row cannot express one.  Every row must stay ascending.
+ * The shipped numbers are the ideal resistor ladder {0, 1/3, 2/3, 1}, and rung 3
+ * of 0250 replaces each row with the measured V[v]/V[3] from the bench meter
+ * table.  The rows exist separately because a per-channel level error is the
+ * thing being calibrated; a single shared row cannot express one.  Every row
+ * must stay ascending.
+ *
+ * Equivalence with the previous build (one shared {0, 0.0891, 0.4097, 1}):
+ * powf(1/3, 2.2) = 0.08919351 and powf(2/3, 2.2) = 0.40982577 against the old
+ * literals 0.0891 / 0.4097, so 17 of the 256 table entries per channel move by
+ * one dither-threshold step -- and the 4x4 tile mean each entry emits is
+ * unchanged at every one of the 256 inputs (checked against the old table in C,
+ * 0 differing means).  Nothing visible moved; only the dither pattern on some
+ * threshold boundaries differs.
  *
  * Channel order here is the raster's, not the pins': R = byte bits 0..1,
  * G = 2..3, B = 4..5.  On the frame board those are GPIO 4/5, 6/7, 15/16.

@@ -26,7 +26,7 @@ import sys
 
 W, H = 800, 600
 FRAME_BYTES = W * H          # 480,000
-CHANNELS = (("R", 0), ("G", 2), ("B", 4))   # bit offset in the packed byte
+CHANNELS = ("R", "G", "B")   # dac_byte() owns the bit layout
 
 
 def dac_byte(r: int, g: int, b: int) -> int:
@@ -43,7 +43,7 @@ def main() -> int:
     os.makedirs(args.out, exist_ok=True)
 
     manifest = []
-    for ch_name, shift in CHANNELS:
+    for ch_name in CHANNELS:
         for code in range(4):
             codes = {"R": 0, "G": 0, "B": 0}
             codes[ch_name] = code
@@ -63,7 +63,7 @@ def main() -> int:
     # a feature, not a collision: the three zero frames must read the same ~0 V
     # and are the meter's own zero check.
     distinct = {dac_byte(c if n == "R" else 0, c if n == "G" else 0, c if n == "B" else 0)
-                for n, _ in CHANNELS for c in range(4)}
+                for n in CHANNELS for c in range(4)}
     assert len(distinct) == 10, f"expected 10 distinct DAC bytes, got {sorted(distinct)}"
     zero = {m[0] for m in manifest if m[1].endswith("0.BIN")}
     assert len(manifest) == 12 and len(zero) == 1, "the three code-0 frames must be identical"

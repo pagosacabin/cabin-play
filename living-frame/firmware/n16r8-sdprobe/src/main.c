@@ -2030,7 +2030,11 @@ static bool kit_raw_identity(void)
 
     uint8_t pl[8] = {0};
     bool ready = false;
-    for (int attempt = 1; attempt <= 5 && !ready; attempt++) {
+    /* 0241: a card interrupted mid-format (a host read_flash resets the chip)
+     * stays busy for a few seconds, so the first attempts see MISO idle high.
+     * Give the bus a longer ladder (12 attempts, 250 ms apart, ~3 s) instead of
+     * failing the gate on a card that is merely still writing. */
+    for (int attempt = 1; attempt <= 12 && !ready; attempt++) {
         uint8_t ff[10];
         memset(ff, 0xFF, sizeof ff);
         gpio_set_level(PIN_CS, 1);
@@ -2045,7 +2049,7 @@ static bool kit_raw_identity(void)
         bool v2 = (r8 == 0x01 && pl[2] == 0x01 && pl[3] == 0xAA);
         app_logf("  IDENTITY_INIT attempt %d: CMD0=0x%02x CMD8=0x%02x (%s)\n",
                  attempt, r0, r8, v2 ? "R7 echoes 0x1AA" : "no valid R7 echo");
-        if (!v2) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
+        if (!v2) { vTaskDelay(pdMS_TO_TICKS(250)); continue; }
 
         sd_raw_cmd(dev, 55, 0, 0x65, 0, pl, sizeof pl);
         uint8_t a41 = sd_raw_cmd(dev, 41, 0x40000000u, 0x77, 0, pl, sizeof pl);

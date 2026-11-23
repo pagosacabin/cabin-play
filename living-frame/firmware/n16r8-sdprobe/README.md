@@ -590,3 +590,67 @@ admitted any ~1 GB SDSC card, fixed by requiring the CID serial; (2) MEDIUM
 `format_if_mount_failed` cannot be reported as the format, fixed by always formatting
 explicitly; (3) MEDIUM the unmount result was ignored, fixed by requiring it for a PASS.
 Final verdict **SHIP** at `f2fcbe9`.
+
+---
+
+# 0241 — new card: format, mount, write, read back
+
+Stephen seated a 32 GB SanDisk SDHC card after 0240 stopped at driver init on the
+1 GB kit card. Same chain as 0240 (identity gate → 0239 pre-sacrifice → one stock
+`sdmmc_card_init` → explicit `esp_vfs_fat_sdcard_format()` → 128 KiB pattern →
+read back → unmount → remount → read back again), built with
+`-DSD_FOLD_ARM=1 -DSD_NEWCARD_TASK=1`, 400 kHz, pull-ups unchanged, delay 0.
+
+## Result of the 2026-11-22 17:33-17:37 MST run — CHAIN PASSES
+
+| Item | Measured |
+| --- | --- |
+| Seated card | CID `03 53 44 53 44 33 32 47 85 c6 bd 0f 92 01 97 63` — MID 0x03, name `SD32G`, PSN `0xc6bd0f92`; CSD v2, 30,436 MB (31,916,983,424 B); OCR `c0 ff 80 00`, CCS=1 (SDHC/SDXC) |
+| Identity | CID and CSD read 3x with identical bytes, CRC7 and SPI CRC16 both verified (`0x63`/`0x831d`, `0xc3`/`0xa35b`); not the kit card (PSN 0x000013a4), not the Recalbox SR512 (PSN 0xe4845e78, and 31.9 GB < 400 GiB) |
+| Pre-sacrifice | ran, R1=`0x01` |
+| `sdmmc_card_init` (400 kHz) | **OK (0)** on the first call |
+| Mount (attempt 1, no format flag) | OK — `card=SD32G speed=400 kHz size=30436 MB` |
+| Format | `esp_vfs_fat_sdcard_format` → **OK**, allocation unit **65536 B** (IDF's own log line), elapsed **190,802 ms** |
+| Volume after format | total 31,910,985,728 B, free 31,910,920,192 B |
+| Write (128 KiB, 4 KiB chunks) | sha256 `9fdfcb84…071dbd` == host `expected_pattern.py` value, 3,402 ms |
+| Read back in place | sha256 `9fdfcb84…071dbd`, byte compare **131072/131072 matched, 0 mismatched**, 4,131 ms |
+| Unmount → remount → read | sha256 `9fdfcb84…071dbd`, byte compare 131072/131072, both unmounts ok |
+| Verdict | `KIT_VERDICT: PASS` |
+
+Logs: `logs/34-0241-board-pre-state.txt` (report read before any flash),
+`logs/35-0241-newcard-run.txt` (the passing run, read back from 0x310000),
+`logs/36-0241-first-partial-run.txt` (the first run, which proves the format but was
+cut before the read-back), `logs/37-0241-board-restored-800x600.txt` (the accepted
+800x600 build back on the board, framebuffer `204578cc…` MATCH).
+
+## Why the run before this one looked like a stall: the report buffer filled
+
+The first 0241 run was left mid-flight and its report read back at the format start
+for eight hours. The format was not stuck. `report_vprintf()` copies every `esp_log`
+line into the 60 kB report buffer, and `fold_driver_log_levels()` turns the sdspi
+driver up to DEBUG/VERBOSE for the init measurement — at 400 kHz that is ~1,000 lines
+of `spi_master: device5 locked the bus` per mount. The buffer was full before the
+format began, so every later `app_logf` (format result, all three hashes, the
+verdict) was silently dropped while the run itself went on to completion.
+
+Two changes fix it: DEBUG/VERBOSE lines now go to the UART only (INFO and above
+still land in the report), and every stage logs its elapsed time. The passing run's
+report is 6.8 kB of the 60 kB buffer.
+
+## Timing facts for the next run on a large card
+
+- Raw sector throughput at 400 kHz on this card: **42 kB/s write, 46 kB/s read**
+  (8 x 4 KiB write = 779 ms).
+- A 30 GB FAT32 format clears the FAT area, so at 64 KiB clusters that is ~3.6 MB
+  x 2 copies: measured **190.8 s**. At the 4 KiB allocation unit the earlier
+  estimate put this at hours — the cluster size is the only knob that matters.
+- 128 KiB write + read back + remount + read back: ~8 s total.
+
+## Peer review
+
+The probe change (identity gate, newcard arm, CRC7/CRC16 verification) went through
+three Copilot passes before this run: BLOCKER the gate admitted any ~1 GB SDSC card
+(fixed: CID serial required), MEDIUM `SD_KIT_FLOW` left the write flow compiled out
+under `-DSD_NEWCARD_TASK` (fixed with `#undef`/`#define`), MEDIUM the unmount result
+was ignored (fixed: required for a PASS). Findings after those: the report-buffer
+overflow above and the gate's retry ladder, both fixed in this run's firmware.

@@ -115,19 +115,55 @@ static bool send_pkt(const uint8_t *buf, size_t len)
     return false;
 }
 
+/* 0250: per-channel DAC level table.  s_dac_v[ch][v] is the drive level of code
+ * v on channel ch (R, G, B) as a fraction of THAT channel's full scale V[3].
+ *
+ * The shipped numbers are the ideal resistor ladder {0, 1/3, 2/3, 1}, so this
+ * build behaves as the previous one did.  Rung 3 of 0250 replaces each row with
+ * the measured V[v]/V[3] from the bench meter table -- the rows exist separately
+ * because a per-channel level error is the thing being calibrated; a single
+ * shared row cannot express one.  Every row must stay ascending.
+ *
+ * Channel order here is the raster's, not the pins': R = byte bits 0..1,
+ * G = 2..3, B = 4..5.  On the frame board those are GPIO 4/5, 6/7, 15/16.
+ */
+#define DAC_GAMMA 2.2f
+
+static const float s_dac_v[3][4] = {
+    { 0.0f, 1.0f / 3.0f, 2.0f / 3.0f, 1.0f },   /* R -- ideal, unmeasured */
+    { 0.0f, 1.0f / 3.0f, 2.0f / 3.0f, 1.0f },   /* G -- ideal, unmeasured */
+    { 0.0f, 1.0f / 3.0f, 2.0f / 3.0f, 1.0f },   /* B -- ideal, unmeasured */
+};
+
 static void build_quant_table(void)
 {
-    const float L[4] = { 0.0f, 0.0891f, 0.4097f, 1.0f };   /* (v/3)^2.2 */
+    /* Linearise each channel's own ladder with the panel's gamma.  V[3] is the
+     * normaliser, so a channel whose full scale is 0.62 V still maps to 1.0. */
+    float L[3][4];
+    for (int ch = 0; ch < 3; ch++) {
+        float fs = s_dac_v[ch][3];
+        for (int v = 0; v < 4; v++) {
+            float r = (fs > 0.0f) ? s_dac_v[ch][v] / fs : (float)v / 3.0f;
+            if (!(r > 0.0f)) r = 0.0f;                 /* also catches NaN */
+            L[ch][v] = powf(r, DAC_GAMMA);
+        }
+        for (int v = 1; v < 4; v++)                    /* the search below needs ascending */
+            if (!(L[ch][v] > L[ch][v - 1])) L[ch][v] = L[ch][v - 1];
+    }
+
     for (int c = 0; c < 256; c++) {
-        float T = powf(c / 255.0f, 2.2f);
-        int v = 0;
-        while (v < 3 && T > L[v + 1]) v++;
-        float f = (v == 3) ? 0.0f : (T - L[v]) / (L[v + 1] - L[v]);
-        if (f < 0.0f) f = 0.0f;
-        if (f > 1.0f) f = 1.0f;
-        uint8_t thr = (uint8_t)(f * 255.0f);
-        uint8_t hi = (uint8_t)(v == 3 ? 3 : v + 1);
-        for (int ch = 0; ch < 3; ch++) s_q[ch][c] = (qstep_t){ (uint8_t)v, hi, thr };
+        float T = powf(c / 255.0f, DAC_GAMMA);
+        for (int ch = 0; ch < 3; ch++) {
+            const float *Lc = L[ch];
+            int v = 0;
+            while (v < 3 && T > Lc[v + 1]) v++;
+            float f = (v == 3) ? 0.0f : (T - Lc[v]) / (Lc[v + 1] - Lc[v]);
+            if (f < 0.0f) f = 0.0f;
+            if (f > 1.0f) f = 1.0f;
+            uint8_t thr = (uint8_t)(f * 255.0f);
+            uint8_t hi = (uint8_t)(v == 3 ? 3 : v + 1);
+            s_q[ch][c] = (qstep_t){ (uint8_t)v, hi, thr };
+        }
     }
     static const uint8_t B[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 },
                                      { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };

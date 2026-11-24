@@ -118,29 +118,30 @@ static bool send_pkt(const uint8_t *buf, size_t len)
 /* 0250: per-channel DAC level table.  s_dac_v[ch][v] is the drive level of code
  * v on channel ch (R, G, B) as a fraction of THAT channel's full scale V[3].
  *
- * The shipped numbers are the ideal resistor ladder {0, 1/3, 2/3, 1}, and rung 3
- * of 0250 replaces each row with the measured V[v]/V[3] from the bench meter
- * table.  The rows exist separately because a per-channel level error is the
- * thing being calibrated; a single shared row cannot express one.  Every row
- * must stay ascending.
+ * MEASURED 2026-11-23 on the bench (rung 2), DC meter on the VGA connector with
+ * the monitor connected, one reading per cell, in volts:
+ *      R:  0.00  0.26  0.40  0.70      G:  0.00  0.27  0.43  0.68
+ *      B:  0.00  0.27  0.45  0.72
+ * Normalised against each channel's own V[3], so the meter's blanking average
+ * cancels and only the ladder's shape survives:
+ *      R:  0, 0.371, 0.571, 1        G:  0, 0.397, 0.632, 1
+ *      B:  0, 0.375, 0.625, 1
+ * Level 1 reads high on every channel (ideal 0.333) and red's level 2 reads low
+ * (0.571 against 0.667) -- the per-channel error the shared row could not express.
+ * Absolute full scales differ by 6% (0.68-0.72 V); the table is normalised per
+ * channel, so that stays recorded here rather than corrected.
  *
- * Equivalence with the previous build (one shared {0, 0.0891, 0.4097, 1}):
- * powf(1/3, 2.2) = 0.08919351 and powf(2/3, 2.2) = 0.40982577 against the old
- * literals 0.0891 / 0.4097, so 17 of the 256 table entries per channel move by
- * one dither-threshold step -- and the 4x4 tile mean each entry emits is
- * unchanged at every one of the 256 inputs (checked against the old table in C,
- * 0 differing means).  Nothing visible moved; only the dither pattern on some
- * threshold boundaries differs.
- *
- * Channel order here is the raster's, not the pins': R = byte bits 0..1,
- * G = 2..3, B = 4..5.  On the frame board those are GPIO 4/5, 6/7, 15/16.
+ * Rung 1 note: with the ideal rows the table reproduces the old shared
+ * {0, 0.0891, 0.4097, 1} at every one of the 256 inputs per channel (checked in
+ * C, 0 differing 4x4 tile means); only dither-threshold boundaries moved.
+ * Channel order is the raster's, not the pins': R = bits 0..1, G = 2..3, B = 4..5.
  */
 #define DAC_GAMMA 2.2f
 
 static const float s_dac_v[3][4] = {
-    { 0.0f, 1.0f / 3.0f, 2.0f / 3.0f, 1.0f },   /* R -- ideal, unmeasured */
-    { 0.0f, 1.0f / 3.0f, 2.0f / 3.0f, 1.0f },   /* G -- ideal, unmeasured */
-    { 0.0f, 1.0f / 3.0f, 2.0f / 3.0f, 1.0f },   /* B -- ideal, unmeasured */
+    { 0.0f, 0.371f, 0.571f, 1.0f },   /* R -- measured 0.26 / 0.40 of 0.70 V */
+    { 0.0f, 0.397f, 0.632f, 1.0f },   /* G -- measured 0.27 / 0.43 of 0.68 V */
+    { 0.0f, 0.375f, 0.625f, 1.0f },   /* B -- measured 0.27 / 0.45 of 0.72 V */
 };
 
 static void build_quant_table(void)

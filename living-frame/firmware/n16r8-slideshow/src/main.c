@@ -901,7 +901,7 @@ static void stage_main(void)
  * ========================================================================= */
 #ifndef APP_STAGE
 
-#define DWELL_MS 10000
+#define DWELL_MS 15000   /* 0250 rung 2: 15 s so a probe can settle */
 
 static void fb_alloc(void)
 {
@@ -959,7 +959,21 @@ static void slideshow_main(void)
     uint32_t first_bytes = 0, first_ms = 0;
     char first_sha[65] = {0};
 
-    if (fold_presacrifice(&r1) == ESP_OK && card_mount("show", &card)) {
+    /* 0250 rung 2: this card's first init is intermittent (INVALID_CRC 265), so
+     * fold and retry exactly as the live firmware does -- fold before every
+     * attempt, up to six of them. */
+    bool mret = false;
+    for (int a = 1; a <= 6 && !mret; a++) {
+        uint8_t rr = 0xFF;
+        if (fold_presacrifice(&rr) == ESP_OK && card_mount("show", &card)) {
+            mret = true;
+            r1 = rr;
+        } else {
+            app_logf("MOUNT attempt %d failed, retrying\n", a);
+            vTaskDelay(pdMS_TO_TICKS(250));
+        }
+    }
+    if (mret) {
         mounted = true;
         struct stat st;
         if (stat("/sdcard/NEWCARD.BIN", &st) == 0)
@@ -1033,6 +1047,10 @@ static void slideshow_main(void)
             continue;
         }
 
+        /* 0250 rung 2: a short black gap between frames so the sequence is
+         * countable on screen -- black, then the next colour, every 15 s. */
+        memset(s_fb[s_active], 0x00, FB_BYTES);
+        vTaskDelay(pdMS_TO_TICKS(800));
         s_active = 1 - s_active;      /* pointer swap; DMA picks it up next bounce */
         cur = next;
         seq++;

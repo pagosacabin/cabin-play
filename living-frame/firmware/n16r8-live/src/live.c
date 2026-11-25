@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <dirent.h>
+#include "esp_random.h"      /* 0259: shuffle the slideshow order */
 #include <sys/stat.h>
 #include "prompt_strip.h"    /* 0254: pre-rendered keep/discard prompt */
 #include "notice_deleted.h"  /* 0254: shown after a discard */
@@ -319,6 +320,90 @@ static bool live_load(uint32_t i)
     return true;
 }
 
+/* ---- 0259: shuffled slideshow order -------------------------------------- */
+/* Each card file appears once per cycle and the order is reshuffled when the cycle
+ * ends, so consecutive cycles differ.  Deleted files are dropped from the order in
+ * place, which keeps "next photo" meaning the next one in the shuffled order. */
+static uint16_t *s_order;
+static uint16_t  s_order_cap, s_order_n, s_order_pos;
+
+static bool order_build(void)
+{
+    DIR *d = opendir(LIVE_DIR);
+    if (!d) return false;
+    uint16_t cap = (uint16_t)(s_lib_max ? s_lib_max : 1);
+    if (cap < 2) cap = 2;
+    if (s_order == NULL || s_order_cap < cap) {
+        if (s_order) { heap_caps_free(s_order); s_order = NULL; }
+        s_order = (uint16_t *)heap_caps_malloc((size_t)cap * sizeof(uint16_t),
+                                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s_order == NULL) { closedir(d); return false; }
+        s_order_cap = cap;
+    }
+    s_order_n = 0;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL && s_order_n < s_order_cap) {
+        const char *nm = e->d_name;
+        if (strlen(nm) != 12 || strncmp(nm, "LIVE", 4) != 0 || strcmp(nm + 8, ".BIN") != 0)
+            continue;
+        bool digits = true;
+        for (int i = 4; i < 8; i++) if (nm[i] < '0' || nm[i] > '9') digits = false;
+        if (!digits) continue;
+        s_order[s_order_n++] = (uint16_t)atoi(nm + 4);
+    }
+    closedir(d);
+    for (int i = (int)s_order_n - 1; i > 0; i--) {          /* Fisher-Yates */
+        int j = (int)(esp_random() % (uint32_t)(i + 1));
+        uint16_t t = s_order[i]; s_order[i] = s_order[j]; s_order[j] = t;
+    }
+    s_order_pos = 0;
+    return s_order_n > 0;
+}
+
+static void order_drop(uint16_t idx)
+{
+    if (s_order == NULL) return;
+    for (uint16_t i = s_order_pos; i < s_order_n; i++)
+        if (s_order[i] == idx) {
+            memmove(&s_order[i], &s_order[i + 1],
+                    (size_t)(s_order_n - i - 1) * sizeof(uint16_t));
+            s_order_n--;
+            return;
+        }
+}
+
+/* 0259: main.c holds the splash on the panel until a card photo is published; once
+ * one is, the logo buffer can go.  The short delay lets any bounce buffer that is
+ * still scanning the logo finish first. */
+extern uint8_t *g_splash_buf;
+static void splash_released(void)
+{
+    if (g_splash_buf != NULL && s_fb_live != g_splash_buf) {
+        vTaskDelay(pdMS_TO_TICKS(250));
+        heap_caps_free(g_splash_buf);
+        g_splash_buf = NULL;
+        app_logf("splash     : logo buffer released after the first photo\n");
+    }
+}
+
+static bool show_next_shuffled(void)
+{
+    int guard = (int)s_order_n + 2;
+    while (guard-- > 0) {
+        if (s_order_pos >= s_order_n && !order_build()) return false;
+        uint16_t idx = s_order[s_order_pos++];
+        if (live_load(idx)) {
+            s_cur = (int32_t)idx;
+            app_logf("live       : show %u (shuffled %u/%u)\n", (unsigned)idx,
+                     (unsigned)s_order_pos, (unsigned)s_order_n);
+            splash_released();
+            return true;
+        }
+        app_logf("live       : skip %u (no such file)\n", (unsigned)idx);
+    }
+    return false;
+}
+
 /* ---- 0258: portrait canvas ---------------------------------------------- */
 /* The panel is mounted rotated, and every photograph reaches this buffer through
  * convert_photo64.py's transform: portrait canvas (480x640) -> landscape raster,
@@ -530,6 +615,22 @@ static void build_notice_view(uint8_t *dst, const uint8_t *asset, int w, int h)
     blit_viewer(dst, (VIEW_W - w) / 2, (VIEW_H - h) / 2, w, h, asset);
 }
 
+/* 0259: after a prompt has consumed presses, the button state must be settled
+ * before the loop trusts it again.  What actually went wrong: ask_delete() (and
+ * ask_keep()) read the button themselves while the loop is blocked inside them,
+ * so the loop's press_since/press_used/last_level could still describe the press
+ * that answered the prompt.  The release could then be re-read as a fresh shoot
+ * press -- the double-shoot Stephen saw -- or, when the press began while the
+ * loop was blocked, press_since stayed 0 and the next real press was swallowed.
+ * Waiting for release and letting the contacts settle removes both. */
+static void settle_button(int quiet_ms)
+{
+    int64_t t0 = esp_timer_get_time();
+    while (gpio_get_level(PIN_BTN) == 0 && esp_timer_get_time() - t0 < 2000000LL)
+        vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(quiet_ms));
+}
+
 /* 0256: one place that puts a notice on the panel.  restore_after=true means the
  * notice is a transient message: when its 4 s are up the frame puts the previous
  * photograph back, so a failed capture no longer returns to the last picture
@@ -677,7 +778,7 @@ static void delete_current_photo(uint32_t *show_idx, int64_t *last_show)
     if (ans == 1) {
         show_notice(NOTICE_DELETING, NOTICE_W, NOTICE_H, "deleting", false, 2000);
         bool ok = (unlink(path) == 0);
-        if (ok) live_scan();
+        if (ok) { order_drop((uint16_t)s_cur); live_scan(); }
         app_logf("delete     : %s %s, library %u frames\n",
                  ok ? "removed" : "FAILED to remove", path, (unsigned)s_lib_count);
         s_cur = -1;
@@ -834,7 +935,9 @@ void live_start(esp_lcd_panel_handle_t panel)
              s_mounted ? "SD" : "no-SD", (unsigned)s_lib_count, (unsigned)s_lib_max, LIVE_DIR);
     write_report();
 
-    int64_t last_show = esp_timer_get_time();
+    /* 0259: no placeholder any more.  The splash stays on the panel until the
+     * first card photo is published, so the first slide must not wait out a dwell. */
+    int64_t last_show = esp_timer_get_time() - (int64_t)DWELL_MS * 1000;
     uint32_t show_idx = 0;
     int last_level = 1;
 
@@ -871,17 +974,30 @@ void live_start(esp_lcd_panel_handle_t panel)
             press_used = true;
             press_since = 0;
             delete_current_photo(&show_idx, &last_show);
+            settle_button(250);
             last_level = gpio_get_level(PIN_BTN);
             armed = (last_level == 1);
+        } else if (level == 0 && !press_used && !s_shooting && press_since != 0 &&
+                   now - press_since > (int64_t)HOLD_DELETE_MS * 1000) {
+            /* a hold that could not open the confirm used to leave no trace at all */
+            press_used = true;
+            int64_t ignored_ms = (now - press_since) / 1000;
+            press_since = 0;
+            app_logf("delete     : hold of %lld ms ignored (s_cur %d, delete_ok %d, notice %d, shooting %d)\n",
+                     (long long)ignored_ms, (int)s_cur, (int)press_delete_ok,
+                     (int)(now <= s_notice_until), (int)s_shooting);
         } else if (level == 1 && prev == 0 && armed && !press_used && !s_shooting &&
+                   press_since != 0 &&
                    now - press_since < (int64_t)HOLD_DELETE_MS * 1000) {
             press_used = true;             /* the press is spent either way */
+            int64_t held_ms = (now - press_since) / 1000;   /* read BEFORE clearing */
             press_since = 0;
             armed = false;
             s_shooting = true;
             s_notice_until = 0;            /* 0254: a press overrides the notice */
             s_notice_restore = false;      /* 0256: and cancels a pending restore */
-            app_logf("live       : BUTTON pressed, library %u frames\n", (unsigned)s_lib_count);
+            app_logf("live       : BUTTON pressed (%lld ms), library %u frames\n",
+                     (long long)held_ms, (unsigned)s_lib_count);
             snapshot_previous();           /* 0254: clean frame for any failure path */
             for (int step = 3; step >= 1; step--) {
                 draw_countdown(step);
@@ -900,8 +1016,9 @@ void live_start(esp_lcd_panel_handle_t panel)
                 s_pending = false;
                 outcome = finish_frame();
                 app_logf("live       : photo received and on screen\n");
-                /* 0254: the press that answered the prompt must not arm another
-                 * shoot; a held button only counts again after it is released */
+                /* 0254/0259: the press that answered the prompt must not arm
+                 * another shoot; settle the button before trusting it again */
+                settle_button(250);
                 last_level = gpio_get_level(PIN_BTN);
                 armed = (last_level == 1);
             } else {
@@ -927,6 +1044,7 @@ void live_start(esp_lcd_panel_handle_t panel)
         if (s_pending && !s_shooting) {
             s_pending = false;
             int outcome = finish_frame();
+            settle_button(250);
             last_level = gpio_get_level(PIN_BTN);
             armed = (last_level == 1);
             if (outcome == 1) { s_cur = (int32_t)(s_lib_max ? s_lib_max - 1 : -1); show_idx = 0; last_show = esp_timer_get_time(); }
@@ -936,19 +1054,7 @@ void live_start(esp_lcd_panel_handle_t panel)
         if (!s_shooting && s_lib_count && esp_timer_get_time() > s_notice_until &&
             esp_timer_get_time() - last_show > (int64_t)DWELL_MS * 1000) {
             last_show = esp_timer_get_time();
-            uint32_t tries = 0;
-            /* 0247: indices run to s_lib_max and the naming scheme allows holes,
-             * so bounding the search by the file count can burn whole 10 s cycles */
-            while (tries++ < (s_lib_max ? s_lib_max : 1)) {
-                uint32_t idx = show_idx % (s_lib_max ? s_lib_max : 1);
-                if (live_load(idx)) {
-                    s_cur = (int32_t)idx;              /* 0257: this one is on the panel */
-                    app_logf("live       : show %u\n", (unsigned)show_idx);
-                    show_idx++;
-                    break;
-                }
-                show_idx++;
-            }
+            show_next_shuffled();          /* 0259: shuffled, one of each per cycle */
         }
 
         /* 0256: a transient notice hands the panel back to the previous photo */

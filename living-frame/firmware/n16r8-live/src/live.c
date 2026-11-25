@@ -251,7 +251,26 @@ static bool card_mount(void)
     return true;
 }
 
-/* finding 8: only LIVEdddd.BIN counts, and the next index is max+1 */
+/* finding 8: only LIVE<digits>.BIN counts, and the next index is max+1.
+ * 0259 (Copilot review): live_store() writes %04u, which silently becomes five
+ * digits at 10000, so the scan has to accept four OR five -- otherwise the ten
+ * thousandth photo is stored and then never shown. */
+static bool parse_live_name(const char *nm, uint32_t *out)
+{
+    size_t len = strlen(nm);
+    if (len != 12 && len != 13) return false;
+    if (strncmp(nm, "LIVE", 4) != 0) return false;
+    if (strcmp(nm + len - 4, ".BIN") != 0) return false;
+    uint32_t v = 0;
+    for (size_t i = 4; i < len - 4; i++) {
+        char c = nm[i];
+        if (c < '0' || c > '9') return false;
+        v = v * 10u + (uint32_t)(c - '0');
+    }
+    *out = v;
+    return true;
+}
+
 static void live_scan(void)
 {
     DIR *d = opendir(LIVE_DIR);
@@ -261,13 +280,8 @@ static void live_scan(void)
     struct dirent *e;
     uint32_t maxidx = 0, n = 0;
     while ((e = readdir(d)) != NULL) {
-        const char *nm = e->d_name;
-        if (strlen(nm) != 12 || strncmp(nm, "LIVE", 4) != 0 || strcmp(nm + 8, ".BIN") != 0)
-            continue;
-        bool digits = true;
-        for (int i = 4; i < 8; i++) if (nm[i] < '0' || nm[i] > '9') digits = false;
-        if (!digits) continue;
-        uint32_t idx = (uint32_t)atoi(nm + 4);
+        uint32_t idx;
+        if (!parse_live_name(e->d_name, &idx)) continue;
         if (idx + 1 > maxidx) maxidx = idx + 1;
         n++;
     }
@@ -331,7 +345,9 @@ static bool order_build(void)
 {
     DIR *d = opendir(LIVE_DIR);
     if (!d) return false;
-    uint16_t cap = (uint16_t)(s_lib_max ? s_lib_max : 1);
+    /* the order holds indices, so the cap has to follow the highest index, not the
+     * file count -- and indices above 65535 would not fit; those are refused below */
+    uint16_t cap = (uint16_t)(s_lib_max > 65535u ? 65535u : (s_lib_max ? s_lib_max : 1));
     if (cap < 2) cap = 2;
     if (s_order == NULL || s_order_cap < cap) {
         if (s_order) { heap_caps_free(s_order); s_order = NULL; }
@@ -343,13 +359,9 @@ static bool order_build(void)
     s_order_n = 0;
     struct dirent *e;
     while ((e = readdir(d)) != NULL && s_order_n < s_order_cap) {
-        const char *nm = e->d_name;
-        if (strlen(nm) != 12 || strncmp(nm, "LIVE", 4) != 0 || strcmp(nm + 8, ".BIN") != 0)
-            continue;
-        bool digits = true;
-        for (int i = 4; i < 8; i++) if (nm[i] < '0' || nm[i] > '9') digits = false;
-        if (!digits) continue;
-        s_order[s_order_n++] = (uint16_t)atoi(nm + 4);
+        uint32_t idx;
+        if (parse_live_name(e->d_name, &idx) && idx <= 65535u)
+            s_order[s_order_n++] = (uint16_t)idx;   /* the order holds uint16 indices */
     }
     closedir(d);
     for (int i = (int)s_order_n - 1; i > 0; i--) {          /* Fisher-Yates */
@@ -625,10 +637,22 @@ static void build_notice_view(uint8_t *dst, const uint8_t *asset, int w, int h)
  * Waiting for release and letting the contacts settle removes both. */
 static void settle_button(int quiet_ms)
 {
+    /* Wait until the button has been up continuously for quiet_ms.  A press that
+     * lands inside the quiet window restarts the timer rather than being swallowed
+     * (Copilot finding 2) -- and the loop can never block forever. */
     int64_t t0 = esp_timer_get_time();
-    while (gpio_get_level(PIN_BTN) == 0 && esp_timer_get_time() - t0 < 2000000LL)
+    int64_t up_since = 0;
+    for (;;) {
+        int64_t now = esp_timer_get_time();
+        if (gpio_get_level(PIN_BTN) == 1) {
+            if (up_since == 0) up_since = now;
+            if (now - up_since >= (int64_t)quiet_ms * 1000) return;
+        } else {
+            up_since = 0;
+        }
+        if (now - t0 > 3000000LL) return;
         vTaskDelay(pdMS_TO_TICKS(10));
-    vTaskDelay(pdMS_TO_TICKS(quiet_ms));
+    }
 }
 
 /* 0256: one place that puts a notice on the panel.  restore_after=true means the

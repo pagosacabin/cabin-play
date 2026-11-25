@@ -113,6 +113,9 @@ volatile uint32_t s_swap_applied; /* frames taken at a boundary since boot */
 volatile uint32_t s_swap_vsync;   /* vsync count when the last swap was taken */
 volatile int64_t  s_swap_req_us;  /* 0260: when the task asked for the swap */
 volatile int64_t  s_swap_lat_us;  /* 0260: request -> applied, measured in the ISR */
+/* 0260: guards the pending-buffer check-and-take, so a task-side cancel on timeout
+ * cannot race the ISR taking the same frame (Copilot review, second pass). */
+portMUX_TYPE s_swap_mux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t s_vsync_count;
 static volatile uint32_t s_fill_count;
 
@@ -133,6 +136,7 @@ static const esp_partition_t *s_report_part;
 static int    s_report_sector;
 static size_t s_report_done;
 static bool   s_report_open;
+static volatile bool s_panel_started;   /* 0260: never erase once this is set */
 
 void app_logf(const char *fmt, ...)   /* shared with live.c */
 {
@@ -158,13 +162,20 @@ void write_report(void)   /* shared with live.c */
     if (s_report_part == NULL) return;
     if (!s_report_open) {
         /* The only erase this app ever does.  app_main calls write_report() before
-         * panel_start, so it happens with no scanout running; if the erase fails the
-         * writer stays closed and the next call retries. (Copilot review, finding 2.) */
-        if (esp_partition_erase_range(s_report_part, 0, s_report_part->size) != ESP_OK)
-            return;
-        s_report_open = true;
-        s_report_sector = 0;
-        s_report_done = 0;
+         * panel_start; once scanout is running an erase is refused outright rather
+         * than retried, because a 64 KiB erase stalls the cache the bounce ISR reads
+         * PSRAM through.  Three attempts at boot, then the report stays closed for
+         * the rest of the boot. (Copilot review, finding 2 -- both passes.) */
+        if (s_panel_started) return;
+        for (int attempt = 0; attempt < 3 && !s_report_open; attempt++) {
+            if (attempt) vTaskDelay(pdMS_TO_TICKS(10));
+            if (esp_partition_erase_range(s_report_part, 0, s_report_part->size) == ESP_OK) {
+                s_report_open = true;
+                s_report_sector = 0;
+                s_report_done = 0;
+            }
+        }
+        if (!s_report_open) return;
     }
     while (s_report_done < g_report_len && s_report_sector < REPORT_SECTORS) {
         size_t chunk = g_report_len - s_report_done;
@@ -205,6 +216,7 @@ static bool IRAM_ATTR bounce_fill(esp_lcd_panel_handle_t panel, void *bounce_buf
      * atomic on this core; the task polls s_fb_pending back to NULL to know the
      * swap has landed. */
     if (pos_px == 0) {
+        portENTER_CRITICAL_ISR(&s_swap_mux);
         uint8_t *p = s_fb_pending;
         if (p != NULL) {
             s_fb_live = p;
@@ -213,6 +225,7 @@ static bool IRAM_ATTR bounce_fill(esp_lcd_panel_handle_t panel, void *bounce_buf
             s_swap_lat_us = esp_timer_get_time() - s_swap_req_us;
             s_swap_applied++;
         }
+        portEXIT_CRITICAL_ISR(&s_swap_mux);
     }
     s_scan_pos = (uint32_t)pos_px;
     s_fill_count++;
@@ -353,6 +366,7 @@ void app_main(void)
         write_report();
         abort();
     }
+    s_panel_started = true;   /* 0260: from here on nothing may erase the report */
     app_logf("panel      : streaming (no_fb, %d-line bounce buffers, %d B each)\n",
              BB_LINES, BB_PX);
     if (s_splash != NULL) {

@@ -61,6 +61,7 @@ extern volatile uint32_t s_swap_applied;   /* 0260: swaps taken at a boundary */
 extern volatile uint32_t s_swap_vsync;     /* 0260: vsync count of the last swap */
 extern volatile int64_t  s_swap_req_us;    /* 0260: request timestamp */
 extern volatile int64_t  s_swap_lat_us;    /* 0260: request -> applied, in the ISR */
+extern portMUX_TYPE s_swap_mux;            /* 0260: guards the pending handoff */
 extern volatile uint32_t s_vsync_count;
 extern void app_logf(const char *fmt, ...);
 extern void write_report(void);
@@ -159,19 +160,30 @@ static void publish(uint8_t *buf, const char *what)
 
     int64_t t0 = esp_timer_get_time();
     s_swap_req_us = t0;
+    taskENTER_CRITICAL(&s_swap_mux);
     s_fb_pending = buf;
+    taskEXIT_CRITICAL(&s_swap_mux);
     while (s_fb_pending != NULL && esp_timer_get_time() - t0 < SWAP_TIMEOUT_US)
         vTaskDelay(1);
     int64_t polled = esp_timer_get_time() - t0;
 
-    if (s_fb_pending != NULL) {
+    bool applied;
+    taskENTER_CRITICAL(&s_swap_mux);
+    applied = (s_fb_pending == NULL);          /* the ISR took it at a boundary */
+    if (!applied && s_fb_pending == buf) s_fb_pending = NULL;   /* cancel: see below */
+    taskEXIT_CRITICAL(&s_swap_mux);
+
+    if (!applied) {
         /* No frame boundary for 100 ms.  Publishing directly from the task would
          * land wherever the raster is if scanout resumes -- the exact tear 0260
-         * removes -- so the frame is ABANDONED instead: the panel keeps the frame
-         * it has, the caller's buffer stays off screen (s_w is not toggled) and the
-         * next swap tries again.  (Copilot review, finding 1.) */
+         * removes -- so the frame is ABANDONED: the panel keeps the frame it has,
+         * the caller's buffer stays off screen (s_w is not toggled) and the next
+         * swap tries again.  The pending slot is cancelled inside the same critical
+         * section that the ISR takes it in, so a late boundary can never publish a
+         * buffer the caller has started rewriting.  (Copilot review, findings 1.) */
         app_logf("swap       : %s NOT published -- no frame boundary in %lld us"
-                 " (scanout stopped?); panel unchanged\n", what, (long long)polled);
+                 " (scanout stopped?); handoff cancelled, panel unchanged\n",
+                 what, (long long)polled);
         return;
     }
     uint32_t line = pos / OUT_W;

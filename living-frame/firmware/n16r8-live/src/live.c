@@ -284,6 +284,9 @@ static void live_scan(void)
     while ((e = readdir(d)) != NULL) {
         uint32_t idx;
         if (!parse_live_name(e->d_name, &idx)) continue;
+        /* 0259: order_build() drops indices above 65535, so counting them here would
+         * report a bigger library than the slideshow can ever show */
+        if (idx > 65535u) continue;
         if (idx + 1 > maxidx) maxidx = idx + 1;
         n++;
     }
@@ -718,6 +721,13 @@ static bool ask_keep(uint8_t *fb, bool *out_timed_out)
         if (level == 1 && last == 0 && press_us != 0) {           /* released */
             int64_t held = (now - press_us) / 1000;
             draw_hold_bar(fb, 0);
+            if (held < MIN_PRESS_MS) {                            /* 0259: bounce */
+                app_logf("confirm    : ignored a %lld ms tap (bounce)\n", (long long)held);
+                press_us = 0;
+                last = level;
+                vTaskDelay(pdMS_TO_TICKS(20));
+                continue;
+            }
             if (held < KEEP_HOLD_MS) {
                 app_logf("confirm    : KEEP (short press, %lld ms)\n", (long long)held);
                 return true;
@@ -771,6 +781,15 @@ static int ask_delete(uint8_t *fb)
         if (level == 1 && last == 0 && press_us != 0) {
             int64_t held = (now - press_us) / 1000;
             draw_hold_bar(fb, 0);
+            if (held < MIN_PRESS_MS) {
+                /* 0259 (Copilot review): a contact bounce must never answer the
+                 * delete prompt -- deleting is the one irreversible answer here */
+                app_logf("delete     : ignored a %lld ms tap (bounce)\n", (long long)held);
+                press_us = 0;
+                last = level;
+                vTaskDelay(pdMS_TO_TICKS(20));
+                continue;
+            }
             if (held < HOLD_DELETE_MS) {
                 app_logf("delete     : DELETE (short press, %lld ms)\n", (long long)held);
                 return 1;

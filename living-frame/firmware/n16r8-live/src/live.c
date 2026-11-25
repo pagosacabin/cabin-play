@@ -710,6 +710,10 @@ static int finish_frame(void)
 
     if (!stored) {
         app_logf("live       : STORE FAILED - shown but not kept, no ack sent\n");
+        /* 0257 (Copilot review finding 1): the panel is showing a photograph that
+         * is not in the library.  Leaving s_cur on the previous index would let a
+         * hold open the delete confirm for -- and delete -- the previous file. */
+        s_cur = -1;
         s_need_report = true;
         return -1;
     }
@@ -793,18 +797,27 @@ void live_start(esp_lcd_panel_handle_t panel)
         static bool armed = true;
         static bool press_used = false;    /* 0257: this press became a hold */
         static int64_t press_since = 0;    /* 0257: when the current press began */
+        static bool press_delete_ok = false;  /* 0257: press began on the slideshow */
 
         int prev = last_level;
         if (level != last_level) last_level = level;
         if (level == 1) armed = true;      /* a press needs a seen release first */
-        if (level == 0 && prev == 1) { press_used = false; press_since = now; }
+        if (level == 0 && prev == 1) {
+            press_used = false;
+            press_since = now;
+            /* 0257 (Copilot review finding 2): a press that begins while a notice
+             * is on the panel must not open the delete confirm when the notice
+             * expires under the still-held button -- s_cur can be stale there. */
+            press_delete_ok = (now > s_notice_until);
+        }
 
         /* 0257: the 2 s hold is now the silent delete gesture, so the shoot fires
          * on the RELEASE of a short press instead of 30 ms into the press -- a
          * hold that also fired the camera could never be a silent menu.  The hold
          * only counts while a photograph is on the slideshow and no notice is up. */
-        if (level == 0 && !press_used && !s_shooting && s_cur >= 0 && now > s_notice_until &&
-            press_since != 0 && now - press_since > (int64_t)HOLD_DELETE_MS * 1000) {
+        if (level == 0 && !press_used && !s_shooting && press_delete_ok && s_cur >= 0 &&
+            now > s_notice_until && press_since != 0 &&
+            now - press_since > (int64_t)HOLD_DELETE_MS * 1000) {
             press_used = true;
             press_since = 0;
             delete_current_photo(&show_idx, &last_show);

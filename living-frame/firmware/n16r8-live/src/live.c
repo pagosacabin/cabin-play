@@ -15,7 +15,8 @@
  *   3  the receive callback only assembles bytes; SHA, SD write, display and the
  *      ESP-NOW ack all happen in this loop, never in the WiFi callback
  *   4  two buffers: drawing happens in the buffer that is NOT being scanned out,
- *      and it is published with one pointer store (main.c reads s_fb_live)
+ *      and it is published at a frame boundary (0260: main.c takes s_fb_pending
+ *      in the bounce ISR at pos_px == 0 -- see publish() below)
  *   6  packets are gated on the camera's MAC and carry a per-boot session id
  *   8  the library scan matches exactly LIVEdddd.BIN
  *
@@ -54,6 +55,13 @@
 
 extern uint8_t *s_fb;
 extern uint8_t *volatile s_fb_live;
+extern uint8_t *volatile s_fb_pending;     /* 0260: frame waiting for a boundary */
+extern volatile uint32_t s_scan_pos;       /* 0260: last pos_px the bounce ISR saw */
+extern volatile uint32_t s_swap_applied;   /* 0260: swaps taken at a boundary */
+extern volatile uint32_t s_swap_vsync;     /* 0260: vsync count of the last swap */
+extern volatile int64_t  s_swap_req_us;    /* 0260: request timestamp */
+extern volatile int64_t  s_swap_lat_us;    /* 0260: request -> applied, in the ISR */
+extern volatile uint32_t s_vsync_count;
 extern void app_logf(const char *fmt, ...);
 extern void write_report(void);
 
@@ -118,6 +126,60 @@ static void sha_hex(const uint8_t *d, size_t n, char out[65])
     for (int i = 0; i < 32; i++) sprintf(out + i * 2, "%02x", h[i]);
     out[64] = 0;
 }
+
+/* ---- 0260: frame-boundary publication -----------------------------------
+ * What the code showed: main.c's bounce ISR copies from s_fb_live one 16-line
+ * burst at a time (once per ~0.4 ms at 25 MHz), and this file used to publish a
+ * finished frame with a bare `s_fb_live = buf;` from the loop.  That store lands
+ * wherever the raster happens to be, so the lines already scanned out of the old
+ * buffer stay and the rest come from the new one: one refresh is part old image,
+ * part new -- the torn splash->photo handover Stephen filmed, and the same
+ * artifact on every return to a photo (keep prompt, notice, delete).
+ *
+ * The frame is now handed over in s_fb_pending and only the ISR takes it, at
+ * pos_px == 0, before the first burst of a frame is filled.  Everything below
+ * publishes through this helper; after boot nothing else assigns s_fb_live.
+ * ------------------------------------------------------------------------- */
+#define SWAP_TIMEOUT_US   100000     /* 100 ms: no boundary this long means no scanout */
+#define SWAP_FLUSH_EVERY  12         /* persist the swap log about once per 10-photo cycle */
+static uint32_t s_swaps_since_flush;
+
+static void publish(uint8_t *buf, const char *what)
+{
+    uint32_t pos    = s_scan_pos;         /* last burst the ISR was handed */
+    uint32_t vs_req = s_vsync_count;
+    int64_t  t0     = esp_timer_get_time();
+
+    /* Persist the log BEFORE the request, so a flash write's cache stall can only
+     * disturb the outgoing frame -- never the frame this swap is installing. */
+    if (++s_swaps_since_flush >= SWAP_FLUSH_EVERY) {
+        s_swaps_since_flush = 0;
+        write_report();
+    }
+
+    s_swap_req_us = esp_timer_get_time();
+    s_fb_pending = buf;
+    while (s_fb_pending != NULL && esp_timer_get_time() - t0 < SWAP_TIMEOUT_US)
+        vTaskDelay(1);
+    int64_t polled = esp_timer_get_time() - t0;
+
+    if (s_fb_pending != NULL) {           /* no scanout seen: publish directly */
+        s_fb_pending = NULL;
+        s_fb_live = buf;
+        app_logf("swap       : %s -- NO frame boundary in %lld us (panel not streaming?),"
+                 " published directly\n", what, (long long)polled);
+    } else {
+        uint32_t line = pos / OUT_W;
+        app_logf("swap       : %s requested at px %u (raster at line %u/%d, vsync %u) ->"
+                 " applied at pos 0 of the next frame in %lld us (vsync %u), swap #%u,"
+                 " mixed lines 0 (a bare pointer store would have mixed %d)\n",
+                 what, (unsigned)pos, (unsigned)line, OUT_H, (unsigned)vs_req,
+                 (long long)s_swap_lat_us, (unsigned)s_swap_vsync,
+                 (unsigned)s_swap_applied, OUT_H - (int)line);
+    }
+    s_w ^= 1;
+}
+
 
 /* ---- SD ----------------------------------------------------------------- */
 static const char *g_cmd_tag = "";
@@ -346,8 +408,7 @@ static bool live_load(uint32_t i)
     size_t rd = fread(dst, 1, FB_BYTES, f);
     fclose(f);
     if (rd != FB_BYTES) return false;
-    s_fb_live = dst;                         /* atomic publish */
-    s_w ^= 1;
+    publish(dst, "photo");                   /* 0260: applied at a frame boundary */
     return true;
 }
 
@@ -496,8 +557,7 @@ static void draw_countdown(int step)
         for (int c = 0; c < 3; c++)
             if (g[r] & (0x4 >> c))
                 fill_viewer_rect(dst, x0 + c * blk, y0 + r * blk, blk, blk, 0x3f);
-    s_fb_live = dst;
-    s_w ^= 1;
+    publish(dst, "countdown");
 }
 
 /* ---- esp-now ------------------------------------------------------------ */
@@ -587,8 +647,7 @@ static void restore_previous(const char *why)
 {
     uint8_t *prev = s_buf[s_w];
     if (s_hold != NULL) memcpy(prev, s_hold, FB_BYTES);
-    s_fb_live = prev;
-    s_w ^= 1;
+    publish(prev, "restore previous");
     app_logf("live       : previous frame restored to the panel (%s)\n", why);
 }
 
@@ -672,8 +731,7 @@ static void show_notice(const uint8_t *asset, int w, int h, const char *why,
 {
     uint8_t *notice = s_buf[s_w];
     build_notice_view(notice, asset, w, h);
-    s_fb_live = notice;
-    s_w ^= 1;
+    publish(notice, why);
     s_notice_until = esp_timer_get_time() + (int64_t)ms * 1000;
     s_notice_restore = restore_after;
     app_logf("live       : notice on panel for 4 s (%s)%s\n", why,
@@ -818,8 +876,7 @@ static void delete_current_photo(uint32_t *show_idx, int64_t *last_show)
     snapshot_previous();                       /* the photo, for the cancel path */
     uint8_t *fb = s_buf[s_w];
     build_confirm_view(fb, s_hold, DELETE_STRIP, DELETE_STRIP_H);
-    s_fb_live = fb;
-    s_w ^= 1;
+    publish(fb, "delete confirm");
     app_logf("delete     : hold opened the confirm for %s\n", path);
 
     int ans = ask_delete(fb);
@@ -870,8 +927,7 @@ static int finish_frame(void)
     uint8_t *dst = s_buf[s_w];
     build_confirm_view(dst, s_rx, PROMPT_STRIP, PROMPT_STRIP_H);
     int64_t pub_us = esp_timer_get_time();
-    s_fb_live = dst;                         /* photo + prompt on screen */
-    s_w ^= 1;
+    publish(dst, "keep prompt");              /* photo + prompt on screen */
     app_logf("timing     : shoot->display %lld ms, fs->display %lld ms\n",
              s_shoot_us ? (long long)((pub_us - s_shoot_us) / 1000) : -1LL,
              s_fs_us ? (long long)((pub_us - s_fs_us) / 1000) : -1LL);
@@ -891,8 +947,7 @@ static int finish_frame(void)
      * rung 1 -- publish first, the ack still means stored). */
     uint8_t *clean = s_buf[s_w];
     memcpy(clean, s_rx, FB_BYTES);
-    s_fb_live = clean;
-    s_w ^= 1;
+    publish(clean, "kept photo");
     app_logf("confirm    : keeping (%s), storing\n",
              timed_out ? "30 s timeout" : "answered");
 

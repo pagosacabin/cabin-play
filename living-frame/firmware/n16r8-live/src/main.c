@@ -94,15 +94,45 @@
 uint8_t *s_fb;   /* shared with live.c */
 uint8_t *g_splash_buf = NULL;   /* 0259: the logo buffer, freed by live.c once a photo lands */
 /* Double buffering (0244 peer review, finding 4): the bounce ISR must never read
- * a buffer that is being drawn into.  live.c draws into its own back buffer and
- * publishes it here with a single pointer store, so a frame appears atomically. */
-uint8_t *volatile s_fb_live;
-static volatile uint32_t s_vsync_count;
+ * a buffer that is being drawn into.  live.c draws into its own back buffer.
+ *
+ * 0260 -- WHY THE POINTER ALONE WAS NOT ENOUGH.  The ISR below copies from
+ * s_fb_live one 16-line burst at a time, so a bare `s_fb_live = buf` from the
+ * task lands between two bursts: the lines already scanned out of the old
+ * buffer stay, the rest come from the new one, and one refresh is half old
+ * photograph and half new -- the torn handover in Stephen's clip (and the same
+ * artifact on every return to a photo).  A frame may only be replaced at a frame
+ * boundary, so live.c now leaves the finished buffer in s_fb_pending and this ISR
+ * takes it when pos_px == 0, before the first burst of a frame is filled.  Every
+ * line of a frame therefore comes from exactly one buffer.  After boot, nothing
+ * outside the ISR may assign s_fb_live. */
+uint8_t *volatile s_fb_live;      /* the buffer being scanned out */
+uint8_t *volatile s_fb_pending;   /* finished frame waiting for a frame boundary */
+volatile uint32_t s_scan_pos;     /* pos_px the ISR was last handed (0..FB-1) */
+volatile uint32_t s_swap_applied; /* frames taken at a boundary since boot */
+volatile uint32_t s_swap_vsync;   /* vsync count when the last swap was taken */
+volatile int64_t  s_swap_req_us;  /* 0260: when the task asked for the swap */
+volatile int64_t  s_swap_lat_us;  /* 0260: request -> applied, measured in the ISR */
+volatile uint32_t s_vsync_count;
 static volatile uint32_t s_fill_count;
 
-/* ---- report sink (FT232R console is dead on this bench -- 0225) ----------- */
+/* ---- report sink (FT232R console is dead on this bench -- 0225) -----------
+ * 0260: erased ONCE, at the first write (which happens before the panel starts),
+ * and thereafter every write APPENDS a 4 KiB record with no erase.  A 64 KiB
+ * erase takes tens of ms and stalls the cache the bounce ISR reads PSRAM through,
+ * which is a visible disturbance of the very frames this task is about; 0243's
+ * slideshow app already ships this exact record format for that reason.  Format:
+ * magic u32, length u32, text -- one record per 4096-byte sector, 16 sectors. */
+#define REPORT_SECTOR   4096
+#define REPORT_SECTORS  16
+#define REPORT_MAGIC    0x30323630u   /* "0260" */
+
 static char  g_report[6000];
 static size_t g_report_len;
+static const esp_partition_t *s_report_part;
+static int    s_report_sector;
+static size_t s_report_done;
+static bool   s_report_open;
 
 void app_logf(const char *fmt, ...)   /* shared with live.c */
 {
@@ -122,13 +152,36 @@ void app_logf(const char *fmt, ...)   /* shared with live.c */
 
 void write_report(void)   /* shared with live.c */
 {
-    const esp_partition_t *part = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t)0x40, "report");
-    if (part == NULL) return;
-    esp_partition_erase_range(part, 0, part->size);
-    uint32_t header[2] = { 0x30323237u, (uint32_t)g_report_len };  /* "0227" */
-    esp_partition_write(part, 0, header, sizeof(header));
-    esp_partition_write(part, sizeof(header), g_report, g_report_len);
+    if (s_report_part == NULL)
+        s_report_part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+                                                 (esp_partition_subtype_t)0x40, "report");
+    if (s_report_part == NULL) return;
+    if (!s_report_open) {
+        /* The only erase this app ever does, and the caller reaches it before the
+         * panel starts (boot, and the mount log in live_start). */
+        esp_partition_erase_range(s_report_part, 0, s_report_part->size);
+        s_report_open = true;
+        s_report_sector = 0;
+        s_report_done = 0;
+    }
+    while (s_report_done < g_report_len && s_report_sector < REPORT_SECTORS) {
+        size_t chunk = g_report_len - s_report_done;
+        if (chunk > REPORT_SECTOR - 8) chunk = REPORT_SECTOR - 8;
+        uint32_t hdr[2] = { REPORT_MAGIC, (uint32_t)chunk };
+        size_t addr = (size_t)s_report_sector * REPORT_SECTOR;
+        if (esp_partition_write(s_report_part, addr, hdr, sizeof hdr) != ESP_OK ||
+            esp_partition_write(s_report_part, addr + sizeof hdr,
+                                g_report + s_report_done, chunk) != ESP_OK) {
+            return;   /* a failed persist must not take the display down */
+        }
+        s_report_sector++;
+        s_report_done += chunk;
+    }
+    if (s_report_done >= g_report_len) {
+        g_report_len = 0;
+        s_report_done = 0;
+    }
+    /* Out of sectors: keep logging in RAM; the earlier records still stand. */
 }
 
 static void sha256_hex(const uint8_t *data, size_t len, char out[65])
@@ -144,6 +197,22 @@ static bool IRAM_ATTR bounce_fill(esp_lcd_panel_handle_t panel, void *bounce_buf
                                   int pos_px, int len_bytes, void *user_ctx)
 {
     (void)panel; (void)user_ctx;
+    /* 0260: the only place a new frame may take effect.  pos_px == 0 is the first
+     * burst of a frame, filled before any of that frame's lines are scanned out,
+     * so the whole frame comes from one buffer.  A 32-bit aligned pointer store is
+     * atomic on this core; the task polls s_fb_pending back to NULL to know the
+     * swap has landed. */
+    if (pos_px == 0) {
+        uint8_t *p = s_fb_pending;
+        if (p != NULL) {
+            s_fb_live = p;
+            s_fb_pending = NULL;
+            s_swap_vsync = s_vsync_count;
+            s_swap_lat_us = esp_timer_get_time() - s_swap_req_us;
+            s_swap_applied++;
+        }
+    }
+    s_scan_pos = (uint32_t)pos_px;
     s_fill_count++;
     memcpy(bounce_buf, (const uint8_t *)s_fb_live + pos_px, (size_t)len_bytes);
     return false;
@@ -239,7 +308,9 @@ void app_main(void)
     uint8_t *s_splash = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (s_splash != NULL && SPLASH64_BYTES == FB_BYTES && sizeof(SPLASH64_IMAGE) == FB_BYTES) {
         memcpy(s_splash, SPLASH64_IMAGE, FB_BYTES);
-        s_fb_live = s_splash;          /* first scanout is the logo */
+        s_fb_live = s_splash;          /* first scanout is the logo: published
+                                        * before panel_start, so no boundary is
+                                        * needed here (0260) */
         app_logf("splash     : %u B, sha256 %s, hold %d ms\n",
                  (unsigned)sizeof(SPLASH64_IMAGE), SPLASH64_SHA256, SPLASH_HOLD_MS);
     } else {

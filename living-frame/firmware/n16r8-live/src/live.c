@@ -148,35 +148,39 @@ static void publish(uint8_t *buf, const char *what)
 {
     uint32_t pos    = s_scan_pos;         /* last burst the ISR was handed */
     uint32_t vs_req = s_vsync_count;
-    int64_t  t0     = esp_timer_get_time();
 
     /* Persist the log BEFORE the request, so a flash write's cache stall can only
-     * disturb the outgoing frame -- never the frame this swap is installing. */
+     * disturb the outgoing frame -- never the frame this swap is installing.  The
+     * timeout clock starts after this, so a flush can never eat into the wait. */
     if (++s_swaps_since_flush >= SWAP_FLUSH_EVERY) {
         s_swaps_since_flush = 0;
         write_report();
     }
 
-    s_swap_req_us = esp_timer_get_time();
+    int64_t t0 = esp_timer_get_time();
+    s_swap_req_us = t0;
     s_fb_pending = buf;
     while (s_fb_pending != NULL && esp_timer_get_time() - t0 < SWAP_TIMEOUT_US)
         vTaskDelay(1);
     int64_t polled = esp_timer_get_time() - t0;
 
-    if (s_fb_pending != NULL) {           /* no scanout seen: publish directly */
-        s_fb_pending = NULL;
-        s_fb_live = buf;
-        app_logf("swap       : %s -- NO frame boundary in %lld us (panel not streaming?),"
-                 " published directly\n", what, (long long)polled);
-    } else {
-        uint32_t line = pos / OUT_W;
-        app_logf("swap       : %s requested at px %u (raster at line %u/%d, vsync %u) ->"
-                 " applied at pos 0 of the next frame in %lld us (vsync %u), swap #%u,"
-                 " mixed lines 0 (a bare pointer store would have mixed %d)\n",
-                 what, (unsigned)pos, (unsigned)line, OUT_H, (unsigned)vs_req,
-                 (long long)s_swap_lat_us, (unsigned)s_swap_vsync,
-                 (unsigned)s_swap_applied, OUT_H - (int)line);
+    if (s_fb_pending != NULL) {
+        /* No frame boundary for 100 ms.  Publishing directly from the task would
+         * land wherever the raster is if scanout resumes -- the exact tear 0260
+         * removes -- so the frame is ABANDONED instead: the panel keeps the frame
+         * it has, the caller's buffer stays off screen (s_w is not toggled) and the
+         * next swap tries again.  (Copilot review, finding 1.) */
+        app_logf("swap       : %s NOT published -- no frame boundary in %lld us"
+                 " (scanout stopped?); panel unchanged\n", what, (long long)polled);
+        return;
     }
+    uint32_t line = pos / OUT_W;
+    app_logf("swap       : %s requested at px %u (raster at line %u/%d, vsync %u) ->"
+             " applied at pos 0 of the next frame in %lld us (vsync %u), swap #%u,"
+             " mixed lines 0 (a bare pointer store would have mixed %d)\n",
+             what, (unsigned)pos, (unsigned)line, OUT_H, (unsigned)vs_req,
+             (long long)s_swap_lat_us, (unsigned)s_swap_vsync,
+             (unsigned)s_swap_applied, OUT_H - (int)line);
     s_w ^= 1;
 }
 

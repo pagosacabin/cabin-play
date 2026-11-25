@@ -157,9 +157,11 @@ void write_report(void)   /* shared with live.c */
                                                  (esp_partition_subtype_t)0x40, "report");
     if (s_report_part == NULL) return;
     if (!s_report_open) {
-        /* The only erase this app ever does, and the caller reaches it before the
-         * panel starts (boot, and the mount log in live_start). */
-        esp_partition_erase_range(s_report_part, 0, s_report_part->size);
+        /* The only erase this app ever does.  app_main calls write_report() before
+         * panel_start, so it happens with no scanout running; if the erase fails the
+         * writer stays closed and the next call retries. (Copilot review, finding 2.) */
+        if (esp_partition_erase_range(s_report_part, 0, s_report_part->size) != ESP_OK)
+            return;
         s_report_open = true;
         s_report_sector = 0;
         s_report_done = 0;
@@ -338,6 +340,12 @@ void app_main(void)
     write_report();
     for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
 #endif
+    /* 0260: the report's one 64 KiB erase happens here, before the panel starts --
+     * an erase during scanout stalls the cache the bounce ISR reads PSRAM through
+     * and disturbs the picture.  Every later write_report() appends a 4 KiB record
+     * with no erase.  (Copilot review, finding 2.) */
+    write_report();
+
     esp_lcd_panel_handle_t panel = NULL;
     esp_err_t perr = panel_start(&panel);
     if (perr != ESP_OK) {

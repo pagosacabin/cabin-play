@@ -299,9 +299,12 @@ static bool live_store(const uint8_t *frame, char *path_out, size_t path_len)
     /* 0259 (Copilot review): the shuffle order indexes cards through a uint16, so
      * the library must stop where that can still represent every file.  Storing a
      * 65536th photo would create a file the slideshow can never show. */
-    if (s_lib_max > 65535u) {
-        app_logf("live       : library index limit reached (%u), frame not stored\n",
-                 (unsigned)s_lib_max);
+    /* The order array is indexed by uint16 and counts entries as uint16, so the
+     * library tops out at 65535 FILES (indices 0..65534).  Guarding on the count,
+     * not the next index, keeps that exact (Copilot review, second pass). */
+    if (s_lib_max >= 65535u) {
+        app_logf("live       : library full at %u files, frame not stored\n",
+                 (unsigned)s_lib_count);
         return false;
     }
     uint64_t total = 0, freeb = 0;

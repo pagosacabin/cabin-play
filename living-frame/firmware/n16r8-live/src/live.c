@@ -564,6 +564,13 @@ static int finish_frame(void)
     }
     want_hex[64] = got_hex[64] = 0;
 
+    /* 0256 (Copilot review): a verified frame supersedes any notice still on the
+     * panel.  Without this, a frame that lands inside the camera notice's 4 s
+     * window gets kept and shown, and then the notice's own expiry repaints the
+     * previous photo over it. */
+    s_notice_until = 0;
+    s_notice_restore = false;
+
     if (memcmp(hash, s_rx_hash, 32) != 0) {
         app_logf("live       : frame REJECTED, sent %s got %s\n", want_hex, got_hex);
         s_need_report = true;

@@ -114,7 +114,12 @@ static volatile bool s_rx_active, s_pending, s_shooting, s_need_report;
 static volatile int64_t s_shoot_us, s_fs_us;   /* 0245 timing instrumentation */
 static volatile uint32_t s_lib_max, s_lib_count;
 static volatile int64_t  s_notice_until;
-static int s_restore_tries;                /* 0260: bounded retry of a failed restore */   /* 0254: hold the slideshow while a notice shows */
+static int s_restore_tries;                /* 0260: bounded retry of a failed restore */
+/* 0260: what the panel is ACTUALLY showing.  s_cur names a file; only this says a
+ * photograph is on the glass, so a hold can never open the delete confirm for a
+ * photo hidden behind a notice or a confirm whose restore failed (review, 5th pass). */
+static volatile bool s_photo_on_panel;
+static bool s_hold_is_photo;   /* 0254: hold the slideshow while a notice shows */
 static volatile bool     s_notice_restore;  /* 0256: put the previous photo back when it expires */
 static volatile int32_t  s_cur = -1;        /* 0257: index of the photograph on the panel */
 static uint8_t  s_rx_hash[32];
@@ -436,7 +441,10 @@ static bool live_load(uint32_t i, bool *retry)
     if (rd != FB_BYTES) return false;
     /* 0260: applied at a frame boundary; if the swap could not be published the
      * frame is not on the panel, so this is not a successful load. */
-    if (publish(dst, "photo")) return true;
+    if (publish(dst, "photo")) {
+        s_photo_on_panel = true;
+        return true;
+    }
     if (retry) *retry = true;
     return false;
 }
@@ -596,6 +604,7 @@ static void draw_countdown(int step)
             if (g[r] & (0x4 >> c))
                 fill_viewer_rect(dst, x0 + c * blk, y0 + r * blk, blk, blk, 0x3f);
     (void)publish(dst, "countdown");   /* cosmetic: a lost countdown frame is not a fault */
+    s_photo_on_panel = false;
 }
 
 /* ---- esp-now ------------------------------------------------------------ */
@@ -679,6 +688,7 @@ static void snapshot_previous(void)
 {
     if (s_hold != NULL && s_fb_live != NULL)
         memcpy(s_hold, (const void *)s_fb_live, FB_BYTES);
+    s_hold_is_photo = s_photo_on_panel;
 }
 
 static bool restore_previous(const char *why)
@@ -689,6 +699,7 @@ static bool restore_previous(const char *why)
         app_logf("live       : restore NOT on the panel -- handoff not published (%s)\n", why);
         return false;
     }
+    s_photo_on_panel = s_hold_is_photo;      /* the snapshot is what is back on the glass */
     app_logf("live       : previous frame restored to the panel (%s)\n", why);
     return true;
 }
@@ -778,6 +789,7 @@ static void show_notice(const uint8_t *asset, int w, int h, const char *why,
     s_notice_until = esp_timer_get_time() + (int64_t)ms * 1000;
     s_notice_restore = restore_after;
     s_restore_tries = 0;
+    s_photo_on_panel = false;
     app_logf("live       : notice on panel for 4 s (%s)%s\n", why,
              restore_after ? ", previous photo returns after" : "");
 }
@@ -928,6 +940,7 @@ static void delete_current_photo(uint32_t *show_idx, int64_t *last_show)
         s_need_report = true;
         return;
     }
+    s_photo_on_panel = false;                 /* a question is on the panel, not a photo */
     app_logf("delete     : hold opened the confirm for %s\n", path);
 
     int ans = ask_delete(fb);
@@ -978,12 +991,19 @@ static int finish_frame(void)
     uint8_t *dst = s_buf[s_w];
     build_confirm_view(dst, s_rx, PROMPT_STRIP, PROMPT_STRIP_H);
     int64_t pub_us = esp_timer_get_time();
-    if (!publish(dst, "keep prompt")) {       /* photo + prompt on screen */
+    bool prompt_up = publish(dst, "keep prompt");   /* photo + prompt on screen */
+    if (prompt_up) s_photo_on_panel = false;
+    if (!prompt_up) {
         app_logf("confirm    : prompt NOT published; frame dropped, nothing stored\n");
         s_cur = -1;
         /* the panel still shows the last countdown digit -- put the snapshot back so a
-         * dropped frame cannot leave "1" sitting there (Copilot review, fourth pass) */
-        restore_previous("keep prompt not published");
+         * dropped frame cannot leave "1" sitting there (Copilot review, fourth pass),
+         * and queue the same bounded retry if that handoff is also missed (5th pass) */
+        if (!restore_previous("keep prompt not published")) {
+            s_notice_until = 0;
+            s_notice_restore = true;
+            s_restore_tries = 0;
+        }
         s_need_report = true;
         return -1;
     }
@@ -1007,6 +1027,7 @@ static int finish_frame(void)
     uint8_t *clean = s_buf[s_w];
     memcpy(clean, s_rx, FB_BYTES);
     bool shown = publish(clean, "kept photo");
+    if (shown) s_photo_on_panel = true;
     app_logf("confirm    : keeping (%s), storing%s\n",
              timed_out ? "30 s timeout" : "answered",
              shown ? "" : " (WARNING: clean photo not published -- panel still shows the prompt)");
@@ -1124,7 +1145,7 @@ void live_start(esp_lcd_panel_handle_t panel)
             /* the gesture belongs to the slideshow: no notice up AND a photograph
              * already on the panel when the press starts (Copilot finding 3 -- a
              * hold begun at startup used to cross the first slideshow load) */
-            press_delete_ok = (now > s_notice_until && s_cur >= 0);
+            press_delete_ok = (now > s_notice_until && s_cur >= 0 && s_photo_on_panel);
         }
 
         /* 0257: the 2 s hold is now the silent delete gesture, so the shoot fires
@@ -1132,7 +1153,7 @@ void live_start(esp_lcd_panel_handle_t panel)
          * hold that also fired the camera could never be a silent menu.  The hold
          * only counts while a photograph is on the slideshow and no notice is up. */
         if (level == 0 && !press_used && !s_shooting && press_delete_ok && s_cur >= 0 &&
-            now > s_notice_until && press_since != 0 &&
+            s_photo_on_panel && now > s_notice_until && press_since != 0 &&
             now - press_since > (int64_t)HOLD_DELETE_MS * 1000) {
             press_used = true;
             press_since = 0;

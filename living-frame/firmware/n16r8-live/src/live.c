@@ -145,7 +145,11 @@ static void sha_hex(const uint8_t *d, size_t n, char out[65])
 #define SWAP_FLUSH_EVERY  12         /* persist the swap log about once per 10-photo cycle */
 static uint32_t s_swaps_since_flush;
 
-static void publish(uint8_t *buf, const char *what)
+/* Returns true when the frame is on the panel.  A false return means the handoff
+ * was cancelled because no frame boundary came: callers that would act on what the
+ * panel shows (accept a delete, keep a photo, advance the slideshow index) must not
+ * proceed.  (Copilot review, third pass, finding 4.) */
+static bool publish(uint8_t *buf, const char *what)
 {
     uint32_t pos    = s_scan_pos;         /* last burst the ISR was handed */
     uint32_t vs_req = s_vsync_count;
@@ -184,7 +188,7 @@ static void publish(uint8_t *buf, const char *what)
         app_logf("swap       : %s NOT published -- no frame boundary in %lld us"
                  " (scanout stopped?); handoff cancelled, panel unchanged\n",
                  what, (long long)polled);
-        return;
+        return false;
     }
     uint32_t line = pos / OUT_W;
     app_logf("swap       : %s requested at px %u (raster at line %u/%d, vsync %u) ->"
@@ -194,6 +198,7 @@ static void publish(uint8_t *buf, const char *what)
              (long long)s_swap_lat_us, (unsigned)s_swap_vsync,
              (unsigned)s_swap_applied, OUT_H - (int)line);
     s_w ^= 1;
+    return true;
 }
 
 
@@ -424,8 +429,9 @@ static bool live_load(uint32_t i)
     size_t rd = fread(dst, 1, FB_BYTES, f);
     fclose(f);
     if (rd != FB_BYTES) return false;
-    publish(dst, "photo");                   /* 0260: applied at a frame boundary */
-    return true;
+    /* 0260: applied at a frame boundary; if the swap could not be published the
+     * frame is not on the panel, so this is not a successful load. */
+    return publish(dst, "photo");
 }
 
 /* ---- 0259: shuffled slideshow order -------------------------------------- */
@@ -573,7 +579,7 @@ static void draw_countdown(int step)
         for (int c = 0; c < 3; c++)
             if (g[r] & (0x4 >> c))
                 fill_viewer_rect(dst, x0 + c * blk, y0 + r * blk, blk, blk, 0x3f);
-    publish(dst, "countdown");
+    (void)publish(dst, "countdown");   /* cosmetic: a lost countdown frame is not a fault */
 }
 
 /* ---- esp-now ------------------------------------------------------------ */
@@ -663,7 +669,8 @@ static void restore_previous(const char *why)
 {
     uint8_t *prev = s_buf[s_w];
     if (s_hold != NULL) memcpy(prev, s_hold, FB_BYTES);
-    publish(prev, "restore previous");
+    if (!publish(prev, "restore previous"))
+        app_logf("live       : restore could not be published; panel unchanged (%s)\n", why);
     app_logf("live       : previous frame restored to the panel (%s)\n", why);
 }
 
@@ -747,7 +754,8 @@ static void show_notice(const uint8_t *asset, int w, int h, const char *why,
 {
     uint8_t *notice = s_buf[s_w];
     build_notice_view(notice, asset, w, h);
-    publish(notice, why);
+    if (!publish(notice, why))
+        app_logf("live       : notice could not be published (%s)\n", why);
     s_notice_until = esp_timer_get_time() + (int64_t)ms * 1000;
     s_notice_restore = restore_after;
     app_logf("live       : notice on panel for 4 s (%s)%s\n", why,
@@ -892,7 +900,14 @@ static void delete_current_photo(uint32_t *show_idx, int64_t *last_show)
     snapshot_previous();                       /* the photo, for the cancel path */
     uint8_t *fb = s_buf[s_w];
     build_confirm_view(fb, s_hold, DELETE_STRIP, DELETE_STRIP_H);
-    publish(fb, "delete confirm");
+    if (!publish(fb, "delete confirm")) {
+        /* The confirm never reached the panel, so there is nothing to answer: a
+         * press here must not delete a file the viewer cannot see a question about. */
+        app_logf("delete     : confirm NOT published; press ignored, nothing deleted\n");
+        *last_show = esp_timer_get_time();
+        s_need_report = true;
+        return;
+    }
     app_logf("delete     : hold opened the confirm for %s\n", path);
 
     int ans = ask_delete(fb);
@@ -943,7 +958,12 @@ static int finish_frame(void)
     uint8_t *dst = s_buf[s_w];
     build_confirm_view(dst, s_rx, PROMPT_STRIP, PROMPT_STRIP_H);
     int64_t pub_us = esp_timer_get_time();
-    publish(dst, "keep prompt");              /* photo + prompt on screen */
+    if (!publish(dst, "keep prompt")) {       /* photo + prompt on screen */
+        app_logf("confirm    : prompt NOT published; frame dropped, nothing stored\n");
+        s_cur = -1;
+        s_need_report = true;
+        return -1;
+    }
     app_logf("timing     : shoot->display %lld ms, fs->display %lld ms\n",
              s_shoot_us ? (long long)((pub_us - s_shoot_us) / 1000) : -1LL,
              s_fs_us ? (long long)((pub_us - s_fs_us) / 1000) : -1LL);
@@ -963,9 +983,10 @@ static int finish_frame(void)
      * rung 1 -- publish first, the ack still means stored). */
     uint8_t *clean = s_buf[s_w];
     memcpy(clean, s_rx, FB_BYTES);
-    publish(clean, "kept photo");
-    app_logf("confirm    : keeping (%s), storing\n",
-             timed_out ? "30 s timeout" : "answered");
+    bool shown = publish(clean, "kept photo");
+    app_logf("confirm    : keeping (%s), storing%s\n",
+             timed_out ? "30 s timeout" : "answered",
+             shown ? "" : " (WARNING: clean photo not published -- panel still shows the prompt)");
 
     char path[64] = "(not stored)";
     int64_t st0 = esp_timer_get_time();
@@ -1135,7 +1156,7 @@ void live_start(esp_lcd_panel_handle_t panel)
             if (s_pending) {
                 s_pending = false;
                 outcome = finish_frame();
-                app_logf("live       : photo received and on screen\n");
+                if (outcome >= 0) app_logf("live       : photo received and on screen\n");
                 /* 0254/0259: the press that answered the prompt must not arm
                  * another shoot; settle the button before trusting it again */
                 settle_button();

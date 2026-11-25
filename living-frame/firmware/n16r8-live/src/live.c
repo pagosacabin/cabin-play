@@ -86,6 +86,7 @@ extern void write_report(void);
 static uint8_t s_cam_mac[6] = { 0xF0, 0x16, 0x1D, 0xAE, 0x2B, 0x20 };
 static uint8_t *s_rx;                 /* receive buffer */
 static uint8_t *s_buf[2];             /* draw buffers, one published at a time */
+static uint8_t *s_hold;               /* 0254: clean copy of the frame before the countdown */
 static int      s_w;                  /* index of the buffer NOT on screen */
 static uint8_t  s_seen[CHUNKS / 8 + 1];
 static volatile uint32_t s_expect_len, s_seen_chunks;
@@ -407,9 +408,20 @@ static bool shoot(void)
 /* 0247: a failed shot must not leave the countdown digit on the panel.  The
  * buffer that is not being scanned out still holds the frame shown before the
  * countdown, so publishing it again puts the picture back. */
+/* 0254 (Copilot review finding 1): the three countdown frames overwrite BOTH draw
+ * buffers, so "previous" could only ever mean a digit.  s_hold keeps a clean copy
+ * of whatever the panel was showing before the countdown started, and every
+ * failure path restores from that instead. */
+static void snapshot_previous(void)
+{
+    if (s_hold != NULL && s_fb_live != NULL)
+        memcpy(s_hold, (const void *)s_fb_live, FB_BYTES);
+}
+
 static void restore_previous(const char *why)
 {
     uint8_t *prev = s_buf[s_w];
+    if (s_hold != NULL) memcpy(prev, s_hold, FB_BYTES);
     s_fb_live = prev;
     s_w ^= 1;
     app_logf("live       : previous frame restored to the panel (%s)\n", why);
@@ -606,7 +618,8 @@ void live_start(esp_lcd_panel_handle_t panel)
     s_rx = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
     s_buf[0] = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
     s_buf[1] = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
-    if (!s_rx || !s_buf[0] || !s_buf[1]) {
+    s_hold = (uint8_t *)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
+    if (!s_rx || !s_buf[0] || !s_buf[1] || !s_hold) {
         app_logf("live       : no PSRAM for rx/back buffers\n");
         return;
     }
@@ -676,6 +689,7 @@ void live_start(esp_lcd_panel_handle_t panel)
             s_shooting = true;
             s_notice_until = 0;            /* 0254: a press overrides the notice */
             app_logf("live       : BUTTON pressed, library %u frames\n", (unsigned)s_lib_count);
+            snapshot_previous();           /* 0254: clean frame for any failure path */
             for (int step = 3; step >= 1; step--) {
                 draw_countdown(step);
                 app_logf("live       : countdown %d\n", step);

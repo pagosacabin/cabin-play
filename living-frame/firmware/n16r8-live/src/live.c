@@ -284,9 +284,10 @@ static void live_scan(void)
     while ((e = readdir(d)) != NULL) {
         uint32_t idx;
         if (!parse_live_name(e->d_name, &idx)) continue;
-        /* 0259: order_build() drops indices above 65535, so counting them here would
-         * report a bigger library than the slideshow can ever show */
-        if (idx > 65535u) continue;
+        /* 0259: the order holds at most 65535 entries and its counter is uint16, so
+         * the highest usable index is 65534.  store, scan and order all agree on
+         * that bound -- counting a 65535 index would describe 65536 files. */
+        if (idx >= 65535u) continue;
         if (idx + 1 > maxidx) maxidx = idx + 1;
         n++;
     }
@@ -363,7 +364,7 @@ static bool order_build(void)
     if (!d) return false;
     /* the order holds indices, so the cap has to follow the highest index, not the
      * file count -- and indices above 65535 would not fit; those are refused below */
-    uint16_t cap = (uint16_t)(s_lib_max > 65535u ? 65535u : (s_lib_max ? s_lib_max : 1));
+    uint16_t cap = (uint16_t)(s_lib_max ? s_lib_max : 1);   /* s_lib_max <= 65535 by the store guard */
     if (cap < 2) cap = 2;
     if (s_order == NULL || s_order_cap < cap) {
         if (s_order) { heap_caps_free(s_order); s_order = NULL; }
@@ -376,8 +377,8 @@ static bool order_build(void)
     struct dirent *e;
     while ((e = readdir(d)) != NULL && s_order_n < s_order_cap) {
         uint32_t idx;
-        if (parse_live_name(e->d_name, &idx) && idx <= 65535u)
-            s_order[s_order_n++] = (uint16_t)idx;   /* the order holds uint16 indices */
+        if (parse_live_name(e->d_name, &idx) && idx < 65535u)
+            s_order[s_order_n++] = (uint16_t)idx;   /* 65535 entries is the ceiling */
     }
     closedir(d);
     for (int i = (int)s_order_n - 1; i > 0; i--) {          /* Fisher-Yates */

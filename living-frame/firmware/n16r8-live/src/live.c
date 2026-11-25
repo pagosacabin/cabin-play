@@ -113,7 +113,8 @@ static volatile uint16_t s_sess;
 static volatile bool s_rx_active, s_pending, s_shooting, s_need_report;
 static volatile int64_t s_shoot_us, s_fs_us;   /* 0245 timing instrumentation */
 static volatile uint32_t s_lib_max, s_lib_count;
-static volatile int64_t  s_notice_until;   /* 0254: hold the slideshow while a notice shows */
+static volatile int64_t  s_notice_until;
+static int s_restore_tries;                /* 0260: bounded retry of a failed restore */   /* 0254: hold the slideshow while a notice shows */
 static volatile bool     s_notice_restore;  /* 0256: put the previous photo back when it expires */
 static volatile int32_t  s_cur = -1;        /* 0257: index of the photograph on the panel */
 static uint8_t  s_rx_hash[32];
@@ -418,8 +419,12 @@ static bool live_store(const uint8_t *frame, char *path_out, size_t path_len)
     return true;
 }
 
-static bool live_load(uint32_t i)
+/* 0260: *retry is set when the file was fine but the handoff could not be published
+ * -- the ordered slideshow must then keep this photo for the next attempt instead of
+ * spending it on a frame nobody saw (Copilot review, fourth pass). */
+static bool live_load(uint32_t i, bool *retry)
 {
+    if (retry) *retry = false;
     if (!s_mounted) return false;
     char path[64];
     snprintf(path, sizeof(path), LIVE_DIR "/LIVE%04u.BIN", (unsigned)i);
@@ -431,7 +436,9 @@ static bool live_load(uint32_t i)
     if (rd != FB_BYTES) return false;
     /* 0260: applied at a frame boundary; if the swap could not be published the
      * frame is not on the panel, so this is not a successful load. */
-    return publish(dst, "photo");
+    if (publish(dst, "photo")) return true;
+    if (retry) *retry = true;
+    return false;
 }
 
 /* ---- 0259: shuffled slideshow order -------------------------------------- */
@@ -503,14 +510,23 @@ static bool show_next_shuffled(void)
     int guard = (int)s_order_n + 2;
     while (guard-- > 0) {
         if (s_order_pos >= s_order_n && !order_build()) return false;
-        uint16_t idx = s_order[s_order_pos++];
-        if (live_load(idx)) {
+        uint16_t idx = s_order[s_order_pos];
+        bool retry = false;
+        if (live_load(idx, &retry)) {
+            s_order_pos++;
             s_cur = (int32_t)idx;
             app_logf("live       : show %u (shuffled %u/%u)\n", (unsigned)idx,
                      (unsigned)s_order_pos, (unsigned)s_order_n);
             splash_released();
             return true;
         }
+        if (retry) {
+            /* the photo is still good -- it was not spent, try it next time */
+            app_logf("live       : %u not shown (handoff not published); kept for the next attempt\n",
+                     (unsigned)idx);
+            return false;
+        }
+        s_order_pos++;
         app_logf("live       : skip %u (no such file)\n", (unsigned)idx);
     }
     return false;
@@ -665,13 +681,16 @@ static void snapshot_previous(void)
         memcpy(s_hold, (const void *)s_fb_live, FB_BYTES);
 }
 
-static void restore_previous(const char *why)
+static bool restore_previous(const char *why)
 {
     uint8_t *prev = s_buf[s_w];
     if (s_hold != NULL) memcpy(prev, s_hold, FB_BYTES);
-    if (!publish(prev, "restore previous"))
-        app_logf("live       : restore could not be published; panel unchanged (%s)\n", why);
+    if (!publish(prev, "restore previous")) {
+        app_logf("live       : restore NOT on the panel -- handoff not published (%s)\n", why);
+        return false;
+    }
     app_logf("live       : previous frame restored to the panel (%s)\n", why);
+    return true;
 }
 
 /* 0254: compose the confirm view.  The photograph is scaled to fit above the
@@ -758,6 +777,7 @@ static void show_notice(const uint8_t *asset, int w, int h, const char *why,
         app_logf("live       : notice could not be published (%s)\n", why);
     s_notice_until = esp_timer_get_time() + (int64_t)ms * 1000;
     s_notice_restore = restore_after;
+    s_restore_tries = 0;
     app_logf("live       : notice on panel for 4 s (%s)%s\n", why,
              restore_after ? ", previous photo returns after" : "");
 }
@@ -961,6 +981,9 @@ static int finish_frame(void)
     if (!publish(dst, "keep prompt")) {       /* photo + prompt on screen */
         app_logf("confirm    : prompt NOT published; frame dropped, nothing stored\n");
         s_cur = -1;
+        /* the panel still shows the last countdown digit -- put the snapshot back so a
+         * dropped frame cannot leave "1" sitting there (Copilot review, fourth pass) */
+        restore_previous("keep prompt not published");
         s_need_report = true;
         return -1;
     }
@@ -1201,7 +1224,10 @@ void live_start(esp_lcd_panel_handle_t panel)
         /* 0256: a transient notice hands the panel back to the previous photo */
         if (s_notice_restore && !s_shooting && esp_timer_get_time() > s_notice_until) {
             s_notice_restore = false;
-            restore_previous("notice expired");
+            /* a restore that could not be published is retried a few times, then left
+             * to the next slideshow frame rather than spinning on a dead scanout */
+            if (!restore_previous("notice expired") && ++s_restore_tries < 3)
+                s_notice_restore = true;
         }
 
         if (s_need_report && !s_shooting) { s_need_report = false; write_report(); }

@@ -31,6 +31,8 @@
 #include "prompt_strip.h"    /* 0254: pre-rendered keep/discard prompt */
 #include "notice_deleted.h"  /* 0254: shown after a discard */
 #include "notice_camera.h"   /* 0256: shown when a capture fails */
+#include "delete_strip.h"    /* 0257: the silent delete confirm */
+#include "notice_deleting.h" /* 0257: shown while a photo is removed */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -67,6 +69,10 @@ extern void write_report(void);
  * 30 s of silence keeps -- the timeout must never throw a photo away. */
 #define PROMPT_MS      30000
 #define KEEP_HOLD_MS    2000
+/* 0257: silent delete.  A 2 s hold on the slideshow opens the confirm; the hold
+ * itself never deletes, and a timeout cancels. */
+#define DELETE_PROMPT_MS 30000
+#define HOLD_DELETE_MS    2000
 #ifndef SD_MOUNT_KHZ
 #define SD_MOUNT_KHZ 16000        /* settled rung: the ladder in 0245 climbed 400k -> 16 MHz
                                      with 3 cold boots at each step, zero mount regressions
@@ -97,6 +103,7 @@ static volatile int64_t s_shoot_us, s_fs_us;   /* 0245 timing instrumentation */
 static volatile uint32_t s_lib_max, s_lib_count;
 static volatile int64_t  s_notice_until;   /* 0254: hold the slideshow while a notice shows */
 static volatile bool     s_notice_restore;  /* 0256: put the previous photo back when it expires */
+static volatile int32_t  s_cur = -1;        /* 0257: index of the photograph on the panel */
 static uint8_t  s_rx_hash[32];
 static sdmmc_card_t *s_card;
 static bool s_mounted;
@@ -432,7 +439,7 @@ static void restore_previous(const char *why)
 /* 0254: compose the confirm view.  The photograph is scaled to fit above the
  * prompt strip (533x400 in a 640x400 area, bars either side) so neither the
  * picture nor the question is cropped. */
-static void build_confirm_view(uint8_t *dst)
+static void build_confirm_view(uint8_t *dst, const uint8_t *photo, const uint8_t *strip)
 {
     const int area_h = OUT_H - PROMPT_STRIP_H;                 /* 400 */
     const int scaled_w = (int)((long)OUT_W * area_h / OUT_H);  /* 533 */
@@ -440,11 +447,11 @@ static void build_confirm_view(uint8_t *dst)
     memset(dst, 0, FB_BYTES);
     for (int y = 0; y < area_h; y++) {
         int sy = y * OUT_H / area_h;
-        const uint8_t *src = s_rx + (size_t)sy * OUT_W;
+        const uint8_t *src = photo + (size_t)sy * OUT_W;
         uint8_t *row = dst + (size_t)y * OUT_W + x0;
         for (int x = 0; x < scaled_w; x++) row[x] = src[x * OUT_W / scaled_w];
     }
-    memcpy(dst + (size_t)area_h * OUT_W, PROMPT_STRIP,
+    memcpy(dst + (size_t)area_h * OUT_W, strip,
            (size_t)PROMPT_STRIP_W * PROMPT_STRIP_H);
 }
 
@@ -481,13 +488,13 @@ static void build_notice_view(uint8_t *dst, const uint8_t *asset)
  * notice is a transient message: when its 4 s are up the frame puts the previous
  * photograph back, so a failed capture no longer returns to the last picture
  * silently.  A discard notice stays put until the slideshow takes over. */
-static void show_notice(const uint8_t *asset, const char *why, bool restore_after)
+static void show_notice(const uint8_t *asset, const char *why, bool restore_after, int ms)
 {
     uint8_t *notice = s_buf[s_w];
     build_notice_view(notice, asset);
     s_fb_live = notice;
     s_w ^= 1;
-    s_notice_until = esp_timer_get_time() + 4000000LL;
+    s_notice_until = esp_timer_get_time() + (int64_t)ms * 1000;
     s_notice_restore = restore_after;
     app_logf("live       : notice on panel for 4 s (%s)%s\n", why,
              restore_after ? ", previous photo returns after" : "");
@@ -551,6 +558,90 @@ static bool ask_keep(uint8_t *fb, bool *out_timed_out)
     return true;
 }
 
+/* 0257: the answer to the delete prompt.  1 = delete, 0 = cancel, -1 = timeout
+ * (also a cancel).  Same shape as ask_keep: the hold that opened this prompt has
+ * to be released before anything counts, a short press answers yes, a 2 s hold
+ * answers no, and silence cancels. */
+static int ask_delete(uint8_t *fb)
+{
+    int64_t t0 = esp_timer_get_time();
+    int64_t press_us = 0;
+    int last_pct = -1;
+    app_logf("delete     : confirm shown, waiting up to %d s (press = delete, hold %d s = cancel)\n",
+             DELETE_PROMPT_MS / 1000, HOLD_DELETE_MS / 1000);
+
+    int64_t rel_wait = esp_timer_get_time();
+    while (gpio_get_level(PIN_BTN) == 0 && esp_timer_get_time() - rel_wait < 5000000LL)
+        vTaskDelay(pdMS_TO_TICKS(20));
+    if (gpio_get_level(PIN_BTN) == 0)
+        app_logf("delete     : button still held after 5 s, accepting an answer anyway\n");
+    int last = gpio_get_level(PIN_BTN);
+    draw_hold_bar(fb, 0);
+
+    while (esp_timer_get_time() - t0 < (int64_t)DELETE_PROMPT_MS * 1000) {
+        int level = gpio_get_level(PIN_BTN);
+        int64_t now = esp_timer_get_time();
+        if (level == 0 && last == 1) { press_us = now; last_pct = -1; }
+        if (level == 0 && press_us != 0) {
+            int held = (int)((now - press_us) / 1000);
+            int pct = held * 100 / HOLD_DELETE_MS;
+            if (pct != last_pct) { draw_hold_bar(fb, pct); last_pct = pct; }
+            if (held >= HOLD_DELETE_MS) {
+                draw_hold_bar(fb, 100);
+                app_logf("delete     : CANCEL (held %d ms)\n", held);
+                return 0;
+            }
+        }
+        if (level == 1 && last == 0 && press_us != 0) {
+            int64_t held = (now - press_us) / 1000;
+            draw_hold_bar(fb, 0);
+            if (held < HOLD_DELETE_MS) {
+                app_logf("delete     : DELETE (short press, %lld ms)\n", (long long)held);
+                return 1;
+            }
+            app_logf("delete     : CANCEL (held %lld ms)\n", (long long)held);
+            return 0;
+        }
+        last = level;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    app_logf("delete     : CANCEL (no answer in %d s; timeout never deletes)\n",
+             DELETE_PROMPT_MS / 1000);
+    return -1;
+}
+
+/* 0257: the silent delete.  Nothing on screen advertises it -- the only way in is
+ * a 2 s hold while the slideshow is showing a photograph.  The hold never deletes:
+ * it opens ask_delete(), and only a short press there removes the file. */
+static void delete_current_photo(uint32_t *show_idx, int64_t *last_show)
+{
+    if (s_cur < 0 || !s_mounted) return;
+    char path[64];
+    snprintf(path, sizeof(path), LIVE_DIR "/LIVE%04u.BIN", (unsigned)s_cur);
+
+    snapshot_previous();                       /* the photo, for the cancel path */
+    uint8_t *fb = s_buf[s_w];
+    build_confirm_view(fb, s_hold, DELETE_STRIP);
+    s_fb_live = fb;
+    s_w ^= 1;
+    app_logf("delete     : hold opened the confirm for %s\n", path);
+
+    int ans = ask_delete(fb);
+    if (ans == 1) {
+        show_notice(NOTICE_DELETING, "deleting", false, 2000);
+        bool ok = (unlink(path) == 0);
+        if (ok) live_scan();
+        app_logf("delete     : %s %s, library %u frames\n",
+                 ok ? "removed" : "FAILED to remove", path, (unsigned)s_lib_count);
+        s_cur = -1;
+        *last_show = esp_timer_get_time() - (int64_t)DWELL_MS * 1000;  /* next photo now */
+    } else {
+        restore_previous(ans == 0 ? "delete cancelled" : "delete timed out");
+        *last_show = esp_timer_get_time();
+    }
+    s_need_report = true;
+}
+
 /* runs in the loop, never in the WiFi callback */
 /* returns 1 = stored, 0 = discarded by the user, -1 = not stored (rejected/failed) */
 static int finish_frame(void)
@@ -574,14 +665,14 @@ static int finish_frame(void)
     if (memcmp(hash, s_rx_hash, 32) != 0) {
         app_logf("live       : frame REJECTED, sent %s got %s\n", want_hex, got_hex);
         s_need_report = true;
-        show_notice(NOTICE_CAMERA, "hash mismatch", true);
+        show_notice(NOTICE_CAMERA, "hash mismatch", true, 4000);
         return -1;
     }
     /* 0254: ask before storing.  The verified frame stays in PSRAM (s_rx) and is
      * composed into the off-screen buffer with the prompt below it; nothing is
      * written to the card until the answer is keep. */
     uint8_t *dst = s_buf[s_w];
-    build_confirm_view(dst);
+    build_confirm_view(dst, s_rx, PROMPT_STRIP);
     int64_t pub_us = esp_timer_get_time();
     s_fb_live = dst;                         /* photo + prompt on screen */
     s_w ^= 1;
@@ -595,7 +686,7 @@ static int finish_frame(void)
     if (!keep) {
         app_logf("live       : discarded on hold, nothing written, library still %u\n",
                  (unsigned)s_lib_count);
-        show_notice(NOTICE_DELETED, "discarded", false);
+        show_notice(NOTICE_DELETED, "discarded", false, 4000);
         s_need_report = true;
         return 0;
     }
@@ -695,17 +786,35 @@ void live_start(esp_lcd_panel_handle_t panel)
     int64_t last_show = esp_timer_get_time();
     uint32_t show_idx = 0;
     int last_level = 1;
-    int64_t level_since = esp_timer_get_time();
 
     for (;;) {
         int64_t now = esp_timer_get_time();
         int level = gpio_get_level(PIN_BTN);
         static bool armed = true;
+        static bool press_used = false;    /* 0257: this press became a hold */
+        static int64_t press_since = 0;    /* 0257: when the current press began */
 
-        if (level != last_level) { last_level = level; level_since = now; }
+        int prev = last_level;
+        if (level != last_level) last_level = level;
         if (level == 1) armed = true;      /* a press needs a seen release first */
-        if (level == 0 && armed && now - level_since > 30000 && !s_shooting) {
-            armed = false;                 /* a held button cannot retrigger */
+        if (level == 0 && prev == 1) { press_used = false; press_since = now; }
+
+        /* 0257: the 2 s hold is now the silent delete gesture, so the shoot fires
+         * on the RELEASE of a short press instead of 30 ms into the press -- a
+         * hold that also fired the camera could never be a silent menu.  The hold
+         * only counts while a photograph is on the slideshow and no notice is up. */
+        if (level == 0 && !press_used && !s_shooting && s_cur >= 0 && now > s_notice_until &&
+            press_since != 0 && now - press_since > (int64_t)HOLD_DELETE_MS * 1000) {
+            press_used = true;
+            press_since = 0;
+            delete_current_photo(&show_idx, &last_show);
+            last_level = gpio_get_level(PIN_BTN);
+            armed = (last_level == 1);
+        } else if (level == 1 && prev == 0 && armed && !press_used && !s_shooting &&
+                   now - press_since < (int64_t)HOLD_DELETE_MS * 1000) {
+            press_used = true;             /* the press is spent either way */
+            press_since = 0;
+            armed = false;
             s_shooting = true;
             s_notice_until = 0;            /* 0254: a press overrides the notice */
             s_notice_restore = false;      /* 0256: and cancels a pending restore */
@@ -731,16 +840,16 @@ void live_start(esp_lcd_panel_handle_t panel)
                 /* 0254: the press that answered the prompt must not arm another
                  * shoot; a held button only counts again after it is released */
                 last_level = gpio_get_level(PIN_BTN);
-                level_since = esp_timer_get_time();
                 armed = (last_level == 1);
             } else {
                 app_logf("live       : TIMEOUT waiting for the frame (12 s)\n");
-                show_notice(NOTICE_CAMERA, "capture timeout", true);
+                show_notice(NOTICE_CAMERA, "capture timeout", true, 4000);
             }
             s_shooting = false;
             /* 0254: a kept photo is shown next; a discard carries on cycling from
              * where the slideshow was rather than restarting with a fresh wait. */
             if (outcome == 1) {
+                s_cur = (int32_t)(s_lib_max ? s_lib_max - 1 : -1);   /* 0257 */
                 show_idx = 0;
                 last_show = esp_timer_get_time();
             } else if (outcome == 0) {
@@ -756,9 +865,8 @@ void live_start(esp_lcd_panel_handle_t panel)
             s_pending = false;
             int outcome = finish_frame();
             last_level = gpio_get_level(PIN_BTN);
-            level_since = esp_timer_get_time();
             armed = (last_level == 1);
-            if (outcome == 1) { show_idx = 0; last_show = esp_timer_get_time(); }
+            if (outcome == 1) { s_cur = (int32_t)(s_lib_max ? s_lib_max - 1 : -1); show_idx = 0; last_show = esp_timer_get_time(); }
             else if (outcome == 0) { last_show = esp_timer_get_time() - (int64_t)DWELL_MS * 1000; }
         }
 
@@ -769,7 +877,9 @@ void live_start(esp_lcd_panel_handle_t panel)
             /* 0247: indices run to s_lib_max and the naming scheme allows holes,
              * so bounding the search by the file count can burn whole 10 s cycles */
             while (tries++ < (s_lib_max ? s_lib_max : 1)) {
-                if (live_load(show_idx % (s_lib_max ? s_lib_max : 1))) {
+                uint32_t idx = show_idx % (s_lib_max ? s_lib_max : 1);
+                if (live_load(idx)) {
+                    s_cur = (int32_t)idx;              /* 0257: this one is on the panel */
                     app_logf("live       : show %u\n", (unsigned)show_idx);
                     show_idx++;
                     break;

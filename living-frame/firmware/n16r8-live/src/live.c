@@ -28,6 +28,8 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "prompt_strip.h"    /* 0254: pre-rendered keep/discard prompt */
+#include "notice_deleted.h"  /* 0254: shown after a discard */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -59,6 +61,11 @@ extern void write_report(void);
 #define SD_MOUNT  "/sdcard"
 #define LIVE_DIR  "/sdcard/LIVE"
 #define DWELL_MS  10000
+
+/* 0254: keep-or-discard confirm.  Short press keeps, a ~2 s hold discards, and
+ * 30 s of silence keeps -- the timeout must never throw a photo away. */
+#define PROMPT_MS      30000
+#define KEEP_HOLD_MS    2000
 #ifndef SD_MOUNT_KHZ
 #define SD_MOUNT_KHZ 16000        /* settled rung: the ladder in 0245 climbed 400k -> 16 MHz
                                      with 3 cold boots at each step, zero mount regressions
@@ -86,6 +93,7 @@ static volatile uint16_t s_sess;
 static volatile bool s_rx_active, s_pending, s_shooting, s_need_report;
 static volatile int64_t s_shoot_us, s_fs_us;   /* 0245 timing instrumentation */
 static volatile uint32_t s_lib_max, s_lib_count;
+static volatile int64_t  s_notice_until;   /* 0254: hold the slideshow while a notice shows */
 static uint8_t  s_rx_hash[32];
 static sdmmc_card_t *s_card;
 static bool s_mounted;
@@ -407,8 +415,115 @@ static void restore_previous(const char *why)
     app_logf("live       : previous frame restored to the panel (%s)\n", why);
 }
 
+/* 0254: compose the confirm view.  The photograph is scaled to fit above the
+ * prompt strip (533x400 in a 640x400 area, bars either side) so neither the
+ * picture nor the question is cropped. */
+static void build_confirm_view(uint8_t *dst)
+{
+    const int area_h = OUT_H - PROMPT_STRIP_H;                 /* 400 */
+    const int scaled_w = (int)((long)OUT_W * area_h / OUT_H);  /* 533 */
+    const int x0 = (OUT_W - scaled_w) / 2;                     /* 53 */
+    memset(dst, 0, FB_BYTES);
+    for (int y = 0; y < area_h; y++) {
+        int sy = y * OUT_H / area_h;
+        const uint8_t *src = s_rx + (size_t)sy * OUT_W;
+        uint8_t *row = dst + (size_t)y * OUT_W + x0;
+        for (int x = 0; x < scaled_w; x++) row[x] = src[x * OUT_W / scaled_w];
+    }
+    memcpy(dst + (size_t)area_h * OUT_W, PROMPT_STRIP,
+           (size_t)PROMPT_STRIP_W * PROMPT_STRIP_H);
+}
+
+/* 0254: the hold needs to be visible.  A bar under the prompt fills as the
+ * button is held, so 2 s of silence reads as a countdown rather than a freeze.
+ * Drawn straight into the on-screen buffer: seven rows at the bottom, so a tear
+ * can at worst make the bar look a frame stale. */
+static void draw_hold_bar(uint8_t *fb, int pct)
+{
+    const int y0 = OUT_H - PROMPT_STRIP_H + 70;
+    const int rows = 7;
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    int w = (OUT_W - 40) * pct / 100;
+    for (int y = y0; y < y0 + rows; y++) {
+        uint8_t *row = fb + (size_t)y * OUT_W + 20;
+        memset(row, 0x15, OUT_W - 40);            /* track: level-1 grey */
+        if (w > 0) memset(row, 0x1B, w);          /* fill: brand orange */
+    }
+}
+
+/* 0254: the frame shown after a discard.  Without it the panel republished the
+ * buffer the countdown had last drawn into, so the person saw the digit "1"
+ * sitting there after deleting a photo. */
+static void build_notice_view(uint8_t *dst)
+{
+    memset(dst, 0, FB_BYTES);
+    int y0 = (OUT_H - NOTICE_H) / 2;
+    if (y0 < 0) y0 = 0;
+    memcpy(dst + (size_t)y0 * OUT_W, NOTICE_DELETED, (size_t)NOTICE_W * NOTICE_H);
+}
+
+/* 0254: wait for the answer.  Returns true to keep.  A press consumed here is
+ * never seen by the shoot path -- the caller re-arms the button afterwards. */
+static bool ask_keep(uint8_t *fb, bool *out_timed_out)
+{
+    int64_t t0 = esp_timer_get_time();
+    int64_t press_us = 0;
+    int last_pct = -1;
+    int last = gpio_get_level(PIN_BTN);
+    app_logf("confirm    : shown, waiting up to %d s (press = keep, hold %d s = discard)\n",
+             PROMPT_MS / 1000, KEEP_HOLD_MS / 1000);
+
+    /* A button still held from the shoot press is not an answer.  Waiting for the
+     * release stops the shot's own press from being read as a 2 s hold and
+     * discarding the photo before the person has seen the question. */
+    int64_t rel_wait = esp_timer_get_time();
+    while (gpio_get_level(PIN_BTN) == 0 && esp_timer_get_time() - rel_wait < 5000000LL)
+        vTaskDelay(pdMS_TO_TICKS(20));
+    if (gpio_get_level(PIN_BTN) == 0)
+        app_logf("confirm    : button still held after 5 s, accepting an answer anyway\n");
+    last = gpio_get_level(PIN_BTN);
+    draw_hold_bar(fb, 0);
+
+    while (esp_timer_get_time() - t0 < (int64_t)PROMPT_MS * 1000) {
+        int level = gpio_get_level(PIN_BTN);
+        int64_t now = esp_timer_get_time();
+        if (level == 0 && last == 1) {                            /* press begins */
+            press_us = now;
+            last_pct = -1;
+        }
+        if (level == 0 && press_us != 0) {                        /* while held */
+            int held = (int)((now - press_us) / 1000);
+            int pct = held * 100 / KEEP_HOLD_MS;
+            if (pct != last_pct) { draw_hold_bar(fb, pct); last_pct = pct; }
+            if (held >= KEEP_HOLD_MS) {
+                draw_hold_bar(fb, 100);
+                app_logf("confirm    : DISCARD (held %d ms, bar full)\n", held);
+                return false;
+            }
+        }
+        if (level == 1 && last == 0 && press_us != 0) {           /* released */
+            int64_t held = (now - press_us) / 1000;
+            draw_hold_bar(fb, 0);
+            if (held < KEEP_HOLD_MS) {
+                app_logf("confirm    : KEEP (short press, %lld ms)\n", (long long)held);
+                return true;
+            }
+            app_logf("confirm    : DISCARD (held %lld ms)\n", (long long)held);
+            return false;
+        }
+        last = level;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    if (out_timed_out != NULL) *out_timed_out = true;
+    app_logf("confirm    : KEEP (no answer in %d s; timeout never discards)\n",
+             PROMPT_MS / 1000);
+    return true;
+}
+
 /* runs in the loop, never in the WiFi callback */
-static void finish_frame(void)
+/* returns 1 = stored, 0 = discarded by the user, -1 = not stored (rejected/failed) */
+static int finish_frame(void)
 {
     char want_hex[65], got_hex[65];
     uint8_t hash[32];
@@ -423,24 +538,48 @@ static void finish_frame(void)
         app_logf("live       : frame REJECTED, sent %s got %s\n", want_hex, got_hex);
         s_need_report = true;
         restore_previous("hash mismatch");
-        return;
+        return -1;
     }
-    /* 0245 rung 1: publish first, store second.  The photo is verified and in
-     * PSRAM, so the panel shows it while the SD write runs behind it.  The ack
-     * still means "stored": a failed write is logged as shown-but-not-kept and
-     * no ack goes out. */
-    uint8_t *dst = s_buf[s_w];               /* off-screen, then publish */
-    memcpy(dst, s_rx, FB_BYTES);
+    /* 0254: ask before storing.  The verified frame stays in PSRAM (s_rx) and is
+     * composed into the off-screen buffer with the prompt below it; nothing is
+     * written to the card until the answer is keep. */
+    uint8_t *dst = s_buf[s_w];
+    build_confirm_view(dst);
     int64_t pub_us = esp_timer_get_time();
-    s_fb_live = dst;                         /* on screen -- before any SD work */
+    s_fb_live = dst;                         /* photo + prompt on screen */
     s_w ^= 1;
     app_logf("timing     : shoot->display %lld ms, fs->display %lld ms\n",
              s_shoot_us ? (long long)((pub_us - s_shoot_us) / 1000) : -1LL,
              s_fs_us ? (long long)((pub_us - s_fs_us) / 1000) : -1LL);
 
+    app_logf("confirm    : library %u frames before the answer\n", (unsigned)s_lib_count);
+    bool timed_out = false;
+    bool keep = ask_keep(dst, &timed_out);
+    if (!keep) {
+        app_logf("live       : discarded on hold, nothing written, library still %u\n",
+                 (unsigned)s_lib_count);
+        uint8_t *notice = s_buf[s_w];
+        build_notice_view(notice);
+        s_fb_live = notice;
+        s_w ^= 1;
+        s_notice_until = esp_timer_get_time() + 4000000LL;   /* 4 s to read it */
+        app_logf("live       : notice on panel for 4 s; a press starts a new shot\n");
+        s_need_report = true;
+        return 0;
+    }
+
+    /* keep, or the timeout kept it: show the clean photo, then store it (0245
+     * rung 1 -- publish first, the ack still means stored). */
+    uint8_t *clean = s_buf[s_w];
+    memcpy(clean, s_rx, FB_BYTES);
+    s_fb_live = clean;
+    s_w ^= 1;
+    app_logf("confirm    : keeping (%s), storing\n",
+             timed_out ? "30 s timeout" : "answered");
+
     char path[64] = "(not stored)";
     int64_t st0 = esp_timer_get_time();
-    bool stored = live_store(dst, path, sizeof(path));
+    bool stored = live_store(clean, path, sizeof(path));
     int64_t store_ms = (esp_timer_get_time() - st0) / 1000;
     app_logf("live       : frame ok, sent sha %s, stored sha %s, %s %s, library %u, store %lld ms\n",
              want_hex, got_hex, stored ? "written" : "NOT written", path,
@@ -449,7 +588,7 @@ static void finish_frame(void)
     if (!stored) {
         app_logf("live       : STORE FAILED - shown but not kept, no ack sent\n");
         s_need_report = true;
-        return;
+        return -1;
     }
 
     uint8_t ack[34];
@@ -457,6 +596,7 @@ static void finish_frame(void)
     memcpy(ack + 2, hash, 32);
     esp_now_send(s_cam_mac, ack, sizeof(ack));
     s_need_report = true;
+    return 1;
 }
 
 /* ---- the loop ----------------------------------------------------------- */
@@ -534,6 +674,7 @@ void live_start(esp_lcd_panel_handle_t panel)
         if (level == 0 && armed && now - level_since > 30000 && !s_shooting) {
             armed = false;                 /* a held button cannot retrigger */
             s_shooting = true;
+            s_notice_until = 0;            /* 0254: a press overrides the notice */
             app_logf("live       : BUTTON pressed, library %u frames\n", (unsigned)s_lib_count);
             for (int step = 3; step >= 1; step--) {
                 draw_countdown(step);
@@ -547,24 +688,46 @@ void live_start(esp_lcd_panel_handle_t panel)
             int64_t deadline = esp_timer_get_time() + 12000000LL;
             while (!s_pending && esp_timer_get_time() < deadline)
                 vTaskDelay(pdMS_TO_TICKS(50));
+            int outcome = -1;
             if (s_pending) {
                 s_pending = false;
-                finish_frame();
+                outcome = finish_frame();
                 app_logf("live       : photo received and on screen\n");
+                /* 0254: the press that answered the prompt must not arm another
+                 * shoot; a held button only counts again after it is released */
+                last_level = gpio_get_level(PIN_BTN);
+                level_since = esp_timer_get_time();
+                armed = (last_level == 1);
             } else {
                 app_logf("live       : TIMEOUT waiting for the frame (12 s)\n");
                 restore_previous("timeout");
             }
             s_shooting = false;
-            last_show = esp_timer_get_time();
-            show_idx = 0;
+            /* 0254: a kept photo is shown next; a discard carries on cycling from
+             * where the slideshow was rather than restarting with a fresh wait. */
+            if (outcome == 1) {
+                show_idx = 0;
+                last_show = esp_timer_get_time();
+            } else if (outcome == 0) {
+                last_show = esp_timer_get_time() - (int64_t)DWELL_MS * 1000;
+            } else {
+                last_show = esp_timer_get_time();
+            }
             s_need_report = true;
         }
 
         /* a frame that arrived outside a press still gets finished */
-        if (s_pending && !s_shooting) { s_pending = false; finish_frame(); }
+        if (s_pending && !s_shooting) {
+            s_pending = false;
+            int outcome = finish_frame();
+            last_level = gpio_get_level(PIN_BTN);
+            level_since = esp_timer_get_time();
+            armed = (last_level == 1);
+            if (outcome == 1) { show_idx = 0; last_show = esp_timer_get_time(); }
+            else if (outcome == 0) { last_show = esp_timer_get_time() - (int64_t)DWELL_MS * 1000; }
+        }
 
-        if (!s_shooting && s_lib_count &&
+        if (!s_shooting && s_lib_count && esp_timer_get_time() > s_notice_until &&
             esp_timer_get_time() - last_show > (int64_t)DWELL_MS * 1000) {
             last_show = esp_timer_get_time();
             uint32_t tries = 0;

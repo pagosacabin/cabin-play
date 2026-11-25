@@ -808,7 +808,10 @@ void live_start(esp_lcd_panel_handle_t panel)
             /* 0257 (Copilot review finding 2): a press that begins while a notice
              * is on the panel must not open the delete confirm when the notice
              * expires under the still-held button -- s_cur can be stale there. */
-            press_delete_ok = (now > s_notice_until);
+            /* the gesture belongs to the slideshow: no notice up AND a photograph
+             * already on the panel when the press starts (Copilot finding 3 -- a
+             * hold begun at startup used to cross the first slideshow load) */
+            press_delete_ok = (now > s_notice_until && s_cur >= 0);
         }
 
         /* 0257: the 2 s hold is now the silent delete gesture, so the shoot fires

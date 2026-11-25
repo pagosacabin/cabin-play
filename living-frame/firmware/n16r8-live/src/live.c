@@ -74,6 +74,8 @@ extern void write_report(void);
  * itself never deletes, and a timeout cancels. */
 #define DELETE_PROMPT_MS 30000
 #define HOLD_DELETE_MS    2000
+/* 0259: a contact bounce is a few ms; a deliberate press is 100 ms or more. */
+#define MIN_PRESS_MS        60
 #ifndef SD_MOUNT_KHZ
 #define SD_MOUNT_KHZ 16000        /* settled rung: the ladder in 0245 climbed 400k -> 16 MHz
                                      with 3 cold boots at each step, zero mount regressions
@@ -294,6 +296,14 @@ static void live_scan(void)
 static bool live_store(const uint8_t *frame, char *path_out, size_t path_len)
 {
     if (!s_mounted) return false;
+    /* 0259 (Copilot review): the shuffle order indexes cards through a uint16, so
+     * the library must stop where that can still represent every file.  Storing a
+     * 65536th photo would create a file the slideshow can never show. */
+    if (s_lib_max > 65535u) {
+        app_logf("live       : library index limit reached (%u), frame not stored\n",
+                 (unsigned)s_lib_max);
+        return false;
+    }
     uint64_t total = 0, freeb = 0;
     if (esp_vfs_fat_info(SD_MOUNT, &total, &freeb) == ESP_OK &&
         freeb < (uint64_t)FB_BYTES + 65536) {
@@ -635,24 +645,15 @@ static void build_notice_view(uint8_t *dst, const uint8_t *asset, int w, int h)
  * press -- the double-shoot Stephen saw -- or, when the press began while the
  * loop was blocked, press_since stayed 0 and the next real press was swallowed.
  * Waiting for release and letting the contacts settle removes both. */
-static void settle_button(int quiet_ms)
+/* 0259: wait for the press that answered the prompt to be released, and no longer
+ * than 2 s.  There is deliberately no fixed quiet delay any more: one swallowed a
+ * complete press that happened to land inside it.  Contact bounce is filtered in
+ * the shoot branch instead, by requiring a minimum press length. */
+static void settle_button(void)
 {
-    /* Wait until the button has been up continuously for quiet_ms.  A press that
-     * lands inside the quiet window restarts the timer rather than being swallowed
-     * (Copilot finding 2) -- and the loop can never block forever. */
     int64_t t0 = esp_timer_get_time();
-    int64_t up_since = 0;
-    for (;;) {
-        int64_t now = esp_timer_get_time();
-        if (gpio_get_level(PIN_BTN) == 1) {
-            if (up_since == 0) up_since = now;
-            if (now - up_since >= (int64_t)quiet_ms * 1000) return;
-        } else {
-            up_since = 0;
-        }
-        if (now - t0 > 3000000LL) return;
+    while (gpio_get_level(PIN_BTN) == 0 && esp_timer_get_time() - t0 < 2000000LL)
         vTaskDelay(pdMS_TO_TICKS(10));
-    }
 }
 
 /* 0256: one place that puts a notice on the panel.  restore_after=true means the
@@ -998,7 +999,7 @@ void live_start(esp_lcd_panel_handle_t panel)
             press_used = true;
             press_since = 0;
             delete_current_photo(&show_idx, &last_show);
-            settle_button(250);
+            settle_button();
             last_level = gpio_get_level(PIN_BTN);
             armed = (last_level == 1);
         } else if (level == 0 && !press_used && !s_shooting && press_since != 0 &&
@@ -1012,6 +1013,7 @@ void live_start(esp_lcd_panel_handle_t panel)
                      (int)(now <= s_notice_until), (int)s_shooting);
         } else if (level == 1 && prev == 0 && armed && !press_used && !s_shooting &&
                    press_since != 0 &&
+                   now - press_since >= (int64_t)MIN_PRESS_MS * 1000 &&
                    now - press_since < (int64_t)HOLD_DELETE_MS * 1000) {
             press_used = true;             /* the press is spent either way */
             int64_t held_ms = (now - press_since) / 1000;   /* read BEFORE clearing */
@@ -1042,7 +1044,7 @@ void live_start(esp_lcd_panel_handle_t panel)
                 app_logf("live       : photo received and on screen\n");
                 /* 0254/0259: the press that answered the prompt must not arm
                  * another shoot; settle the button before trusting it again */
-                settle_button(250);
+                settle_button();
                 last_level = gpio_get_level(PIN_BTN);
                 armed = (last_level == 1);
             } else {
@@ -1068,7 +1070,7 @@ void live_start(esp_lcd_panel_handle_t panel)
         if (s_pending && !s_shooting) {
             s_pending = false;
             int outcome = finish_frame();
-            settle_button(250);
+            settle_button();
             last_level = gpio_get_level(PIN_BTN);
             armed = (last_level == 1);
             if (outcome == 1) { s_cur = (int32_t)(s_lib_max ? s_lib_max - 1 : -1); show_idx = 0; last_show = esp_timer_get_time(); }

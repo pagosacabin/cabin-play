@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 #include "prompt_strip.h"    /* 0254: pre-rendered keep/discard prompt */
 #include "notice_deleted.h"  /* 0254: shown after a discard */
+#include "notice_camera.h"   /* 0256: shown when a capture fails */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -95,6 +96,7 @@ static volatile bool s_rx_active, s_pending, s_shooting, s_need_report;
 static volatile int64_t s_shoot_us, s_fs_us;   /* 0245 timing instrumentation */
 static volatile uint32_t s_lib_max, s_lib_count;
 static volatile int64_t  s_notice_until;   /* 0254: hold the slideshow while a notice shows */
+static volatile bool     s_notice_restore;  /* 0256: put the previous photo back when it expires */
 static uint8_t  s_rx_hash[32];
 static sdmmc_card_t *s_card;
 static bool s_mounted;
@@ -467,12 +469,28 @@ static void draw_hold_bar(uint8_t *fb, int pct)
 /* 0254: the frame shown after a discard.  Without it the panel republished the
  * buffer the countdown had last drawn into, so the person saw the digit "1"
  * sitting there after deleting a photo. */
-static void build_notice_view(uint8_t *dst)
+static void build_notice_view(uint8_t *dst, const uint8_t *asset)
 {
     memset(dst, 0, FB_BYTES);
     int y0 = (OUT_H - NOTICE_H) / 2;
     if (y0 < 0) y0 = 0;
-    memcpy(dst + (size_t)y0 * OUT_W, NOTICE_DELETED, (size_t)NOTICE_W * NOTICE_H);
+    memcpy(dst + (size_t)y0 * OUT_W, asset, (size_t)NOTICE_W * NOTICE_H);
+}
+
+/* 0256: one place that puts a notice on the panel.  restore_after=true means the
+ * notice is a transient message: when its 4 s are up the frame puts the previous
+ * photograph back, so a failed capture no longer returns to the last picture
+ * silently.  A discard notice stays put until the slideshow takes over. */
+static void show_notice(const uint8_t *asset, const char *why, bool restore_after)
+{
+    uint8_t *notice = s_buf[s_w];
+    build_notice_view(notice, asset);
+    s_fb_live = notice;
+    s_w ^= 1;
+    s_notice_until = esp_timer_get_time() + 4000000LL;
+    s_notice_restore = restore_after;
+    app_logf("live       : notice on panel for 4 s (%s)%s\n", why,
+             restore_after ? ", previous photo returns after" : "");
 }
 
 /* 0254: wait for the answer.  Returns true to keep.  A press consumed here is
@@ -549,7 +567,7 @@ static int finish_frame(void)
     if (memcmp(hash, s_rx_hash, 32) != 0) {
         app_logf("live       : frame REJECTED, sent %s got %s\n", want_hex, got_hex);
         s_need_report = true;
-        restore_previous("hash mismatch");
+        show_notice(NOTICE_CAMERA, "hash mismatch", true);
         return -1;
     }
     /* 0254: ask before storing.  The verified frame stays in PSRAM (s_rx) and is
@@ -570,12 +588,7 @@ static int finish_frame(void)
     if (!keep) {
         app_logf("live       : discarded on hold, nothing written, library still %u\n",
                  (unsigned)s_lib_count);
-        uint8_t *notice = s_buf[s_w];
-        build_notice_view(notice);
-        s_fb_live = notice;
-        s_w ^= 1;
-        s_notice_until = esp_timer_get_time() + 4000000LL;   /* 4 s to read it */
-        app_logf("live       : notice on panel for 4 s; a press starts a new shot\n");
+        show_notice(NOTICE_DELETED, "discarded", false);
         s_need_report = true;
         return 0;
     }
@@ -688,6 +701,7 @@ void live_start(esp_lcd_panel_handle_t panel)
             armed = false;                 /* a held button cannot retrigger */
             s_shooting = true;
             s_notice_until = 0;            /* 0254: a press overrides the notice */
+            s_notice_restore = false;      /* 0256: and cancels a pending restore */
             app_logf("live       : BUTTON pressed, library %u frames\n", (unsigned)s_lib_count);
             snapshot_previous();           /* 0254: clean frame for any failure path */
             for (int step = 3; step >= 1; step--) {
@@ -714,7 +728,7 @@ void live_start(esp_lcd_panel_handle_t panel)
                 armed = (last_level == 1);
             } else {
                 app_logf("live       : TIMEOUT waiting for the frame (12 s)\n");
-                restore_previous("timeout");
+                show_notice(NOTICE_CAMERA, "capture timeout", true);
             }
             s_shooting = false;
             /* 0254: a kept photo is shown next; a discard carries on cycling from
@@ -755,6 +769,12 @@ void live_start(esp_lcd_panel_handle_t panel)
                 }
                 show_idx++;
             }
+        }
+
+        /* 0256: a transient notice hands the panel back to the previous photo */
+        if (s_notice_restore && !s_shooting && esp_timer_get_time() > s_notice_until) {
+            s_notice_restore = false;
+            restore_previous("notice expired");
         }
 
         if (s_need_report && !s_shooting) { s_need_report = false; write_report(); }

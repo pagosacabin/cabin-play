@@ -319,6 +319,51 @@ static bool live_load(uint32_t i)
     return true;
 }
 
+/* ---- 0258: portrait canvas ---------------------------------------------- */
+/* The panel is mounted rotated, and every photograph reaches this buffer through
+ * convert_photo64.py's transform: portrait canvas (480x640) -> landscape raster,
+ *   bx = cy,  by = (OUT_H-1) - cx
+ * Text used to be blitted as a landscape strip, so it read sideways next to the
+ * pictures.  It now goes through the same mapping: assets are generated portrait
+ * (upright as the viewer sees them, 480 wide) and placed with these helpers. */
+#define VIEW_W  OUT_H      /* 480: what the viewer sees across  */
+#define VIEW_H  OUT_W      /* 640: what the viewer sees down    */
+
+static inline size_t view_index(int vx, int vy)
+{
+    return (size_t)((OUT_H - 1 - vx)) * OUT_W + vy;
+}
+
+/* copy a w x h portrait block so it lands at viewer position (vx0, vy0) */
+static void blit_viewer(uint8_t *dst, int vx0, int vy0, int w, int h, const uint8_t *src)
+{
+    for (int y = 0; y < h; y++) {
+        int vy = vy0 + y;
+        if (vy < 0 || vy >= VIEW_H) continue;
+        for (int x = 0; x < w; x++) {
+            int vx = vx0 + x;
+            if (vx < 0 || vx >= VIEW_W) continue;
+            dst[view_index(vx, vy)] = src[(size_t)y * w + x];
+        }
+    }
+}
+
+/* filled rectangle in viewer coordinates (used for the countdown glyphs) */
+static void fill_viewer_rect(uint8_t *dst, int vx, int vy, int w, int h, uint8_t val)
+{
+    if (vx < 0) { w += vx; vx = 0; }
+    if (vy < 0) { h += vy; vy = 0; }
+    if (vx + w > VIEW_W) w = VIEW_W - vx;
+    if (vy + h > VIEW_H) h = VIEW_H - vy;
+    if (w <= 0 || h <= 0) return;
+    int bx0 = vy;                        /* column range in the raster */
+    int by0 = (OUT_H - 1) - (vx + w - 1);
+    for (int by = by0; by < by0 + w; by++) {
+        if (by < 0 || by >= OUT_H) continue;
+        memset(dst + (size_t)by * OUT_W + bx0, val, h);
+    }
+}
+
 /* ---- countdown ---------------------------------------------------------- */
 static const uint8_t DIG[3][5] = {
     { 0x7, 0x1, 0x3, 0x1, 0x7 },   /* 3 */
@@ -328,18 +373,15 @@ static const uint8_t DIG[3][5] = {
 
 static void draw_countdown(int step)
 {
-    const int blk = 36, gw = 3 * blk, gh = 5 * blk;
+    const int blk = 40, gw = 3 * blk, gh = 5 * blk;
     uint8_t *dst = s_buf[s_w];               /* off-screen buffer, then publish */
     memset(dst, 0x00, FB_BYTES);
-    int x0 = (OUT_W - gw) / 2, y0 = (OUT_H - gh) / 2;
+    int x0 = (VIEW_W - gw) / 2, y0 = (VIEW_H - gh) / 2;
     const uint8_t *g = DIG[3 - step];
     for (int r = 0; r < 5; r++)
         for (int c = 0; c < 3; c++)
             if (g[r] & (0x4 >> c))
-                for (int y = 0; y < blk; y++) {
-                    uint8_t *row = dst + (size_t)(y0 + r * blk + y) * OUT_W + x0 + c * blk;
-                    memset(row, 0x3f, blk);
-                }
+                fill_viewer_rect(dst, x0 + c * blk, y0 + r * blk, blk, blk, 0x3f);
     s_fb_live = dst;
     s_w ^= 1;
 }
@@ -439,20 +481,27 @@ static void restore_previous(const char *why)
 /* 0254: compose the confirm view.  The photograph is scaled to fit above the
  * prompt strip (533x400 in a 640x400 area, bars either side) so neither the
  * picture nor the question is cropped. */
-static void build_confirm_view(uint8_t *dst, const uint8_t *photo, const uint8_t *strip)
+static void build_confirm_view(uint8_t *dst, const uint8_t *photo,
+                               const uint8_t *strip, int strip_h)
 {
-    const int area_h = OUT_H - PROMPT_STRIP_H;                 /* 400 */
-    const int scaled_w = (int)((long)OUT_W * area_h / OUT_H);  /* 533 */
-    const int x0 = (OUT_W - scaled_w) / 2;                     /* 53 */
+    /* 0258: laid out in portrait.  The photograph keeps its aspect -- 420x560 in
+     * the 480x560 area above the strip, 30 px bars either side -- and both the
+     * picture and the question go through the canvas->raster transform, so the
+     * pair reads upright the way the photographs already do. */
+    const int area_h = VIEW_H - strip_h;                        /* 560 */
+    const int scaled_w = (int)((long)VIEW_W * area_h / VIEW_H); /* 420 */
+    const int x0 = (VIEW_W - scaled_w) / 2;                     /* 30 */
     memset(dst, 0, FB_BYTES);
-    for (int y = 0; y < area_h; y++) {
-        int sy = y * OUT_H / area_h;
-        const uint8_t *src = photo + (size_t)sy * OUT_W;
-        uint8_t *row = dst + (size_t)y * OUT_W + x0;
-        for (int x = 0; x < scaled_w; x++) row[x] = src[x * OUT_W / scaled_w];
+    for (int vy = 0; vy < area_h; vy++) {
+        int srcy = vy * VIEW_H / area_h;
+        for (int x = 0; x < scaled_w; x++) {
+            int srcx = x * VIEW_W / scaled_w;
+            (void)x0;
+            dst[view_index(x0 + x, vy)] =
+                photo[(size_t)(OUT_H - 1 - srcx) * OUT_W + srcy];
+        }
     }
-    memcpy(dst + (size_t)area_h * OUT_W, strip,
-           (size_t)PROMPT_STRIP_W * PROMPT_STRIP_H);
+    blit_viewer(dst, 0, area_h, VIEW_W, strip_h, strip);
 }
 
 /* 0254: the hold needs to be visible.  A bar under the prompt fills as the
@@ -461,37 +510,35 @@ static void build_confirm_view(uint8_t *dst, const uint8_t *photo, const uint8_t
  * can at worst make the bar look a frame stale. */
 static void draw_hold_bar(uint8_t *fb, int pct)
 {
-    const int y0 = OUT_H - PROMPT_STRIP_H + 70;
-    const int rows = 7;
+    /* 0258: the bar lives in the prompt strip, so it is laid out in portrait too --
+     * filling left to right as the viewer sees it, just above the bottom edge. */
+    const int vy0 = VIEW_H - 12;
+    const int vx0 = 20, wmax = VIEW_W - 40;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
-    int w = (OUT_W - 40) * pct / 100;
-    for (int y = y0; y < y0 + rows; y++) {
-        uint8_t *row = fb + (size_t)y * OUT_W + 20;
-        memset(row, 0x15, OUT_W - 40);            /* track: level-1 grey */
-        if (w > 0) memset(row, 0x1B, w);          /* fill: brand orange */
-    }
+    fill_viewer_rect(fb, vx0, vy0, wmax, 6, 0x15);            /* track: level-1 grey */
+    int w = wmax * pct / 100;
+    if (w > 0) fill_viewer_rect(fb, vx0, vy0, w, 6, 0x1B);    /* fill: brand orange */
 }
 
 /* 0254: the frame shown after a discard.  Without it the panel republished the
  * buffer the countdown had last drawn into, so the person saw the digit "1"
  * sitting there after deleting a photo. */
-static void build_notice_view(uint8_t *dst, const uint8_t *asset)
+static void build_notice_view(uint8_t *dst, const uint8_t *asset, int w, int h)
 {
     memset(dst, 0, FB_BYTES);
-    int y0 = (OUT_H - NOTICE_H) / 2;
-    if (y0 < 0) y0 = 0;
-    memcpy(dst + (size_t)y0 * OUT_W, asset, (size_t)NOTICE_W * NOTICE_H);
+    blit_viewer(dst, (VIEW_W - w) / 2, (VIEW_H - h) / 2, w, h, asset);
 }
 
 /* 0256: one place that puts a notice on the panel.  restore_after=true means the
  * notice is a transient message: when its 4 s are up the frame puts the previous
  * photograph back, so a failed capture no longer returns to the last picture
  * silently.  A discard notice stays put until the slideshow takes over. */
-static void show_notice(const uint8_t *asset, const char *why, bool restore_after, int ms)
+static void show_notice(const uint8_t *asset, int w, int h, const char *why,
+                        bool restore_after, int ms)
 {
     uint8_t *notice = s_buf[s_w];
-    build_notice_view(notice, asset);
+    build_notice_view(notice, asset, w, h);
     s_fb_live = notice;
     s_w ^= 1;
     s_notice_until = esp_timer_get_time() + (int64_t)ms * 1000;
@@ -621,14 +668,14 @@ static void delete_current_photo(uint32_t *show_idx, int64_t *last_show)
 
     snapshot_previous();                       /* the photo, for the cancel path */
     uint8_t *fb = s_buf[s_w];
-    build_confirm_view(fb, s_hold, DELETE_STRIP);
+    build_confirm_view(fb, s_hold, DELETE_STRIP, DELETE_STRIP_H);
     s_fb_live = fb;
     s_w ^= 1;
     app_logf("delete     : hold opened the confirm for %s\n", path);
 
     int ans = ask_delete(fb);
     if (ans == 1) {
-        show_notice(NOTICE_DELETING, "deleting", false, 2000);
+        show_notice(NOTICE_DELETING, NOTICE_W, NOTICE_H, "deleting", false, 2000);
         bool ok = (unlink(path) == 0);
         if (ok) live_scan();
         app_logf("delete     : %s %s, library %u frames\n",
@@ -665,14 +712,14 @@ static int finish_frame(void)
     if (memcmp(hash, s_rx_hash, 32) != 0) {
         app_logf("live       : frame REJECTED, sent %s got %s\n", want_hex, got_hex);
         s_need_report = true;
-        show_notice(NOTICE_CAMERA, "hash mismatch", true, 4000);
+        show_notice(NOTICE_CAMERA, NOTICE_W, NOTICE_H, "hash mismatch", true, 4000);
         return -1;
     }
     /* 0254: ask before storing.  The verified frame stays in PSRAM (s_rx) and is
      * composed into the off-screen buffer with the prompt below it; nothing is
      * written to the card until the answer is keep. */
     uint8_t *dst = s_buf[s_w];
-    build_confirm_view(dst, s_rx, PROMPT_STRIP);
+    build_confirm_view(dst, s_rx, PROMPT_STRIP, PROMPT_STRIP_H);
     int64_t pub_us = esp_timer_get_time();
     s_fb_live = dst;                         /* photo + prompt on screen */
     s_w ^= 1;
@@ -686,7 +733,7 @@ static int finish_frame(void)
     if (!keep) {
         app_logf("live       : discarded on hold, nothing written, library still %u\n",
                  (unsigned)s_lib_count);
-        show_notice(NOTICE_DELETED, "discarded", false, 4000);
+        show_notice(NOTICE_DELETED, NOTICE_W, NOTICE_H, "discarded", false, 4000);
         s_need_report = true;
         return 0;
     }
@@ -859,7 +906,7 @@ void live_start(esp_lcd_panel_handle_t panel)
                 armed = (last_level == 1);
             } else {
                 app_logf("live       : TIMEOUT waiting for the frame (12 s)\n");
-                show_notice(NOTICE_CAMERA, "capture timeout", true, 4000);
+                show_notice(NOTICE_CAMERA, NOTICE_W, NOTICE_H, "capture timeout", true, 4000);
             }
             s_shooting = false;
             /* 0254: a kept photo is shown next; a discard carries on cycling from

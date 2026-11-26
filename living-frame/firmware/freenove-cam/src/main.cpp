@@ -269,7 +269,53 @@ static bool camera_start(void)
     sensor_t *s = esp_camera_sensor_get();
     s->set_brightness(s, 1);
     s->set_saturation(s, -1);
+    /* 0261: mirror the image at the sensor.  The panel's display path is proven
+     * un-mirrored (convert_photo64.py's transform is a rotation, and the live
+     * raster is published straight), so a backwards text shot can only come
+     * from the camera; the sensor's own h-mirror fixes it at the source for
+     * zero per-pixel cost.  reg 0x14 bit0 is h-mirror, bit1 is v-flip, and the
+     * driver read the part's own value during init -- print it before and
+     * after so the power-on state is measured rather than assumed. */
+    Serial.printf("sensor  : power-on state hmirror %d, vflip %d (reg 0x14)\n",
+                  s->status.hmirror, s->status.vflip);
+    /* The driver's own init table sets reg 0x14 = 0x11, i.e. h-mirror ON, so the
+     * part ships mirrored: that is the backwards text, not the panel path.  Turn
+     * it OFF rather than on. */
+    s->set_hmirror(s, 0);
+    Serial.printf("sensor  : after fix    hmirror %d, vflip %d (reg 0x14)\n",
+                  s->status.hmirror, s->status.vflip);
     return true;
+}
+
+
+/* 0261 bench hook: print the frame that was just built as a coarse ASCII map so
+ * the delivered orientation is visible without a panel.  'd' on the serial port.
+ * Columns run left-to-right of the SENT raster, rows top-to-bottom. */
+static void dump_ascii(void)
+{
+    if (s_frame == NULL) { Serial.println("dump    : no frame"); return; }
+    static const int CW = 64, CH = 24;
+    static const char RAMP[] = " .:-=+*#%@";
+    const int sx = FB_W / CW, sy = FB_H / CH;
+    char line[CW + 1];
+    Serial.printf("dump    : %dx%d cells over %dx%d, left-to-right as sent\n", CW, CH, FB_W, FB_H);
+    for (int ry = 0; ry < CH; ry++) {
+        for (int rx = 0; rx < CW; rx++) {
+            uint32_t acc = 0;
+            for (int y = 0; y < sy; y++) {
+                const uint8_t *row = s_frame + (size_t)(ry * sy + y) * FB_W + rx * sx;
+                for (int x = 0; x < sx; x++) {
+                    uint8_t p = row[x];
+                    acc += 2u * (p & 3u) + 4u * ((p >> 2) & 3u) + (p >> 4);
+                }
+            }
+            uint32_t lvl = (acc * 10u) / ((uint32_t)sx * sy * 21u);
+            if (lvl > 9) lvl = 9;
+            line[rx] = RAMP[lvl];
+        }
+        line[CW] = 0;
+        Serial.println(line);
+    }
 }
 
 static void send_frame(void)
@@ -318,7 +364,7 @@ static void send_frame(void)
                   (unsigned)s_ok, (unsigned)s_fail, hex);
 }
 
-static void take_shot(const char *why)
+static void take_shot(const char *why, bool send)
 {
     /* discard warm-up frames: the GC0308's first frames after idle are dark */
     for (int i = 0; i < WARMUP_FRAMES; i++) {
@@ -332,10 +378,12 @@ static void take_shot(const char *why)
     build_raster(fb->buf, s_frame);
     esp_camera_fb_return(fb);
     s_shots++;
-    s_sess++;                   /* 0247: one session id per frame, not per boot */
-    Serial.printf("shoot   : %s, shot %u, warmup %d, wb r %.3f g %.3f b %.3f (strength %.2f)\n",
+    Serial.printf("shoot   : %s, shot %u, warmup %d, wb r %.3f g %.3f b %.3f (strength %.2f)%s\n",
                   why, (unsigned)s_shots, WARMUP_FRAMES,
-                  (double)s_gain[0], (double)s_gain[1], (double)s_gain[2], (double)WB_STRENGTH);
+                  (double)s_gain[0], (double)s_gain[1], (double)s_gain[2], (double)WB_STRENGTH,
+                  send ? "" : ", not sent");
+    if (!send) return;          /* 0261 bench hook: local capture only */
+    s_sess++;                   /* 0247: one session id per frame, not per boot */
     send_frame();
 }
 
@@ -382,11 +430,13 @@ void loop(void)
 {
     if (Serial.available()) {                 /* bench hook: 'c' shoots without the frame */
         int ch = Serial.read();
-        if (ch == 'c' || ch == 'C') { Serial.println("serial  : shoot"); take_shot("serial"); }
+        if (ch == 'c' || ch == 'C') { Serial.println("serial  : shoot"); take_shot("serial", true); }
+        if (ch == 'd' || ch == 'D') { dump_ascii(); }
+        if (ch == 'e' || ch == 'E') { Serial.println("serial  : capture only"); take_shot("serial", false); }
     }
     if (s_shoot) {
         s_shoot = false;
-        take_shot("trigger");
+        take_shot("trigger", true);
     }
     delay(5);
 }

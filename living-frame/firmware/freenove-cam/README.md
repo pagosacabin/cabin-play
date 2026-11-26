@@ -33,4 +33,13 @@ as bytes (`(b[0]<<8)|b[1]`), never as a native `uint16_t`, or the picture comes
 out as structured rainbow noise.  `WARMUP_FRAMES` (3) are discarded because the
 first frames after an idle spell are badly exposed.
 
-Bench hook: send `c` on the serial port to shoot without the frame board.
+Bench hooks on the serial port: `c` shoots and sends to the frame (as `FT` would),
+`e` captures a frame into the frame buffer without sending it, and `d` prints the
+last captured frame as a 64x24 ASCII luminance map (columns left-to-right as sent)
+so orientation can be checked without a panel.
+
+Orientation: the GC0308 driver's init table writes reg 0x14 = 0x11, i.e. h-mirror
+ON, which delivered a left-right mirrored image (backwards text). `camera_start()`
+clears it with `set_hmirror(0)`; the power-on and post-fix values are printed at
+boot. The panel path is not a mirror: `convert_photo64.py` rotates, and the frame
+board publishes the received raster straight (0261).

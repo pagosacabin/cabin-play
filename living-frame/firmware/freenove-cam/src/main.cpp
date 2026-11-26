@@ -51,6 +51,7 @@ static uint8_t s_bayer[4][4];
 static float   s_gain[3] = { 1.0f, 1.0f, 1.0f };
 
 static uint8_t *s_frame;
+static bool s_have_frame;        /* a frame has actually been captured */
 static uint16_t s_sess;          /* per-boot session id (0244 review finding 6) */
 static volatile bool s_shoot;
 static volatile uint32_t s_shots;
@@ -281,9 +282,10 @@ static bool camera_start(void)
     /* The driver's own init table sets reg 0x14 = 0x11, i.e. h-mirror ON, so the
      * part ships mirrored: that is the backwards text, not the panel path.  Turn
      * it OFF rather than on. */
-    s->set_hmirror(s, 0);
-    Serial.printf("sensor  : after fix    hmirror %d, vflip %d (reg 0x14)\n",
-                  s->status.hmirror, s->status.vflip);
+    int hm = s->set_hmirror(s, 0);
+    Serial.printf("sensor  : after fix    hmirror %d, vflip %d (reg 0x14), write %s\n",
+                  s->status.hmirror, s->status.vflip,
+                  hm == 0 ? "ok" : "FAILED -- image is still mirrored");
     return true;
 }
 
@@ -293,7 +295,7 @@ static bool camera_start(void)
  * Columns run left-to-right of the SENT raster, rows top-to-bottom. */
 static void dump_ascii(void)
 {
-    if (s_frame == NULL) { Serial.println("dump    : no frame"); return; }
+    if (s_frame == NULL || !s_have_frame) { Serial.println("dump    : no frame captured yet"); return; }
     static const int CW = 64, CH = 24;
     static const char RAMP[] = " .:-=+*#%@";
     const int sx = FB_W / CW, sy = FB_H / CH;
@@ -378,6 +380,7 @@ static void take_shot(const char *why, bool send)
     build_raster(fb->buf, s_frame);
     esp_camera_fb_return(fb);
     s_shots++;
+    s_have_frame = true;
     Serial.printf("shoot   : %s, shot %u, warmup %d, wb r %.3f g %.3f b %.3f (strength %.2f)%s\n",
                   why, (unsigned)s_shots, WARMUP_FRAMES,
                   (double)s_gain[0], (double)s_gain[1], (double)s_gain[2], (double)WB_STRENGTH,

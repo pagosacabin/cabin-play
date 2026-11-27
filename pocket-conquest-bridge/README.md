@@ -110,9 +110,12 @@ systemctl --user start|stop|restart pocket-conquest-bridge.service
 journalctl --user -u pocket-conquest-bridge.service -f
 ```
 
-The unit is a **user** unit: this host boots to a greeter, so the service starts
-with the user session, not with the kernel — it does not come back on its own at
-boot.
+The unit is a **user** unit, but `astroboy` has lingering enabled (`Linger=yes`),
+so the user manager `user@1000.service` is started by PID 1 at boot and the unit
+starts without anyone logging in: `user@1000` has been up since this boot
+(2026-11-18 13:36:53) while the graphical login session is a later, separate
+session. So no manual restart should be needed after a reboot — **mechanism
+verified, reboot not performed** (this host's reboot belongs to 0262/0264).
 
 ## Tailscale Serve
 

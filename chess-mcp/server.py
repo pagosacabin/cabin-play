@@ -23,6 +23,9 @@ except ImportError:  # pragma: no cover - mcp 1.x
     from mcp.server.fastmcp import FastMCP as MCPServer  # type: ignore[no-redef]
 
 API_BASE = os.environ.get("CHESS_API_BASE", "https://nordtronics.io/chess").rstrip("/")
+# TLS is the transport for this service. A plain-http base is only honoured when
+# an operator opts in explicitly for local development.
+ALLOW_INSECURE_BASE = os.environ.get("CHESS_API_ALLOW_INSECURE") == "1"
 HTTP_TIMEOUT = 10.0
 MAX_BODY = 64 * 1024
 MAX_FEN = 128
@@ -39,6 +42,8 @@ class ChessApiError(Exception):
 
 def _request(path: str, payload: dict | None = None) -> dict:
     """JSON round trip against the game API. Raises ChessApiError only."""
+    if not API_BASE.startswith("https://") and not ALLOW_INSECURE_BASE:
+        raise ChessApiError("CHESS_API_BASE must be https (set CHESS_API_ALLOW_INSECURE=1 for local dev)")
     url = f"{API_BASE}{path}"
     data = None
     headers = {"Accept": "application/json", "User-Agent": "chess-mcp/1.0"}
@@ -111,6 +116,17 @@ def _replay(moves: object) -> chess.Board:
     return board
 
 
+def _game_fen(board: chess.Board) -> str:
+    """FEN in the chess page's dialect.
+
+    The page's own toFEN writes the en-passant target unconditionally after a
+    double pawn push, while python-chess omits it unless an ep capture is
+    legal. The page compares the fen stored on the server against its replay,
+    so we must speak its dialect or it drops the move list.
+    """
+    return board.fen(en_passant="fen")
+
+
 def _side_name(board: chess.Board) -> str:
     return "white" if board.turn == chess.WHITE else "black"
 
@@ -131,7 +147,7 @@ def get_game(game_id: str) -> dict:
     status = _status_of(game)
     return {
         "game_id": game_id,
-        "fen": board.fen(),
+        "fen": _game_fen(board),
         "moves": [m for m in (game.get("moves") or []) if isinstance(m, str)],
         "side_to_move": None if status != "active" else _side_name(board),
         "status": status,
@@ -146,6 +162,8 @@ def list_legal_moves(game_id: str = "", fen: str = "") -> dict:
     """Legal moves (UCI) for a game's current position, or for a raw FEN."""
     try:
         if fen:
+            if not isinstance(fen, str):
+                raise ChessApiError("fen must be a string")
             if len(fen) > MAX_FEN:
                 raise ChessApiError("fen too long (max 128 chars)")
             try:
@@ -160,7 +178,7 @@ def list_legal_moves(game_id: str = "", fen: str = "") -> dict:
             raise ChessApiError("pass game_id or fen")
     except ChessApiError as exc:
         return {"error": str(exc)}
-    return {"fen": board.fen(), "moves": sorted(m.uci() for m in board.legal_moves)}
+    return {"fen": _game_fen(board), "moves": sorted(m.uci() for m in board.legal_moves)}
 
 
 @mcp.tool()
@@ -180,6 +198,8 @@ def make_move(game_id: str, move: str, side: str = "") -> dict:
             raise ChessApiError(f"game is not active (status: {status})")
         board = _replay(game.get("moves"))
         to_move = _side_name(board)
+        if side and not isinstance(side, str):
+            raise ChessApiError("side must be the string white or black when given")
         if side and side.lower() not in ("white", "black"):
             raise ChessApiError("side must be white or black when given")
         if side and side.lower() != to_move:
@@ -191,21 +211,33 @@ def make_move(game_id: str, move: str, side: str = "") -> dict:
         if played not in board.legal_moves:
             raise ChessApiError(f"{move} is not legal in this position")
         san = board.san(played)
+        before_moves = len(game.get("moves") or [])
         board.push(played)
         # the page posts toFEN(state) *after* the move and its resume path
         # compares the stored fen against the replayed position, so the fen we
         # send must be the post-move one, not the position the move came from
         _request(
             "/api/move",
-            {"game_id": game_id, "move": san, "fen": board.fen(), "side": to_move},
+            {"game_id": game_id, "move": san, "fen": _game_fen(board), "side": to_move},
         )
+        # an HTTP 200 is a claim, not evidence: re-read the game and require the
+        # move to be there before reporting success
+        after = _fetch_game(game_id)
+        stored = after.get("moves")
+        if (
+            not isinstance(stored, list)
+            or len(stored) != before_moves + 1
+            or not isinstance(stored[-1], str)
+            or stored[-1].replace("+", "").replace("#", "") != san.replace("+", "").replace("#", "")
+        ):
+            raise ChessApiError("the game server acknowledged the move but did not record it")
     except ChessApiError as exc:
         return {"error": str(exc)}
     return {
         "game_id": game_id,
         "move_uci": move,
         "san": san,
-        "fen": board.fen(),
+        "fen": _game_fen(board),
         "side": to_move,
     }
 

@@ -81,6 +81,16 @@ RATE_BURST = int(os.environ.get("CHESS_BRIDGE_RATE_BURST", "10"))
 HEADER_TIMEOUT = 5.0         # socket read timeout: bounds a slow-drip client
 MAX_HEADER_BYTES = 8192
 
+# Engine admission control. A search that outlives the handler deadline is
+# abandoned rather than waited for, but the python-chess thread cannot be
+# killed — so engine work is serialised and the number of live searches is
+# capped. Past the cap the bridge answers 500 and the page falls back, which is
+# better than piling up engine processes behind a stalled one.
+ENGINE_LOCK = threading.Lock()
+MAX_ENGINE_INFLIGHT = 2
+ENGINE_STATE = {"inflight": 0, "abandoned": 0}
+ENGINE_STATE_LOCK = threading.Lock()
+
 ALLOWED_ORIGINS = ("https://nordtronics.io", "https://www.nordtronics.io")
 
 UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbn]?$")
@@ -246,9 +256,19 @@ def stockfish_move(fen, moves, legal, deadline):
     if remaining <= 0.15:
         return None, "no time left for stockfish"
     budget = min(STOCKFISH_TIMEOUT, remaining)
+    with ENGINE_STATE_LOCK:
+        if ENGINE_STATE["inflight"] >= MAX_ENGINE_INFLIGHT:
+            return None, ("stockfish saturated: %d searches in flight, %d abandoned"
+                          % (ENGINE_STATE["inflight"], ENGINE_STATE["abandoned"]))
+        ENGINE_STATE["inflight"] += 1
+    if not ENGINE_LOCK.acquire(timeout=max(0.05, budget - 0.3)):
+        with ENGINE_STATE_LOCK:
+            ENGINE_STATE["inflight"] -= 1
+        return None, "stockfish busy"
     # popen and the UCI handshake are not governed by the search Limit, so the
     # whole engine step runs in a daemon thread that the handler stops waiting
-    # for at the deadline. An abandoned search still ends by its own movetime.
+    # for at the deadline. An abandoned search still ends by its own movetime,
+    # and its slot is only returned when the thread really finishes.
     box = {}
 
     def _work():
@@ -256,11 +276,17 @@ def stockfish_move(fen, moves, legal, deadline):
             box["result"] = _stockfish_search(fen, moves, legal, budget)
         except Exception as exc:  # pragma: no cover - defensive
             box["result"] = (None, "stockfish failed: %s" % type(exc).__name__)
+        finally:
+            with ENGINE_STATE_LOCK:
+                ENGINE_STATE["inflight"] -= 1
+            ENGINE_LOCK.release()
 
     worker = threading.Thread(target=_work, name="stockfish", daemon=True)
     worker.start()
     worker.join(max(0.05, budget))
     if worker.is_alive():
+        with ENGINE_STATE_LOCK:
+            ENGINE_STATE["abandoned"] += 1
         return None, "stockfish exceeded the handler budget"
     return box.get("result", (None, "stockfish did not answer"))
 

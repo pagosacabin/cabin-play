@@ -112,6 +112,11 @@ after a reboot until someone logs in. After a reboot, start it with
 - Input is bounds-checked (8 KiB body, FEN ≤128 chars, ≤512 moves of ≤5 chars
   and each must match the UCI grammar, JSON object shape) and every move is
   validated legal before it is returned.
+- **Engine work is admitted, not piled up**: at most two searches are live at
+  once and they are serialised behind one lock; a search that outlives the
+  handler deadline is abandoned (the handler answers) and its slot is only
+  returned when the thread really ends. Past the cap the bridge answers `500`
+  with a journal reason, so a stalled engine cannot accumulate processes.
 - **Spend is bounded**: a global token bucket (`CHESS_BRIDGE_RATE_PER_MIN`, 60/min,
   burst 10) answers `429` beyond the budget, and at most
   `CHESS_BRIDGE_MAX_CONCURRENCY` (4) requests are worked at once — the next one

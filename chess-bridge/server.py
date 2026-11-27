@@ -539,6 +539,9 @@ def parse_request(raw):
             board.ep_square = None
         if not board.is_valid():
             raise BadRequest("fen is not a legal position")
+        # Keep the prompt and the engine on one position: the model is shown the
+        # normalised FEN (no phantom en-passant square), not the rejected input.
+        fen = board.fen()
     return fen, clean, board, difficulty, personality
 
 

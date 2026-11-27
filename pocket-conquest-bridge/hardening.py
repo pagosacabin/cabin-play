@@ -96,6 +96,17 @@ def main():
                                        answers, "PASS" if ok else "FAIL"))
     failures += not ok
 
+    # The same smuggling shape through the 404 path: the body is never read, so
+    # the connection must close rather than parse it back as a request.
+    smuggled = raw(b"POST /nope HTTP/1.1\r\nHost: x\r\nContent-Length: %d\r\n\r\n"
+                   % len(post(b"/health", b"{}")) + post(b"/health", b"{}"),
+                   read_until_close=True)
+    answers = smuggled.count(b"HTTP/1.1 ")
+    ok = answers == 1
+    print("%-52s -> %d answer(s) %s" % ("pipelined request behind a 404", answers,
+                                        "PASS" if ok else "FAIL"))
+    failures += not ok
+
     # GET /health and an OPTIONS preflight are the two legitimate shapes.
     failures += not check("GET /health", raw(b"GET /health HTTP/1.1\r\nHost: x\r\n\r\n"), 200)
     preflight = (b"OPTIONS /pocket-conquest-move HTTP/1.1\r\nHost: x\r\n"

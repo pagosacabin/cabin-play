@@ -386,7 +386,8 @@ class Handler(BaseHTTPRequestHandler):
             self.rfile.enforcing = False
         size = sum(len(k) + len(v) for k, v in self.headers.items())
         if size > MAX_HEADER_BYTES:
-            self._send(431, {"error": "request headers too large"}, self._origin())
+            self.close_connection = True
+            self._send(431, {"error": "request headers too large"}, self._origin(), drain=True)
             log(self.command or "?", self.path or "?", 431, "none", time.monotonic())
             return False
         return True
@@ -398,7 +399,8 @@ class Handler(BaseHTTPRequestHandler):
         started = time.monotonic()
         origin = self._origin()
         if self._path() not in PATHS:
-            self._send(404, {"error": "not found"}, origin)
+            self.close_connection = True
+            self._send(404, {"error": "not found"}, origin, drain=True)
             log("OPTIONS", self._path(), 404, "none", started)
             return
         if not origin_allowed(origin):
@@ -427,11 +429,15 @@ class Handler(BaseHTTPRequestHandler):
         origin = self._origin()
         path = self._path()
         if path not in PATHS:
-            self._send(404, {"error": "not found"}, origin)
+            # The body has not been read: close, or HTTP/1.1 keep-alive would
+            # parse it back as the next request line on this socket.
+            self.close_connection = True
+            self._send(404, {"error": "not found"}, origin, drain=True)
             log("POST", path, 404, "none", started)
             return
         if not origin_allowed(origin):
-            self._send(403, {"error": "origin not allowed"}, origin)
+            self.close_connection = True
+            self._send(403, {"error": "origin not allowed"}, origin, drain=True)
             log("POST", path, 403, "none", started)
             return
         if not LIMITER.allow():
@@ -480,7 +486,9 @@ class Handler(BaseHTTPRequestHandler):
             SLOTS.release()
         if move is None:
             # Never answer an illegal or random move: let the page use its own
-            # computer instead.
+            # computer instead. Close, so a retrying client starts a fresh
+            # connection instead of burning another slot on a dead one.
+            self.close_connection = True
             self._send(500, {"error": "no legal move from the opponent"}, origin)
             log("POST", path, 500, "model", started,
                 " detail=%s attempts=%s" % (str(note)[:160], json.dumps(attempts)))

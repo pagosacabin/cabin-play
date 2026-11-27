@@ -89,9 +89,15 @@ python-chess, never by trusting the stored `fen` (`get_game` exposes that as
 ## Proof
 
 `tests/mcp_session_proof.py` spawns the server over real stdio MCP, creates a
-throwaway game, exercises both refusals, plays `e4` and `Nf6`, and re-reads the
+throwaway game, exercises both refusals, plays two moves, and re-reads the
 public game JSON:
 
 ```bash
 /home/astroboy/.local/share/chess-mcp/venv/bin/python chess-mcp/tests/mcp_session_proof.py
+# or reuse an existing game instead of adding another public one:
+/home/astroboy/.local/share/chess-mcp/venv/bin/python chess-mcp/tests/mcp_session_proof.py --game <8-char-id>
 ```
+
+The game API has no delete endpoint, so a fresh run leaves one public game
+behind; the script prints its id at the end and it has to be removed
+server-side.

@@ -198,12 +198,15 @@ def make_move(game_id: str, move: str, side: str = "") -> dict:
             raise ChessApiError(f"game is not active (status: {status})")
         board = _replay(game.get("moves"))
         to_move = _side_name(board)
-        if side and not isinstance(side, str):
-            raise ChessApiError("side must be the string white or black when given")
-        if side and side.lower() not in ("white", "black"):
-            raise ChessApiError("side must be white or black when given")
-        if side and side.lower() != to_move:
-            raise ChessApiError(f"not {side.lower()}'s turn ({to_move} to move)")
+        # any supplied value must be a valid side name; only the default empty
+        # string means "unspecified" (null, 0, False and [] are all refused)
+        if side != "":
+            if not isinstance(side, str):
+                raise ChessApiError("side must be the string white or black when given")
+            if side.lower() not in ("white", "black"):
+                raise ChessApiError("side must be white or black when given")
+            if side.lower() != to_move:
+                raise ChessApiError(f"not {side.lower()}'s turn ({to_move} to move)")
         try:
             played = chess.Move.from_uci(move)
         except ValueError:

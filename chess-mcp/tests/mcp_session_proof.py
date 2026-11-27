@@ -109,6 +109,13 @@ async def main(reuse: str | None) -> int:
             )
             show(f"make_move wrong turn (side=opposite, {first})", wrong_turn)
             assert "error" in payload_of(wrong_turn), "wrong-turn move was not refused"
+            falsey = await session.call_tool(
+                "make_move", {"game_id": game_id, "move": first, "side": 0}
+            )
+            show("make_move non-string side (0)", falsey)
+            # the SDK's own schema check may reject it first (isError) or our
+            # in-function type check may answer with {"error": ...}
+            assert falsey.is_error or "error" in payload_of(falsey), "a non-string side was accepted"
 
             # the refusals must have submitted nothing
             unchanged = show(
@@ -146,5 +153,10 @@ async def main(reuse: str | None) -> int:
 
 
 if __name__ == "__main__":
-    reuse = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "--game" else None
+    if "--game" in sys.argv[1:]:
+        if len(sys.argv) < 3 or not sys.argv[2]:
+            raise SystemExit("--game needs the 8-character game id it should reuse")
+        reuse = sys.argv[2]
+    else:
+        reuse = None
     raise SystemExit(asyncio.run(main(reuse)))

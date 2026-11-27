@@ -35,6 +35,7 @@
 #include "notice_camera.h"   /* 0256: shown when a capture fails */
 #include "delete_strip.h"    /* 0257: the silent delete confirm */
 #include "notice_deleting.h" /* 0257: shown while a photo is removed */
+#include "notice_sd.h"       /* 0277: shown when the card cannot be contacted */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -85,6 +86,8 @@ extern void write_report(void);
 #define HOLD_DELETE_MS    2000
 /* 0259: a contact bounce is a few ms; a deliberate press is 100 ms or more. */
 #define MIN_PRESS_MS        60
+/* 0277: how often to try the card again while it is missing */
+#define SD_RETRY_MS      10000
 #ifndef SD_MOUNT_KHZ
 #define SD_MOUNT_KHZ 16000        /* settled rung: the ladder in 0245 climbed 400k -> 16 MHz
                                      with 3 cold boots at each step, zero mount regressions
@@ -1119,9 +1122,20 @@ void live_start(esp_lcd_panel_handle_t panel)
              s_mounted ? "SD" : "no-SD", (unsigned)s_lib_count, (unsigned)s_lib_max, LIVE_DIR);
     write_report();
 
+    /* 0277: without a card the frame used to sit on the Nordtronics logo forever,
+     * which is indistinguishable from a hang.  Put the reason on the panel, keep
+     * it there, and keep trying the card in the loop below. */
+    if (!s_mounted) {
+        show_notice(NOTICE_SD, NOTICE_SD_W, NOTICE_SD_H, "no SD card", false, 86400000);
+        splash_released();          /* the logo must give way to the error message */
+        app_logf("sd         : no card at boot -- error on panel, retrying every %d s\n",
+                 SD_RETRY_MS / 1000);
+    }
+
     /* 0259: no placeholder any more.  The splash stays on the panel until the
      * first card photo is published, so the first slide must not wait out a dwell. */
     int64_t last_show = esp_timer_get_time() - (int64_t)DWELL_MS * 1000;
+    int64_t last_mount_try = esp_timer_get_time();
     uint32_t show_idx = 0;
     int last_level = 1;
 
@@ -1240,6 +1254,23 @@ void live_start(esp_lcd_panel_handle_t panel)
             esp_timer_get_time() - last_show > (int64_t)DWELL_MS * 1000) {
             last_show = esp_timer_get_time();
             show_next_shuffled();          /* 0259: shuffled, one of each per cycle */
+        }
+
+        /* 0277: while there is no card, try again now and then.  The task only asks
+         * that a later boot works, but one mount attempt every 10 s costs nothing and
+         * means a re-seated card recovers without a power cycle. */
+        if (!s_mounted && now - last_mount_try > (int64_t)SD_RETRY_MS * 1000) {
+            last_mount_try = now;
+            fold_presacrifice();
+            if (card_mount()) {
+                s_mounted = true;
+                live_scan();
+                order_build();
+                s_notice_until = 0;
+                last_show = esp_timer_get_time() - (int64_t)DWELL_MS * 1000;
+                app_logf("sd         : card came back, library %u frames\n",
+                         (unsigned)s_lib_count);
+            }
         }
 
         /* 0256: a transient notice hands the panel back to the previous photo */

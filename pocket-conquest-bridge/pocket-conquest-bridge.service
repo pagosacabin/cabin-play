@@ -1,0 +1,32 @@
+[Unit]
+Description=pocket-conquest-bridge — DeepSeek opponent endpoint for the Pocket Conquest page
+Documentation=file:///home/astroboy/.local/share/pocket-conquest-bridge/app/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Deployed copy; the source of truth is cabin-play:pocket-conquest-bridge/ on
+# branch hermes/0275-pocket-conquest.
+WorkingDirectory=/home/astroboy/.local/share/pocket-conquest-bridge/app
+ExecStart=/home/astroboy/.local/share/pocket-conquest-bridge/app/run.sh
+Restart=on-failure
+RestartSec=3
+StandardError=journal
+# The key comes from ~/.hermes/.env via run.sh; it is not repeated here.
+
+# Hardening: no privileges, read-only filesystem, home readable but not
+# writable, no devices, no personality changes, only IP sockets.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=default.target

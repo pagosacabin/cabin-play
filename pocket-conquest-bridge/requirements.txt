@@ -1,0 +1,5 @@
+# No third-party dependencies, and nothing to pin: the rules engine, the prompt
+# builder and the HTTP service are Python 3 standard library only (3.11+).
+#
+# Keep it that way. If a dependency is ever added it must be pinned here with an
+# exact version (==), because this service parses untrusted network input.

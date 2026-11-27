@@ -86,7 +86,19 @@ MAX_HEADER_BYTES = 8192
 ALLOWED_ORIGINS = tuple(
     o.strip() for o in os.environ.get("PC_BRIDGE_ALLOWED_ORIGINS", "").split(",") if o.strip()
 )
-PATHS = ("/pocket-conquest-move", "/")
+# Tailscale Serve with --set-path keeps the prefix in the forwarded path (proven on
+# the chess bridge, /chese-move), so under the mount `/pocket-conquest` the page's
+# POST arrives as either `/pocket-conquest` (mount root), `/pocket-conquest/` or
+# `/pocket-conquest/pocket-conquest-move`. All three are accepted, plus the bare
+# path when the service is called directly over localhost.
+PATHS = (
+    "/pocket-conquest-move",
+    "/pocket-conquest",
+    "/pocket-conquest/",
+    "/pocket-conquest/pocket-conquest-move",
+    "/",
+)
+HEALTH_PATHS = ("/health", "/pocket-conquest/health")
 
 SYSTEM_PROMPT = (
     "You are a cautious commander in a small turn-based strategy game. "
@@ -418,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         started = time.monotonic()
         origin = self._origin()
-        if self._path() == "/health":
+        if self._path() in HEALTH_PATHS:
             self._send(200, {"ok": True}, origin)
             log("GET", self._path(), 200, "none", started)
             return

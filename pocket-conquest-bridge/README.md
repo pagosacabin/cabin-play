@@ -126,6 +126,15 @@ sudo tailscale serve --bg --https=443 --set-path /pocket-conquest http://127.0.0
 giving `https://home.tail2bff3f.ts.net/pocket-conquest`. A worker run cannot write
 serve config (`Access denied: serve config denied`), so that is Stephen's command.
 
+**Paste into the page's agent box:** `https://home.tail2bff3f.ts.net/pocket-conquest`
+
+`tailscale serve --set-path` keeps the mount prefix in the forwarded path (proven
+on the chess bridge, where the upstream sees `/chese-move/chess-move`), so the
+service accepts the POST at the mount root (`/pocket-conquest`), with a trailing
+slash, at `/pocket-conquest/pocket-conquest-move`, and at the bare
+`/pocket-conquest-move` for a direct localhost call. `GET` health answers at
+`/health` and `/pocket-conquest/health`.
+
 ## Self-test
 
 ```bash

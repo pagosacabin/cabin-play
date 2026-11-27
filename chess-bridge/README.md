@@ -60,10 +60,11 @@ python3 -m venv ~/.local/share/chess-bridge/venv
 
 `install-stockfish.sh` pins the release tarball's SHA-256
 (`09e95322…e31987d`) and refuses to install anything whose `id name` is not
-`Stockfish 17.1`. The engine is re-identified at every service start — a missing
-engine is **fatal** (the service refuses to serve rather than degrade silently) —
-and again on every fallback move, so a binary swapped after startup is refused
-instead of trusted. The identity is printed in the startup line of the journal.
+`Stockfish 17.1`. The engine is re-identified at every service start — a missing engine **or one
+whose `id name` is not `Stockfish 17.1` is fatal**, because the pin is a claim
+this service makes — and again on every fallback move, so a binary swapped after
+startup is refused instead of trusted. The identity is printed in the startup
+line of the journal.
 
 The DeepSeek key is **not** in this tree. `run.sh` takes it from
 `DEEPSEEK_API_KEY`, or reads that one variable out of `~/.hermes/.env` when it is
@@ -117,13 +118,20 @@ after a reboot until someone logs in. After a reboot, start it with
   gets `503` + `Retry-After: 1` after 0.25 s. One request draws at most two model
   attempts plus one engine search, all against a single 5.5 s deadline, so a
   caller cannot queue up work past the page's 6 s budget.
-- **The upstream URL is allowlisted**: `CHESS_BRIDGE_URL` must be `https`, or
-  `http` to a loopback host, so the bearer key cannot be sent in cleartext
-  off-box by an environment override. The service refuses to start otherwise.
+- **The upstream URL is allowlisted and redirects are refused**: `CHESS_BRIDGE_URL`
+  must be `https`, or `http` to a loopback host, so the bearer key cannot be sent
+  in cleartext off-box by an environment override. The service refuses to start
+  otherwise, and the HTTP call uses an opener with the redirect handler disabled —
+  a 30x from the provider cannot carry the `Authorization` header to a second
+  host (it is treated as a failed model call and logged as `detail=model HTTP 3xx`).
 - The key is read from the environment only; it is never logged, never
   serialised into a response, and never written to this tree.
-- Request headers are bounded (8 KiB total → `431`) and the socket read timeout
-  is 5 s, so a slow-drip client cannot hold a worker.
+- Request headers are bounded **while they are read** (8 KiB total → `431`), not
+  after buffering, and the socket read timeout is 5 s, so a slow-drip client
+  cannot hold a worker or grow the process with an unbounded header block.
+- Unhandled methods (anything but `GET`/`OPTIONS`/`POST`) answer `501` and still
+  write their journal line. The `431`/`501` paths are logged like every other
+  request.
 - TLS terminates at Tailscale Serve; the service speaks loopback HTTP only.
 - The packaged unit runs with `NoNewPrivileges`, an empty capability set,
   `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp`,

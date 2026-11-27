@@ -42,6 +42,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import chess
 import chess.engine
 
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect: a 30x can otherwise carry the bearer token to a
+    cleartext or foreign host, defeating the startup scheme allowlist."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+OPENER = urllib.request.build_opener(_NoRedirect)
+
 BIND = "127.0.0.1"
 PORT = int(os.environ.get("CHESS_BRIDGE_PORT", "8765"))
 
@@ -194,7 +205,9 @@ def ask_model(fen, moves, legal, deadline, prior_error=None):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with OPENER.open(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None, "model HTTP %s" % resp.status, None
             payload = json.loads(resp.read(65536).decode("utf-8", "replace"))
     except urllib.error.HTTPError as exc:
         # Never surface the key or the request body; the status is enough.
@@ -233,6 +246,26 @@ def stockfish_move(fen, moves, legal, deadline):
     if remaining <= 0.15:
         return None, "no time left for stockfish"
     budget = min(STOCKFISH_TIMEOUT, remaining)
+    # popen and the UCI handshake are not governed by the search Limit, so the
+    # whole engine step runs in a daemon thread that the handler stops waiting
+    # for at the deadline. An abandoned search still ends by its own movetime.
+    box = {}
+
+    def _work():
+        try:
+            box["result"] = _stockfish_search(fen, moves, legal, budget)
+        except Exception as exc:  # pragma: no cover - defensive
+            box["result"] = (None, "stockfish failed: %s" % type(exc).__name__)
+
+    worker = threading.Thread(target=_work, name="stockfish", daemon=True)
+    worker.start()
+    worker.join(max(0.05, budget))
+    if worker.is_alive():
+        return None, "stockfish exceeded the handler budget"
+    return box.get("result", (None, "stockfish did not answer"))
+
+
+def _stockfish_search(fen, moves, legal, budget):
     board = chess.Board(fen)
     for uci in moves:
         try:
@@ -301,12 +334,46 @@ def pick_move(fen, moves, board, started):
             err = err2 or err
 
     if move is not None:
-        return move, "model", usage
+        return move, "model", usage, None
 
     fallback, ferr = stockfish_move(fen, moves, legal, deadline)
     if fallback is not None:
-        return fallback, "stockfish", usage
+        # The reason the model failed is worth a journal field: a redirect, a
+        # rate-limit from upstream and a bad answer look identical otherwise.
+        return fallback, "stockfish", usage, err
     raise RuntimeError("model: %s; stockfish: %s" % (err or "failed", ferr or "failed"))
+
+
+class HeaderTooLarge(Exception):
+    pass
+
+
+class BoundedReader:
+    """Counts bytes while the request line and headers are read.
+
+    BaseHTTPRequestHandler reads headers one line at a time with no total cap,
+    so a post-parse size check still lets a client make the process buffer an
+    arbitrary header block. This wrapper stops the read itself.
+    """
+
+    def __init__(self, stream, limit):
+        self.stream = stream
+        self.left = limit
+        self.enforcing = True
+
+    def readline(self, size=-1):
+        line = self.stream.readline(size)
+        if self.enforcing:
+            self.left -= len(line)
+            if self.left < 0:
+                raise HeaderTooLarge()
+        return line
+
+    def read(self, n=-1):
+        return self.stream.read(n)
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -314,10 +381,59 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     timeout = HEADER_TIMEOUT  # a slow-drip client cannot hold a worker forever
 
-    def _origin(self):
-        return self.headers.get("Origin", "")
+    def setup(self):
+        BaseHTTPRequestHandler.setup(self)
+        self.rfile = BoundedReader(self.rfile, MAX_HEADER_BYTES)
 
-    def _send(self, status, payload, origin, extra=None):
+    def handle_one_request(self):
+        try:
+            BaseHTTPRequestHandler.handle_one_request(self)
+        except HeaderTooLarge:
+            started = time.monotonic()
+            self.close_connection = True
+            # The request line may be half-read, so fill in what send_response
+            # and our own log line expect before writing the answer.
+            self.requestline = getattr(self, "requestline", "")
+            self.request_version = "HTTP/1.1"
+            if getattr(self, "headers", None) is None:
+                self.headers = self.MessageClass()
+            self.command = getattr(self, "command", None) or "?"
+            self.path = getattr(self, "path", None) or "?"
+            try:
+                self._send(431, {"error": "request headers too large"}, self._origin(), drain=True)
+            except Exception as exc:
+                sys.stderr.write("chess-bridge: 431 write failed: %r\n" % exc)
+            log(self.command, self.path, 431, "none", started)
+
+    def send_error(self, code, message=None, explain=None):
+        # Anything the routing methods do not handle (an unknown method, a
+        # malformed request line) still leaves one journal line.
+        try:
+            log(getattr(self, "command", "?") or "?", getattr(self, "path", "?") or "?",
+                code, "none", getattr(self, "_started", time.monotonic()))
+        finally:
+            BaseHTTPRequestHandler.send_error(self, code, message, explain)
+
+    def _origin(self):
+        headers = getattr(self, "headers", None)
+        return (headers.get("Origin", "") if headers is not None else "")
+
+    def _drain(self):
+        """Discard unread request bytes before closing.
+
+        A close with data still queued in the socket send buffer makes the
+        kernel answer RST, which throws away the response we just wrote — the
+        client sees EOF instead of the 4xx.
+        """
+        try:
+            self.connection.settimeout(0.2)
+            for _ in range(16):
+                if not self.connection.recv(8192):
+                    break
+        except Exception:
+            pass
+
+    def _send(self, status, payload, origin, extra=None, drain=False):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -330,15 +446,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
+        if drain:
+            self._drain()
 
     def parse_request(self):
-        # Bound the header block before any dispatch: BaseHTTPRequestHandler
-        # buffers headers one line at a time with no total cap of its own.
         if not BaseHTTPRequestHandler.parse_request(self):
             return False
+        if hasattr(self.rfile, "enforcing"):
+            self.rfile.enforcing = False  # the body read is bounded separately
         size = sum(len(k) + len(v) for k, v in self.headers.items())
-        if size > MAX_HEADER_BYTES:
+        if size > MAX_HEADER_BYTES:  # belt and braces under the read cap
             self._send(431, {"error": "request headers too large"}, self._origin())
+            log(self.command or "?", self.path or "?", 431, "none", time.monotonic())
             return False
         return True
 
@@ -392,17 +511,17 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             length = -1
         if length <= 0 or length > MAX_BODY:
-            self._send(400, {"error": "missing or oversized body"}, origin)
+            self._send(400, {"error": "missing or oversized body"}, origin, drain=True)
             log("POST", path, 400, "none", started)
             return
         if not SLOTS.acquire(timeout=SLOT_WAIT):
-            self._send(503, {"error": "busy"}, origin, {"Retry-After": "1"})
+            self._send(503, {"error": "busy"}, origin, {"Retry-After": "1"}, drain=True)
             log("POST", path, 503, "none", started)
             return
         try:
             raw = self.rfile.read(length)
             fen, moves, board = parse_request(raw)
-            move, source, usage = pick_move(fen, moves, board, started)
+            move, source, usage, note = pick_move(fen, moves, board, started)
         except BadRequest as exc:
             self._send(400, {"error": str(exc)}, origin)
             log("POST", path, 400, "none", started)
@@ -415,7 +534,10 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             SLOTS.release()
         self._send(200, {"move": move}, origin)
-        log("POST", path, 200, source, started, " usage=%s" % json.dumps(usage) if usage else "")
+        extra = " usage=%s" % json.dumps(usage) if usage else ""
+        if source != "model" and note:
+            extra += " detail=%s" % str(note)[:200]
+        log("POST", path, 200, source, started, extra)
 
     def log_message(self, fmt, *args):  # silence the default stderr access log
         return
@@ -439,8 +561,11 @@ def main():
         raise SystemExit(1)
     ENGINE_OK = ENGINE_NAME.startswith("Stockfish 17.1")
     if not ENGINE_OK:
-        sys.stderr.write("chess-bridge: warning: Stockfish reports %r; "
+        # The pin is a claim the service makes in its README and health output;
+        # serving on a different engine would make it quietly false.
+        sys.stderr.write("chess-bridge: fatal: Stockfish reports %r; "
                          "this build is pinned to Stockfish 17.1\n" % ENGINE_NAME)
+        raise SystemExit(1)
     server = ThreadingHTTPServer((BIND, PORT), Handler)
     server.daemon_threads = True
     sys.stderr.write("chess-bridge: listening on http://%s:%d (model=%s, engine=%s, "

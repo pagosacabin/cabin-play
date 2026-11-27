@@ -93,8 +93,9 @@ def main():
     cases = [
         ("initial position (S to move: build or move from B5)",
          pc.initial_position()),
-        ("after a build and a 3-army advance (R to move)",
-         pc.apply_move(pc.apply_move(pc.initial_position(), "B B5 2"), "M B5 B4 3")),
+        ("after a build, an advance and END (R to move)",
+         pc.apply_move(pc.apply_move(pc.apply_move(pc.initial_position(), "B B5 2"),
+                                    "M B5 B4 3"), "END")),
         ("midgame: build at B5, move C5, or attack C4",
          midgame_position()),
         ("siege: Stephen can take Emberhold this turn",

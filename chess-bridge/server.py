@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
 """chess-bridge — a chess-move endpoint for the nordtronics.io chess page.
 
-POST /chess-move  {"fen": "...", "moves": ["e2e4", ...]}  ->  {"move": "<uci>"}
+POST /chess-move  {"fen": "...", "moves": ["e2e4", ...]}  ->  {"move": "<uci>", "comment": "<text>"}
 
-One short DeepSeek completion per move, validated with python-chess; a single
-retry carries the error back to the model; Stockfish is the server-side
-fallback. Any failure that cannot be covered returns HTTP 500 so the page
-falls back to its built-in computer.
+v2 Architecture: Stockfish proposes candidate moves via MultiPV, and DeepSeek
+(deepseek-flash) chooses one candidate and provides a friendly explanation.
+If detectable, a blunder note about the player's previous move is passed to the coach.
+If the model call fails or runs out of time, Stockfish's top candidate is returned
+with comment "" so the game never stalls.
 
 The DeepSeek key is read from the environment (DEEPSEEK_API_KEY) and is never
 written to a file, logged, or echoed in a response.
 
-Hardening (review pass 1, findings 2-12):
+Hardening:
   * upstream URL scheme allowlist — the bearer key never travels over cleartext
     unless the target is loopback;
   * a global token bucket and a bounded worker pool, so an unauthenticated
     caller cannot run up the API bill or exhaust threads;
-  * one deadline for the whole handler (model attempt, retry, Stockfish all
-    draw from it), and the engine is limited by the remaining time;
+  * one deadline for the whole handler (engine step, blunder pre-eval, model attempt,
+    retry all draw from it), and the engine is limited by the remaining time;
   * CORS fails closed: an origin outside the allowlist gets no ACAO header and
     a 403 on preflight (no more substituting a trusted origin);
   * move history is UCI-syntax checked at parse time;
+  * difficulty and personality parameters are strictly allowlisted;
   * /health is opaque, 500s carry a stable message, and the details go to the
     journal;
   * header block size and socket read timeout are bounded;
@@ -60,8 +62,11 @@ DEEPSEEK_URL = os.environ.get("CHESS_BRIDGE_URL", "https://api.deepseek.com/v1/c
 MODEL = os.environ.get("CHESS_BRIDGE_MODEL", "deepseek-flash")
 STOCKFISH = os.environ.get("CHESS_BRIDGE_STOCKFISH", "/home/astroboy/.local/bin/stockfish")
 
-MODEL_TIMEOUT = 4.0          # per HTTP attempt, seconds
-STOCKFISH_MOVETIME_MS = 400
+MODEL_TIMEOUT = 2.6          # per HTTP attempt, seconds (was 4.0)
+MODEL_MAX_TOKENS = 220
+MODEL_TEMPERATURE = 0.3
+RETRY_MIN_REMAINING = 0.8    # Keep the retry only when at least 0.8 s remains
+
 STOCKFISH_TIMEOUT = 3.0
 HANDLER_BUDGET = 5.5         # whole request, seconds (page aborts at 6 s)
 
@@ -69,6 +74,12 @@ MAX_BODY = 8192
 MAX_FEN = 128
 MAX_MOVES = 512
 MAX_MOVE_LEN = 5
+
+DIFFICULTY_CONFIG = {
+    "easy": {"candidates": 3, "depth": 8, "time": 0.25},
+    "normal": {"candidates": 4, "depth": 12, "time": 0.45},
+    "hard": {"candidates": 5, "depth": 16, "time": 0.80},
+}
 
 # Concurrency and cost controls. The endpoint is unauthenticated by design
 # (the page cannot log in), so the only bound on spend is here.
@@ -94,12 +105,13 @@ ENGINE_STATE_LOCK = threading.Lock()
 ALLOWED_ORIGINS = ("https://nordtronics.io", "https://www.nordtronics.io")
 
 UCI_RE = re.compile(r"^[a-h][1-8][a-h][1-8][qrbn]?$")
-TOKEN_RE = re.compile(r"\b([a-h][1-8][a-h][1-8][qrbn]?)\b")
 
 SYSTEM_PROMPT = (
-    "You are a chess engine. Reply with exactly one move in UCI notation "
-    "(e.g. e2e4, g1f3, e7e8q) taken from the legal move list you are given, "
-    "and nothing else. No prose, no move numbers, no punctuation."
+    "You are a friendly chess coach playing against a person who is not a strong player. "
+    "Pick one move from the candidates and explain it in one or two short sentences, "
+    "using plain words, no jargon, no lectures. "
+    "When the blunder note is present, say what was wrong with his move and what was better. "
+    "Reply with JSON only."
 )
 
 
@@ -182,26 +194,102 @@ def legal_moves(board):
     return sorted(m.uci() for m in board.legal_moves)
 
 
-def ask_model(fen, moves, legal, deadline, prior_error=None):
-    """One DeepSeek completion. Returns (move_or_None, error_text, usage)."""
+def parse_difficulty(val):
+    if not isinstance(val, str):
+        return "normal"
+    val = val.strip().lower()
+    if val == "medium":
+        return "normal"
+    if val in ("easy", "normal", "hard"):
+        return val
+    return "normal"
+
+
+def parse_personality(val):
+    if not isinstance(val, str):
+        return "default"
+    val = val.strip().lower()
+    if val in ("aggressive", "teach me", "default"):
+        return val
+    return "default"
+
+
+def parse_model_reply(text, candidate_ucis, board):
+    if not text:
+        return None, "", "model reply was empty"
+    cleaned = text.strip()
+    fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+    if fence_match:
+        raw_json = fence_match.group(1)
+    else:
+        obj_match = re.search(r"\{.*?\}", cleaned, re.DOTALL)
+        if obj_match:
+            raw_json = obj_match.group(0)
+        else:
+            return None, "", "no JSON object found in model reply (%r)" % text[:60]
+    try:
+        data = json.loads(raw_json)
+    except Exception as exc:
+        return None, "", "invalid JSON in model reply: %s" % exc
+    if not isinstance(data, dict):
+        return None, "", "model reply JSON is not an object"
+    move = data.get("move")
+    comment = data.get("comment", "")
+    if not isinstance(move, str):
+        return None, "", "model reply missing 'move' string"
+    move = move.strip()
+    if not isinstance(comment, str):
+        comment = str(comment) if comment is not None else ""
+    comment = comment.strip()
+    if move not in candidate_ucis:
+        return None, "", "model answered %s, which is not in the candidate list" % move
+    try:
+        chess_move = chess.Move.from_uci(move)
+    except Exception:
+        return None, "", "model move %s is not valid UCI" % move
+    if chess_move not in board.legal_moves:
+        return None, "", "model answered %s, which is not in the legal list" % move
+    return move, comment, None
+
+
+def ask_model(fen, moves, candidates, difficulty, personality, blunder_note, board, deadline, prior_error=None):
+    """One DeepSeek completion. Returns (move_or_None, comment_or_empty, error_text, usage)."""
     key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
     if not key:
-        return None, "no DEEPSEEK_API_KEY in the service environment", None
+        return None, "", "no DEEPSEEK_API_KEY in the service environment", None
     timeout = min(MODEL_TIMEOUT, deadline - time.monotonic())
     if timeout <= 0.2:
-        return None, "no time left for a model call", None
+        return None, "", "no time left for a model call", None
 
-    parts = ["FEN: %s" % fen]
-    parts.append("Moves so far (UCI): %s" % (" ".join(moves) if moves else "(none)"))
-    parts.append("Legal moves (UCI): %s" % " ".join(legal))
+    cand_strs = []
+    cand_ucis = set()
+    for uci, cp, mate in candidates:
+        cand_ucis.add(uci)
+        if mate is not None:
+            m_str = f"+#{mate}" if mate > 0 else f"-#{abs(mate)}"
+            cand_strs.append(f"{uci} {m_str}")
+        else:
+            cand_strs.append(f"{uci} {cp / 100.0:+.2f}")
+    candidate_list_str = ", ".join(cand_strs)
+
+    parts = [
+        "FEN: %s" % fen,
+        "Moves so far (UCI): %s" % (" ".join(moves) if moves else "(none)"),
+        "Candidate moves: %s" % candidate_list_str,
+        "Difficulty: %s" % difficulty,
+        "Personality: %s" % personality,
+    ]
+    if blunder_note:
+        parts.append(blunder_note)
     if prior_error:
         parts.append("Your previous answer was rejected: %s" % prior_error)
-    parts.append("Reply with one legal move from the list, UCI only.")
+    parts.append('Reply with a JSON object: {"move": "<uci from the candidate list>", "comment": "<one or two short sentences, plain words>"}')
+
     body = {
         "model": MODEL,
         "thinking": {"type": "disabled"},
-        "temperature": 0,
-        "max_tokens": 16,
+        "temperature": MODEL_TEMPERATURE,
+        "max_tokens": MODEL_MAX_TOKENS,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": "\n".join(parts)},
@@ -217,65 +305,53 @@ def ask_model(fen, moves, legal, deadline, prior_error=None):
     try:
         with OPENER.open(req, timeout=timeout) as resp:
             if resp.status != 200:
-                return None, "model HTTP %s" % resp.status, None
+                return None, "", "model HTTP %s" % resp.status, None
             payload = json.loads(resp.read(65536).decode("utf-8", "replace"))
     except urllib.error.HTTPError as exc:
-        # Never surface the key or the request body; the status is enough.
-        return None, "model HTTP %s" % exc.code, None
-    except Exception as exc:  # timeout, DNS, TLS, bad JSON
-        return None, "model call failed: %s" % type(exc).__name__, None
+        return None, "", "model HTTP %s" % exc.code, None
+    except Exception as exc:
+        return None, "", "model call failed: %s" % type(exc).__name__, None
 
     usage = payload.get("usage") if isinstance(payload, dict) else None
     try:
         text = payload["choices"][0]["message"]["content"] or ""
     except Exception:
-        return None, "model reply had no content", usage
-    match = TOKEN_RE.search(text)
-    if not match:
-        return None, "model reply contained no UCI move (%r)" % text[:40], usage
-    candidate = match.group(1)
-    if candidate not in legal:
-        return None, "model answered %s, which is not in the legal list" % candidate, usage
-    return candidate, None, usage
+        return None, "", "model reply had no content", usage
+
+    move, comment, err = parse_model_reply(text, cand_ucis, board)
+    if err:
+        return None, "", err, usage
+    return move, comment, None, usage
 
 
-def stockfish_move(fen, moves, legal, deadline):
-    """Stockfish's best move for the position, or None.
-
-    Driven through python-chess's UCI wrapper: a hand-rolled stdin script that
-    writes `quit` straight after `go` cuts the search off at depth 1, which
-    yields a legal but tactically blind move (it missed mate in 1).
-
-    The engine is re-identified on every use, so a binary swapped after startup
-    is refused rather than trusted, and the search is limited by whatever is
-    left of the handler budget.
+def run_engine_step(board, fen, moves, difficulty, deadline):
+    """Run Stockfish MultiPV for candidates and optional shallow pre-move blunder eval.
+    Returns (candidates, max_depth, blunder_note, error_str).
+    candidates is [(uci, score_cp, mate), ...] best first.
     """
     if not os.path.isfile(STOCKFISH) or not os.access(STOCKFISH, os.X_OK):
-        return None, "stockfish not executable at %s" % STOCKFISH
+        return None, 0, None, "stockfish not executable at %s" % STOCKFISH
     remaining = deadline - time.monotonic()
-    if remaining <= 0.15:
-        return None, "no time left for stockfish"
+    if remaining <= 0.2:
+        return None, 0, None, "no time left for stockfish"
     budget = min(STOCKFISH_TIMEOUT, remaining)
     with ENGINE_STATE_LOCK:
         if ENGINE_STATE["inflight"] >= MAX_ENGINE_INFLIGHT:
-            return None, ("stockfish saturated: %d searches in flight, %d abandoned"
-                          % (ENGINE_STATE["inflight"], ENGINE_STATE["abandoned"]))
+            return None, 0, None, ("stockfish saturated: %d searches in flight, %d abandoned"
+                                  % (ENGINE_STATE["inflight"], ENGINE_STATE["abandoned"]))
         ENGINE_STATE["inflight"] += 1
     if not ENGINE_LOCK.acquire(timeout=max(0.05, budget - 0.3)):
         with ENGINE_STATE_LOCK:
             ENGINE_STATE["inflight"] -= 1
-        return None, "stockfish busy"
-    # popen and the UCI handshake are not governed by the search Limit, so the
-    # whole engine step runs in a daemon thread that the handler stops waiting
-    # for at the deadline. An abandoned search still ends by its own movetime,
-    # and its slot is only returned when the thread really finishes.
+        return None, 0, None, "stockfish busy"
+
     box = {}
 
     def _work():
         try:
-            box["result"] = _stockfish_search(fen, moves, legal, budget)
-        except Exception as exc:  # pragma: no cover - defensive
-            box["result"] = (None, "stockfish failed: %s" % type(exc).__name__)
+            box["result"] = _engine_search_and_blunder(board, fen, moves, difficulty, budget, deadline)
+        except Exception as exc:
+            box["result"] = (None, 0, None, "stockfish failed: %s" % type(exc).__name__)
         finally:
             with ENGINE_STATE_LOCK:
                 ENGINE_STATE["inflight"] -= 1
@@ -287,37 +363,150 @@ def stockfish_move(fen, moves, legal, deadline):
     if worker.is_alive():
         with ENGINE_STATE_LOCK:
             ENGINE_STATE["abandoned"] += 1
-        return None, "stockfish exceeded the handler budget"
-    return box.get("result", (None, "stockfish did not answer"))
+        return None, 0, None, "stockfish exceeded the handler budget"
+    return box.get("result", (None, 0, None, "stockfish did not answer"))
 
 
-def _stockfish_search(fen, moves, legal, budget):
-    board = chess.Board(fen)
-    for uci in moves:
-        try:
-            board.push_uci(uci)
-        except ValueError:
-            board = chess.Board(fen)  # history is advisory; keep the FEN
-            break
-    if board.fen() != chess.Board(fen).fen():
-        board = chess.Board(fen)
+def _engine_search_and_blunder(board, fen, moves, difficulty, budget, deadline):
+    cfg = DIFFICULTY_CONFIG[difficulty]
+    target_candidates = cfg["candidates"]
+    depth_ceiling = cfg["depth"]
+    time_cap = cfg["time"]
+
+    legal = legal_moves(board)
+    if not legal:
+        return None, 0, None, "position has no legal moves"
+
+    multipv_n = min(target_candidates, len(legal))
+
     try:
         with chess.engine.SimpleEngine.popen_uci(STOCKFISH) as engine:
             name = (engine.id or {}).get("name") or ""
             if not name.startswith("Stockfish 17.1"):
-                return None, "stockfish identity changed: %r" % name[:40]
+                return None, 0, None, "stockfish identity changed: %r" % name[:40]
             engine.configure({"Threads": 1, "Hash": 16})
-            limit = chess.engine.Limit(
-                time=min(STOCKFISH_MOVETIME_MS / 1000.0, max(0.05, budget - 0.5)))
-            result = engine.play(board, limit)
+
+            # 1. Candidate search on current board
+            cand_limit = chess.engine.Limit(depth=depth_ceiling, time=time_cap)
+            infos = engine.analyse(board, cand_limit, multipv=multipv_n)
+            if isinstance(infos, dict):
+                infos = [infos]
+
+            candidates = []
+            max_depth = 0
+            for info in infos:
+                pv = info.get("pv")
+                if not pv:
+                    continue
+                uci = pv[0].uci()
+                if uci not in legal:
+                    continue
+                score_obj = info.get("score")
+                if score_obj is None:
+                    continue
+                pov = score_obj.pov(board.turn)
+                cp = pov.score(mate_score=10000)
+                mate = pov.mate()
+                depth = info.get("depth", 0)
+                candidates.append((uci, cp, mate))
+                if depth > max_depth:
+                    max_depth = depth
+
+            if not candidates:
+                return None, 0, None, "stockfish produced no valid candidates"
+
+            # Sort best first by score (mate_score=10000 ensures stable descending order)
+            candidates.sort(key=lambda c: c[1], reverse=True)
+
+            # 2. Shallow blunder detection if moves is non-empty
+            blunder_note = None
+            if moves and (deadline - time.monotonic() > 0.25):
+                blunder_note = _detect_blunder(engine, board, fen, moves, candidates)
+
+            return candidates, max_depth, blunder_note, None
     except Exception as exc:
-        return None, "stockfish failed: %s" % type(exc).__name__
-    if result.move is None:
-        return None, "stockfish returned no move"
-    best = result.move.uci()
-    if best not in legal:
-        return None, "stockfish bestmove %s is not legal" % best
-    return best, None
+        return None, 0, None, "stockfish failed: %s" % type(exc).__name__
+
+
+def _detect_blunder(engine, board, fen, moves, candidates):
+    try:
+        pre_board = None
+        # Try from starting board first (when full history from startpos is sent)
+        try:
+            b = chess.Board()
+            for m in moves[:-1]:
+                b.push_uci(m)
+            b_after = b.copy()
+            b_after.push_uci(moves[-1])
+            if b_after.board_fen() == board.board_fen():
+                pre_board = b
+        except Exception:
+            pre_board = None
+
+        if pre_board is None:
+            # Fallback: the FEN is the position BEFORE the last move and the
+            # history is only a tail. Replaying moves[:-1] on the current FEN
+            # would otherwise invent a position, so the candidate pre_board is
+            # accepted only if pushing the last move lands on the given board.
+            try:
+                b = chess.Board(fen)
+                for m in moves[:-1]:
+                    b.push_uci(m)
+                check = b.copy()
+                check.push_uci(moves[-1])
+                pre_board = b if check.board_fen() == board.board_fen() else None
+            except Exception:
+                pre_board = None
+
+        if pre_board is None or not pre_board.is_valid():
+            return None
+
+        # Run shallow Stockfish analyse (multipv 1, Limit(depth=8, time=0.15))
+        pre_limit = chess.engine.Limit(depth=8, time=0.15)
+        pre_res = engine.analyse(pre_board, pre_limit)
+        if isinstance(pre_res, list):
+            pre_res = pre_res[0] if pre_res else {}
+
+        pv = pre_res.get("pv")
+        if not pv:
+            return None
+        preferred_move = pv[0].uci()
+
+        score_obj = pre_res.get("score")
+        if score_obj is None:
+            return None
+
+        pov_pre = score_obj.pov(pre_board.turn)
+        # Guard: a mate score in pre-eval must silently degrade
+        if pov_pre.mate() is not None:
+            return None
+        eval_before = pov_pre.score()
+        if eval_before is None:
+            return None
+
+        # Player's evaluation after his own move is minus the current position's best score
+        best_cand = candidates[0]
+        eval_after = -best_cand[1]
+        eval_after_mate = -best_cand[2] if best_cand[2] is not None else None
+
+        if (eval_before - eval_after) >= 150:
+            last_move = moves[-1]
+            eval_before_str = f"{eval_before / 100.0:+.1f}"
+            if eval_after_mate is not None:
+                eval_after_str = f"+#{eval_after_mate}" if eval_after_mate > 0 else f"-#{abs(eval_after_mate)}"
+            else:
+                eval_after_str = f"{eval_after / 100.0:+.1f}"
+            better_move_str = f"{preferred_move} ({eval_before_str})"
+
+            return (
+                f"BLUNDER NOTE: his previous move {last_move} was a mistake — "
+                f"it dropped the evaluation from {eval_before_str} to {eval_after_str} for him; "
+                f"a much better move was {better_move_str}. "
+                f"Say plainly and briefly what was wrong with {last_move} and what was better."
+            )
+    except Exception:
+        return None
+    return None
 
 
 def parse_request(raw):
@@ -329,6 +518,8 @@ def parse_request(raw):
         raise BadRequest("body must be a JSON object")
     fen = doc.get("fen")
     moves = doc.get("moves", [])
+    difficulty = parse_difficulty(doc.get("difficulty"))
+    personality = parse_personality(doc.get("personality"))
     if not isinstance(fen, str) or not fen or len(fen) > MAX_FEN:
         raise BadRequest("fen must be a non-empty string of at most %d chars" % MAX_FEN)
     if not isinstance(moves, list) or len(moves) > MAX_MOVES:
@@ -343,31 +534,52 @@ def parse_request(raw):
     except Exception:
         raise BadRequest("fen is not a valid position")
     if not board.is_valid():
-        raise BadRequest("fen is not a legal position")
-    return fen, clean, board
+        # Tolerantly clear invalid EP square if that is the only defect
+        if board.status() == chess.STATUS_INVALID_EP_SQUARE:
+            board.ep_square = None
+        if not board.is_valid():
+            raise BadRequest("fen is not a legal position")
+    return fen, clean, board, difficulty, personality
 
 
-def pick_move(fen, moves, board, started):
+def pick_move(fen, moves, board, difficulty, personality, started):
     deadline = started + HANDLER_BUDGET
     legal = legal_moves(board)
     if not legal:
         raise BadRequest("the position has no legal moves")
 
-    move, err, usage = ask_model(fen, moves, legal, deadline)
-    if move is None and deadline - time.monotonic() > 1.0:
-        move, err2, usage2 = ask_model(fen, moves, legal, deadline, prior_error=err)
+    # 1. Engine step: candidate generation + blunder detection
+    candidates, engine_depth, blunder_note, ferr = run_engine_step(
+        board, fen, moves, difficulty, deadline
+    )
+    if not candidates:
+        raise RuntimeError("engine: %s" % (ferr or "failed to generate candidates"))
+
+    fallback_move = candidates[0][0]
+
+    # Check if time remains for model call
+    remaining = deadline - time.monotonic()
+    if remaining <= 0.2:
+        return fallback_move, "", "stockfish", None, "no time left for model call", len(candidates), engine_depth
+
+    # 2. Model call
+    move, comment, err, usage = ask_model(
+        fen, moves, candidates, difficulty, personality, blunder_note, board, deadline
+    )
+    if move is None and (deadline - time.monotonic()) >= RETRY_MIN_REMAINING:
+        move, comment, err2, usage2 = ask_model(
+            fen, moves, candidates, difficulty, personality, blunder_note, board, deadline, prior_error=err
+        )
         if move is None:
             err = err2 or err
+        else:
+            usage = usage2 or usage
 
     if move is not None:
-        return move, "model", usage, None
+        return move, comment, "model", usage, None, len(candidates), engine_depth
 
-    fallback, ferr = stockfish_move(fen, moves, legal, deadline)
-    if fallback is not None:
-        # The reason the model failed is worth a journal field: a redirect, a
-        # rate-limit from upstream and a bad answer look identical otherwise.
-        return fallback, "stockfish", usage, err
-    raise RuntimeError("model: %s; stockfish: %s" % (err or "failed", ferr or "failed"))
+    # Fallback = Stockfish's best candidate (candidate[0]) with comment "" (empty string).
+    return fallback_move, "", "stockfish", usage, err, len(candidates), engine_depth
 
 
 class HeaderTooLarge(Exception):
@@ -403,7 +615,7 @@ class BoundedReader:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "chess-bridge/1.1"
+    server_version = "chess-bridge/2.0"
     protocol_version = "HTTP/1.1"
     timeout = HEADER_TIMEOUT  # a slow-drip client cannot hold a worker forever
 
@@ -546,8 +758,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             raw = self.rfile.read(length)
-            fen, moves, board = parse_request(raw)
-            move, source, usage, note = pick_move(fen, moves, board, started)
+            fen, moves, board, difficulty, personality = parse_request(raw)
+            move, comment, source, usage, note, cand_count, engine_depth = pick_move(
+                fen, moves, board, difficulty, personality, started
+            )
         except BadRequest as exc:
             self._send(400, {"error": str(exc)}, origin)
             log("POST", path, 400, "none", started)
@@ -559,8 +773,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         finally:
             SLOTS.release()
-        self._send(200, {"move": move}, origin)
-        extra = " usage=%s" % json.dumps(usage) if usage else ""
+        self._send(200, {"move": move, "comment": comment}, origin)
+        extra = " difficulty=%s candidates=%d depth=%d comment=%s" % (
+            difficulty, cand_count, engine_depth, "model" if comment else "empty"
+        )
+        if usage:
+            extra += " usage=%s" % json.dumps(usage)
         if source != "model" and note:
             extra += " detail=%s" % str(note)[:200]
         log("POST", path, 200, source, started, extra)

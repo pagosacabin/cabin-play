@@ -10,8 +10,13 @@ move that is not legal.
 
 ```
 POST /chess-move
-  {"fen": "<FEN>", "moves": ["e2e4", "e7e5", ...]}     # moves optional
-->  200 {"move": "g8f6"}                               # legal UCI for that FEN
+  {
+    "fen": "<FEN>",
+    "moves": ["e2e4", "e7e5", ...],                     # moves optional
+    "difficulty": "easy" | "normal" | "hard",           # optional, default "normal" ("medium" -> "normal")
+    "personality": "aggressive" | "teach me" | "default" # optional, default "default"
+  }
+->  200 {"move": "g8f6", "comment": "..."}              # legal UCI for that FEN, comment may be ""
 ->  400 {"error": "..."}                               # malformed / illegal input
 ->  500 {"error": "..."}                               # no move available
 GET  /health -> 200 {"ok": true}                         # opaque; details are in the journal
@@ -28,24 +33,38 @@ refused with `403` and no `Access-Control-Allow-Origin` header is ever sent for
 it (it is not substituted with a trusted origin). CORS is not authentication —
 it only decides which browser origins may read the reply.
 
-## How a move is chosen
+## Request and response fields (v2)
+
+### Request parameters
+* `fen` (string, required): FEN representation of the board position (≤ 128 characters).
+* `moves` (list of strings, optional): UCI move history (≤ 512 entries, each ≤ 5 chars).
+* `difficulty` (string, optional): One of `"easy"`, `"normal"`, or `"hard"`. `"medium"` is accepted as an alias for `"normal"`. Missing or unrecognized values default to `"normal"`.
+  Controls candidate generation in Stockfish MultiPV for the position:
+  - **easy**: 3 candidates, depth ceiling 8, time cap 0.25 s
+  - **normal**: 4 candidates, depth ceiling 12, time cap 0.45 s
+  - **hard**: 5 candidates, depth ceiling 16, time cap 0.80 s
+  Depth is a ceiling; the time cap is the hard limit — whichever completes first.
+* `personality` (string, optional): Allowlisted strictly to `"aggressive"`, `"teach me"`, or `"default"`. Missing or other values default to `"default"`. Unallowlisted client strings are never pasted into model prompts.
+
+### Response fields
+* `move` (string): The chosen legal move in UCI format.
+* `comment` (string): A short, plain-language explanation (1–2 sentences) of the move from the coach perspective, including analysis of the player's blunder if one was detected on their last move.
+* **Degradation / fallback behaviour**: The comment never holds up the move. If DeepSeek is unavailable, times out, returns an unusable response after retry, or if the handler deadline has no time remaining for a model call, the service immediately falls back to Stockfish's top candidate (`candidate[0]`) and sets `comment: ""`.
+
+## How a move is chosen (v2)
 
 1. Legal moves are computed from the FEN with python-chess.
-2. DeepSeek (`deepseek-flash`, thinking disabled, temperature 0, `max_tokens`
-   16, 4 s timeout) is asked for one move from that list.
-3. An answer that is not in the list, or that is empty, is retried **once** with
-   the error text and the same position and list.
-4. If that fails too, Stockfish 17.1 plays `go movetime 400` for the position and
-   its `bestmove` is used (validated legal before it is returned).
-5. If Stockfish cannot answer either, the service returns 500. It never picks a
-   random legal move.
+2. Stockfish MultiPV generates the top N candidate moves for the position with side-to-move evaluations (N, depth ceiling, and time cap determined by `difficulty`).
+3. If moves history is present, a shallow pre-move evaluation (depth 8, 0.15 s) checks whether the player's last move dropped evaluation by ≥ 150 centipawns. If so, a BLUNDER note is generated.
+4. DeepSeek (`deepseek-flash`, thinking disabled, temperature 0.3, `max_tokens` 220, 2.6 s timeout) is given the candidates, difficulty, personality, and optional blunder note to pick one candidate and explain it in JSON.
+5. If the model reply is invalid or missing, it is retried **once** with the error appended if ≥ 0.8 s budget remains.
+6. If the model fails or runs out of time, Stockfish's best candidate (`candidate[0]`) is returned immediately with `comment: ""`.
+7. If Stockfish cannot answer either, the service returns 500. It never picks a random legal move.
 
-Every request — `GET`, `OPTIONS` and `POST`, including the rejected ones —
-writes one stderr line:
+Every request — `GET`, `OPTIONS` and `POST`, including the rejected ones — writes one stderr line:
 `chess-move method=… path=… status=… source=model|stockfish|none elapsed_ms=…`.
-A 500 carries `detail=` with the underlying reason in the journal only; the
-client gets the stable body `{"error": "internal error"}`. No key and no prompt
-text are ever logged.
+For POST 200 responses, the journal line also includes: `difficulty=… candidates=… depth=… comment=model|empty`.
+A 500 carries `detail=` with the underlying reason in the journal only; the client gets the stable body `{"error": "internal error"}`. No key and no prompt text are ever logged.
 
 ## Install (once)
 

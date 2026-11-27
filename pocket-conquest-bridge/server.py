@@ -405,7 +405,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not origin_allowed(origin):
             self.close_connection = True
-            self._send(403, {"error": "origin not allowed"}, origin)
+            self._send(403, {"error": "origin not allowed"}, origin, drain=True)
             log("OPTIONS", self._path(), 403, "none", started)
             return
         self.send_response(204)

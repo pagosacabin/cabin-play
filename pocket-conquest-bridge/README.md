@@ -98,8 +98,9 @@ quoted move, or a move inside a sentence all parse; anything else is retried onc
 with the error appended, and then the endpoint answers 500 so the page uses its
 own computer. It never answers a random legal move.
 
-Measured on 2026-11-27 with deepseek-flash (`thinking: disabled`): 384-792 prompt
-tokens and 1-7 completion tokens per move, 0.6-1.0 s round trip.
+Measured on 2026-11-27 with deepseek-flash (`thinking: disabled`): 384-756 prompt
+tokens (0-512 of them cache hits) and 1-9 completion tokens per move, 0.6-0.8 s
+round trip over 12 logged calls.
 
 ## Run it
 

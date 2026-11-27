@@ -308,6 +308,11 @@ static esp_err_t fold_presacrifice(void)
     return ESP_OK;
 }
 
+/* 0277: while the card is missing the loop retries every 10 s; logging every
+ * failure would push the boot lines out of the 64 KB report within minutes, so the
+ * retry calls set this and the reason is written once a minute instead. */
+static bool s_mount_quiet;
+
 static bool card_mount(void)
 {
     spi_bus_config_t bus = {
@@ -333,7 +338,8 @@ static bool card_mount(void)
     };
     esp_err_t err = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &slot, &mcfg, &s_card);
     if (err != ESP_OK) {
-        app_logf("live       : SD mount failed: %s (%d)\n", esp_err_to_name(err), (int)err);
+        if (!s_mount_quiet)
+            app_logf("live       : SD mount failed: %s (%d)\n", esp_err_to_name(err), (int)err);
         spi_bus_free(SPI2_HOST);             /* next fold must be able to init */
         return false;
     }
@@ -506,13 +512,13 @@ static void order_drop(uint16_t idx)
  * one is, the logo buffer can go.  The short delay lets any bounce buffer that is
  * still scanning the logo finish first. */
 extern uint8_t *g_splash_buf;
-static void splash_released(void)
+static void splash_released(const char *why)
 {
     if (g_splash_buf != NULL && s_fb_live != g_splash_buf) {
         vTaskDelay(pdMS_TO_TICKS(250));
         heap_caps_free(g_splash_buf);
         g_splash_buf = NULL;
-        app_logf("splash     : logo buffer released after the first photo\n");
+        app_logf("splash     : logo buffer released (%s)\n", why);
     }
 }
 
@@ -528,7 +534,7 @@ static bool show_next_shuffled(void)
             s_cur = (int32_t)idx;
             app_logf("live       : show %u (shuffled %u/%u)\n", (unsigned)idx,
                      (unsigned)s_order_pos, (unsigned)s_order_n);
-            splash_released();
+            splash_released("first photo on the panel");
             return true;
         }
         if (retry) {
@@ -1120,22 +1126,24 @@ void live_start(esp_lcd_panel_handle_t panel)
     if (s_mounted) live_scan();
     app_logf("live       : %s library holds %u frames, next index %u in %s\n",
              s_mounted ? "SD" : "no-SD", (unsigned)s_lib_count, (unsigned)s_lib_max, LIVE_DIR);
-    write_report();
 
     /* 0277: without a card the frame used to sit on the Nordtronics logo forever,
      * which is indistinguishable from a hang.  Put the reason on the panel, keep
      * it there, and keep trying the card in the loop below. */
     if (!s_mounted) {
         show_notice(NOTICE_SD, NOTICE_SD_W, NOTICE_SD_H, "no SD card", false, 86400000);
-        splash_released();          /* the logo must give way to the error message */
+        splash_released("SD error on the panel");   /* the logo must give way to the error */
         app_logf("sd         : no card at boot -- error on panel, retrying every %d s\n",
                  SD_RETRY_MS / 1000);
     }
+    /* flushed last, so a card-failure boot is diagnosable from the log alone */
+    write_report();
 
     /* 0259: no placeholder any more.  The splash stays on the panel until the
      * first card photo is published, so the first slide must not wait out a dwell. */
     int64_t last_show = esp_timer_get_time() - (int64_t)DWELL_MS * 1000;
     int64_t last_mount_try = esp_timer_get_time();
+    uint32_t mount_tries = 0;              /* 0277: for rate-limiting the retry log */
     uint32_t show_idx = 0;
     int last_level = 1;
 
@@ -1262,7 +1270,11 @@ void live_start(esp_lcd_panel_handle_t panel)
         if (!s_mounted && now - last_mount_try > (int64_t)SD_RETRY_MS * 1000) {
             last_mount_try = now;
             fold_presacrifice();
-            if (card_mount()) {
+            /* report a failed retry once a minute, not every 10 s */
+            s_mount_quiet = (++mount_tries % 6) != 0;
+            bool mounted = card_mount();
+            s_mount_quiet = false;
+            if (mounted) {
                 s_mounted = true;
                 live_scan();
                 order_build();

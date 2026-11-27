@@ -14,14 +14,19 @@ POST /chess-move
 ->  200 {"move": "g8f6"}                               # legal UCI for that FEN
 ->  400 {"error": "..."}                               # malformed / illegal input
 ->  500 {"error": "..."}                               # no move available
-GET  /health -> 200 {"ok": true, "model": "...", "stockfish": true}
-OPTIONS /chess-move -> 204 (CORS preflight)
+GET  /health -> 200 {"ok": true}                         # opaque; details are in the journal
+OPTIONS /chess-move -> 204 (CORS preflight)               # 403 for an unknown Origin
+->  429 {"error": "too many requests"}                    # rate limit
+->  503 {"error": "busy"}                                 # every worker slot taken
 ```
 
 The browser sends `Content-Type: application/json` cross-origin, so a preflight
 is unavoidable. The service answers `OPTIONS` and echoes
-`Access-Control-Allow-Origin` for `https://nordtronics.io` and
-`https://www.nordtronics.io` (anything else gets `https://nordtronics.io`).
+`Access-Control-Allow-Origin` only for `https://nordtronics.io` and
+`https://www.nordtronics.io`. An unknown origin fails closed: the preflight is
+refused with `403` and no `Access-Control-Allow-Origin` header is ever sent for
+it (it is not substituted with a trusted origin). CORS is not authentication —
+it only decides which browser origins may read the reply.
 
 ## How a move is chosen
 
@@ -35,8 +40,12 @@ is unavoidable. The service answers `OPTIONS` and echoes
 5. If Stockfish cannot answer either, the service returns 500. It never picks a
    random legal move.
 
-Every request writes one stderr line: `chess-move status=… source=model|stockfish
-elapsed_ms=…`. No key and no prompt text are logged.
+Every request — `GET`, `OPTIONS` and `POST`, including the rejected ones —
+writes one stderr line:
+`chess-move method=… path=… status=… source=model|stockfish|none elapsed_ms=…`.
+A 500 carries `detail=` with the underlying reason in the journal only; the
+client gets the stable body `{"error": "internal error"}`. No key and no prompt
+text are ever logged.
 
 ## Install (once)
 
@@ -51,9 +60,10 @@ python3 -m venv ~/.local/share/chess-bridge/venv
 
 `install-stockfish.sh` pins the release tarball's SHA-256
 (`09e95322…e31987d`) and refuses to install anything whose `id name` is not
-`Stockfish 17.1`. The same version is re-checked at every service start and
-reported as `GET /health` → `{"stockfish": "Stockfish 17.1"}`, so a swapped
-binary is visible rather than silent.
+`Stockfish 17.1`. The engine is re-identified at every service start — a missing
+engine is **fatal** (the service refuses to serve rather than degrade silently) —
+and again on every fallback move, so a binary swapped after startup is refused
+instead of trusted. The identity is printed in the startup line of the journal.
 
 The DeepSeek key is **not** in this tree. `run.sh` takes it from
 `DEEPSEEK_API_KEY`, or reads that one variable out of `~/.hermes/.env` when it is
@@ -96,11 +106,24 @@ after a reboot until someone logs in. After a reboot, start it with
   OAuth on the Serve path. The boundary is the tailnet: Serve publishes the
   path tailnet-only (no funnel), and the process binds `127.0.0.1`. Anyone on
   the tailnet can spend a DeepSeek call; nobody outside it can reach the port.
-  This is the one review finding that is a spec constraint rather than a defect.
-- Input is bounds-checked (8 KiB body, FEN ≤128 chars, ≤512 moves of ≤5 chars,
-  JSON object shape) and every move is validated legal before it is returned.
+  This is the one review finding that is a spec constraint rather than a defect —
+  the cost side of it is bounded below by the token bucket and the worker pool.
+- Input is bounds-checked (8 KiB body, FEN ≤128 chars, ≤512 moves of ≤5 chars
+  and each must match the UCI grammar, JSON object shape) and every move is
+  validated legal before it is returned.
+- **Spend is bounded**: a global token bucket (`CHESS_BRIDGE_RATE_PER_MIN`, 60/min,
+  burst 10) answers `429` beyond the budget, and at most
+  `CHESS_BRIDGE_MAX_CONCURRENCY` (4) requests are worked at once — the next one
+  gets `503` + `Retry-After: 1` after 0.25 s. One request draws at most two model
+  attempts plus one engine search, all against a single 5.5 s deadline, so a
+  caller cannot queue up work past the page's 6 s budget.
+- **The upstream URL is allowlisted**: `CHESS_BRIDGE_URL` must be `https`, or
+  `http` to a loopback host, so the bearer key cannot be sent in cleartext
+  off-box by an environment override. The service refuses to start otherwise.
 - The key is read from the environment only; it is never logged, never
   serialised into a response, and never written to this tree.
+- Request headers are bounded (8 KiB total → `431`) and the socket read timeout
+  is 5 s, so a slow-drip client cannot hold a worker.
 - TLS terminates at Tailscale Serve; the service speaks loopback HTTP only.
 - The packaged unit runs with `NoNewPrivileges`, an empty capability set,
   `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp`,
@@ -109,15 +132,20 @@ after a reboot until someone logs in. After a reboot, start it with
 
 ## Exposure
 
-Intended public path: `https://home.tail2bff3f.ts.net/chess-move` (tailnet only,
-no funnel, no OAuth) proxying `http://127.0.0.1:8765`.
+Public path (tailnet only, no funnel, no OAuth) proxying `http://127.0.0.1:8765`:
 
-That mapping is **not yet configured**: the host's tailscale has no operator
-set, so `tailscale serve` requires root and the worker cannot run it. One
-command as root enables it:
+```
+https://home.tail2bff3f.ts.net/chese-move        # the mount as configured on this host
+https://home.tail2bff3f.ts.net/chese-move/chess-move
+```
+
+The mount was created as root by Stephen with a typo — `chese-move`, not
+`chess-move` — so that path is the live one. To make the spelling match the
+name, run once as root (it adds the correct mount; the service is unchanged):
 
 ```bash
 sudo tailscale serve --bg --https=443 --set-path /chess-move http://127.0.0.1:8765
+sudo tailscale serve --https=443 --set-path /chese-move off   # optional tidy-up
 ```
 
-Until then the service answers on `http://127.0.0.1:8765` only.
+`tailscale serve status` is readable without root and shows the live mounts.

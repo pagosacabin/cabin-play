@@ -62,7 +62,8 @@ class Store:
 
     def __init__(self, root: str) -> None:
         self.root = root
-        os.makedirs(root, exist_ok=True)
+        os.makedirs(root, mode=0o700, exist_ok=True)
+        os.chmod(root, 0o700)   # game state is per-run test data; keep other users out
 
     def _path(self, game_id: str) -> str:
         return os.path.join(self.root, f"{game_id}.json")
@@ -162,6 +163,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         if self.path == NEW_PATH:
+            # consume the body even though it is unused, or a keep-alive socket
+            # mis-frames the next request
+            ok, payload = self._read_json()
+            if not ok:
+                self._send(400, {"error": str(payload)})
+                return
             game = self.store.create()
             self._send(201, _public(game))
             return

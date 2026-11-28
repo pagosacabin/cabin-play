@@ -49,20 +49,26 @@ log = logging.getLogger("pocket-conquest")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+# Plain http is only acceptable for a test server on this machine. RFC-1918 ranges
+# are deliberately NOT allowed: they are reachable from other hosts on a shared
+# network, where plain http can be read and modified in transit.
 _LOOPBACK_RE = re.compile(
-    r"^https?://("
+    r"^http://("
     r"localhost"
     r"|127(?:\.\d{1,3}){3}"
-    r"|::1"
-    r"|10(?:\.\d{1,3}){3}"          # RFC-1918 10/8
-    r"|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}"  # RFC-1918 172.16-31/12
-    r"|192\.168(?:\.\d{1,3}){2}"    # RFC-1918 192.168/16
-    r")"
+    r"|\[::1\]"
+    r")(?::\d{1,5})?(?:/|$)"
 )
 
 def _get_api_base() -> str | None:
     """Return the validated API base URL, or None with an error already logged."""
-    raw = os.environ.get("POCKET_CONQUEST_API_BASE", "http://127.0.0.1:8791").rstrip("/")
+    raw = os.environ.get("POCKET_CONQUEST_API_BASE", "").rstrip("/")
+    if not raw:
+        log.warning(
+            "POCKET_CONQUEST_API_BASE is unset: falling back to the local test server "
+            "http://127.0.0.1:8791. Set it to the real https:// API for a real game."
+        )
+        raw = "http://127.0.0.1:8791"
     if raw.startswith("https://"):
         return raw
     if _LOOPBACK_RE.match(raw):
@@ -72,6 +78,7 @@ def _get_api_base() -> str | None:
 
 _GAME_ID_RE = re.compile(r"\A[A-Za-z0-9_\-]{1,64}\Z")
 _MAX_BODY = 65536   # 64 KiB
+_MAX_MOVE = 64      # the longest legal move is well under this
 _TIMEOUT = 10       # seconds
 
 # ---------------------------------------------------------------------------
@@ -149,8 +156,9 @@ def _build_game_response(raw: dict[str, Any], api_base: str) -> dict[str, Any]:
     try:
         pos = pc.normalise_position(pos_raw)
     except Exception as exc:  # noqa: BLE001
+        # fail closed: a response we cannot read is an error, never a blank board
         log.warning("Could not normalise position: %s", exc)
-        pos = None
+        return {"error": f"game API returned a position this server cannot parse: {exc}"}
 
     game_id = raw.get("game_id", raw.get("id", ""))
     status = raw.get("status", "unknown")
@@ -173,7 +181,7 @@ def _build_game_response(raw: dict[str, Any], api_base: str) -> dict[str, Any]:
         board = pc.describe(pos)
         legal = pc.legal_moves(pos)
         if status == "unknown":
-            status = "finished" if win else "in_progress"
+            status = "finished" if win else "active"
 
     return {
         "game_id": game_id,
@@ -359,6 +367,8 @@ def make_move(game_id: str, move: str) -> dict:  # type: ignore[return]
     # is_legal also checks grammar, but give a targeted message first.
     if not isinstance(move, str) or not move.strip():
         return {"error": "move must be a non-empty string."}
+    if len(move) > _MAX_MOVE:
+        return {"error": f"move is too long (max {_MAX_MOVE} chars)."}
 
     # --- guard: illegal move ---
     if not pc.is_legal(pos, move):
@@ -382,7 +392,6 @@ def make_move(game_id: str, move: str) -> dict:  # type: ignore[return]
     post_resp = _http_post(post_url, {
         "game_id": game_id,
         "move": move,
-        "position": new_pos,
         # optimistic concurrency: name the state this move was computed from, so
         # the API can refuse a move built on a stale copy instead of overwriting it
         "from_digest": _position_digest(pos_raw),

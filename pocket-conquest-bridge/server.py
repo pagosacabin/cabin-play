@@ -237,6 +237,12 @@ def cors_headers(origin):
             "Access-Control-Allow-Origin": origin or "*",
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Headers": "content-type",
+            # Chrome's Private/Local Network Access: a page on a public origin
+            # (https://nordtronics.io) fetching a private address (the Tailscale
+            # name) is blocked before the request is sent unless the preflight
+            # carries this header. Without it the page reports exactly the
+            # symptom this task exists to fix: "Failed to fetch".
+            "Access-Control-Allow-Private-Network": "true",
             "Access-Control-Max-Age": "600",
             "Vary": "Origin",
         }
@@ -246,6 +252,7 @@ def cors_headers(origin):
         "Access-Control-Allow-Origin": origin,
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "content-type",
+        "Access-Control-Allow-Private-Network": "true",
         "Access-Control-Max-Age": "600",
         "Vary": "Origin",
     }
@@ -448,6 +455,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if self.close_connection:
+            # Say so explicitly. Under Tailscale Serve the upstream connection is
+            # pooled, and a socket closed without this header makes the proxy
+            # answer 502 for the request it had already pipelined (measured:
+            # a burst of POST /games through Serve produced 502s on the close).
+            self.send_header("Connection", "close")
         for key, value in cors_headers(origin).items():
             self.send_header(key, value)
         if extra:

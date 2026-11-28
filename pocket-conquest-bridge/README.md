@@ -167,6 +167,20 @@ locally, POSTs the finished turn, then polls `GET /games/{id}` every 4 s until
   in the page's shape.
 * `GET /games/{id}` returns the stored state for the poll.
 
+**Browser prerequisite (proven, and it is what the "Failed to fetch" really was).**
+Chrome blocks a public-origin page (`https://nordtronics.io`) from fetching a
+private address (`home.tail2bff3f.ts.net`) under its Local Network Access policy:
+the request never leaves the browser and the page reports "Failed to fetch",
+whether or not the API exists. Two things follow:
+
+* the service answers the CORS preflight with `Access-Control-Allow-Private-Network:
+  true` (needed by the older Private Network Access path);
+* the user must allow the page local-network access once — Chrome shows
+  "Allow nordtronics.io to access devices on your local network?" on the first
+  Start Juno game. With that permission granted the full flow works in a real
+  browser — create, play, End turn, poll, "Juno replied — your move." (task 0279's
+  browser proof).
+
 Details that matter:
 
 - **State conversion is one-way per request, page-authoritative.** `game_state.py`

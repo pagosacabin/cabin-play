@@ -39,6 +39,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import agent_core
+import game_state as gs
 import pocket_conquest as pc
 
 
@@ -99,6 +100,66 @@ PATHS = (
     "/",
 )
 HEALTH_PATHS = ("/health", "/pocket-conquest/health")
+# The page's Juno mode (index.html) calls three more routes on this same base
+# URL: POST /games, POST /games/{id}/move, GET /games/{id}. Under the Serve
+# mount they arrive prefixed, so the mount prefix is stripped before routing.
+MOUNT_PREFIX = "/pocket-conquest"
+GAME_MOVE_BUDGET = 20.0      # the page's own client allows 30 s for this call
+MAX_LEGAL_FOR_PROMPT = 240   # bound the prompt (and so the model spend) by input size
+GAMES = gs.GameStore()
+
+
+def _ply(position):
+    """The page's ply for an engine position (nord's turn is odd)."""
+    return 2 * position["turn"] - (1 if position["side"] == "S" else 0)
+
+
+def bounded_legal(legal):
+    """Cap the legal-move list that reaches the model.
+
+    The caller supplies the position, so the list length is attacker-influenced:
+    a maximal board yields thousands of `M ... n` strings. Every entry is a legal
+    move, so a deterministic prefix-free subset keeps the opponent sane while
+    bounding prompt tokens and model time. Ordering is preserved (the engine
+    lists builds, then moves, then END), and END is always kept last.
+    """
+    if len(legal) <= MAX_LEGAL_FOR_PROMPT:
+        return legal
+    if "END" in legal:
+        head = [m for m in legal if m != "END"][:MAX_LEGAL_FOR_PROMPT - 1]
+        return head + ["END"]
+    return legal[:MAX_LEGAL_FOR_PROMPT]
+
+
+def _strip_mount(path):
+    """Drop the Serve mount prefix; return the service-relative path."""
+    if path == MOUNT_PREFIX:
+        return "/"
+    if path.startswith(MOUNT_PREFIX + "/"):
+        return path[len(MOUNT_PREFIX):]
+    return path
+
+
+def route(path):
+    """Map a request path to (kind, game_id) or (None, None).
+
+    kind is one of: move (the legacy single-move endpoint), health, games
+    (collection), game (one game), game_move (submit a turn).
+    """
+    rel = _strip_mount(path)
+    if rel in ("/", "/pocket-conquest-move"):
+        return "move", None
+    if rel == "/health":
+        return "health", None
+    if rel == "/games":
+        return "games", None
+    if rel.startswith("/games/"):
+        rest = rel[len("/games/"):]
+        if rest.endswith("/move"):
+            gid = rest[:-len("/move")]
+            return ("game_move", gid) if gs.valid_game_id(gid) else (None, None)
+        return ("game", rest) if gs.valid_game_id(rest) else (None, None)
+    return None, None
 
 SYSTEM_PROMPT = (
     "You are a cautious commander in a small turn-based strategy game. "
@@ -145,6 +206,12 @@ class RateLimiter:
 
 
 LIMITER = RateLimiter(RATE_LIMIT_PER_MIN, RATE_BURST)
+# Game creation gets its own, tighter bucket: a created game occupies one of the
+# MAX_GAMES slots, so without this a tailnet peer could churn the table and evict
+# live games (review pass 2, finding 1). Moves and polls share the global bucket.
+CREATE_PER_MIN = int(os.environ.get("PC_BRIDGE_CREATE_PER_MIN", "20"))
+CREATE_BURST = int(os.environ.get("PC_BRIDGE_CREATE_BURST", "5"))
+CREATE_LIMITER = RateLimiter(CREATE_PER_MIN, CREATE_BURST)
 
 
 class BadRequest(Exception):
@@ -168,7 +235,7 @@ def cors_headers(origin):
     if not ALLOWED_ORIGINS:
         return {
             "Access-Control-Allow-Origin": origin or "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Headers": "content-type",
             "Access-Control-Max-Age": "600",
             "Vary": "Origin",
@@ -177,7 +244,7 @@ def cors_headers(origin):
         return {"Vary": "Origin"}
     return {
         "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "content-type",
         "Access-Control-Max-Age": "600",
         "Vary": "Origin",
@@ -410,7 +477,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         started = time.monotonic()
         origin = self._origin()
-        if self._path() not in PATHS:
+        if route(self._path())[0] is None:
             self.close_connection = True
             self._send(404, {"error": "not found"}, origin, drain=True)
             log("OPTIONS", self._path(), 404, "none", started)
@@ -430,18 +497,37 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         started = time.monotonic()
         origin = self._origin()
-        if self._path() in HEALTH_PATHS:
+        path = self._path()
+        kind, gid = route(path)
+        if kind == "health":
             self._send(200, {"ok": True}, origin)
-            log("GET", self._path(), 200, "none", started)
+            log("GET", path, 200, "none", started)
+            return
+        if kind == "game":
+            if not origin_allowed(origin):
+                self.close_connection = True
+                self._send(403, {"error": "origin not allowed"}, origin, drain=True)
+                log("GET", path, 403, "none", started)
+                return
+            position = GAMES.get(gid)
+            if position is None:
+                self.close_connection = True
+                self._send(404, {"error": "no such game"}, origin, drain=True)
+                log("GET", path, 404, "none", started)
+                return
+            self._send(200, {"id": gid, "game": "pocket-conquest",
+                             "state": gs.page_state_from_engine(position)}, origin)
+            log("GET", path, 200, "engine", started, " event=poll game=%s" % gid)
             return
         self._send(404, {"error": "not found"}, origin)
-        log("GET", self._path(), 404, "none", started)
+        log("GET", path, 404, "none", started)
 
     def do_POST(self):
         started = time.monotonic()
         origin = self._origin()
         path = self._path()
-        if path not in PATHS:
+        kind, gid = route(path)
+        if kind not in ("move", "games", "game_move"):
             # The body has not been read: close, or HTTP/1.1 keep-alive would
             # parse it back as the next request line on this socket.
             self.close_connection = True
@@ -456,6 +542,11 @@ class Handler(BaseHTTPRequestHandler):
         if not LIMITER.allow():
             self.close_connection = True
             self._send(429, {"error": "too many requests"}, origin, drain=True)
+            log("POST", path, 429, "none", started)
+            return
+        if kind == "games" and not CREATE_LIMITER.allow():
+            self.close_connection = True
+            self._send(429, {"error": "too many games"}, origin, drain=True)
             log("POST", path, 429, "none", started)
             return
         # http.server does not decode chunked bodies, so a chunked request would
@@ -480,9 +571,52 @@ class Handler(BaseHTTPRequestHandler):
             log("POST", path, 503, "none", started)
             return
         try:
-            raw = self.rfile.read(length)
-            position, page_moves, legal = parse_request(raw)
-            move, usage, note, attempts = pick_move(position, legal, started)
+            if kind == "move":
+                raw = self.rfile.read(length)
+                position, page_moves, legal = parse_request(raw)
+                move, usage, note, attempts = pick_move(position, legal, started)
+            elif kind == "games":
+                body = self._json_body(length)
+                position = self._game_position(body, "S")
+                new_id = GAMES.create(position)
+                self._send(200, {"id": new_id, "game": "pocket-conquest",
+                                 "state": gs.page_state_from_engine(position)}, origin)
+                log("POST", path, 200, "engine", started, " event=create game=%s" % new_id)
+                return
+            else:
+                body = self._json_body(length)
+                position = self._game_position(body, "R")
+                stored = GAMES.get(gid)
+                if stored is not None and _ply(position) < _ply(stored):
+                    # The page is authoritative for the board, but a state that
+                    # rewinds the stored game is refused (review pass 3, LOW):
+                    # the id alone must not let a caller replay an earlier ply.
+                    raise BadRequest("state is older than the stored game")
+                adopted = GAMES.adopt(gid, position)
+                legal = pc.legal_moves(position)
+                if not legal:
+                    raise BadRequest("the position has no legal moves")
+                move, usage, note, attempts = self._juno_turn(
+                    position, bounded_legal(legal), started)
+                if move is None:
+                    self.close_connection = True
+                    self._send(500, {"error": "no legal move from the opponent"},
+                               origin, drain=True)
+                    log("POST", path, 500, "model", started,
+                        " event=game_move game=%s detail=%s attempts=%s"
+                        % (gid, str(note)[:160], json.dumps(attempts)))
+                    return
+                updated = pc.apply_move(position, move)
+                updated = pc.apply_move(updated, "END")
+                GAMES.put(gid, updated)
+                self._send(200, {"id": gid, "move": move,
+                                 "state": gs.page_state_from_engine(updated)}, origin)
+                extra = " event=game_move game=%s adopted=%s move=%s" % (
+                    gid, adopted, move.replace(" ", "_"))
+                if usage:
+                    extra += " usage=%s" % json.dumps(usage)
+                log("POST", path, 200, "model", started, extra)
+                return
         except BadRequest as exc:
             # Close and drain: with HTTP/1.1 keep-alive a pipelined request left
             # in the socket would otherwise be parsed as this one's continuation.
@@ -511,6 +645,43 @@ class Handler(BaseHTTPRequestHandler):
         if usage:
             extra += " usage=%s" % json.dumps(usage)
         log("POST", path, 200, "model", started, extra)
+
+    def _json_body(self, length):
+        raw = self.rfile.read(length)
+        try:
+            doc = json.loads(raw.decode("utf-8"))
+        except Exception:
+            raise BadRequest("body is not JSON")
+        if not isinstance(doc, dict):
+            raise BadRequest("body must be a JSON object")
+        if doc.get("game") not in (None, "pocket-conquest"):
+            raise BadRequest("only the pocket-conquest game is supported")
+        return doc
+
+    def _game_position(self, doc, side):
+        """Validate the page's state and convert it into an engine position."""
+        if "state" not in doc:
+            raise BadRequest("body must carry a state object")
+        try:
+            return gs.engine_position_from_page(doc["state"], side)
+        except gs.GameStateError as exc:
+            raise BadRequest(str(exc)[:200])
+
+    def _juno_turn(self, position, legal, started):
+        """Let DeepSeek pick one legal move, and report its usage."""
+        deadline = started + GAME_MOVE_BUDGET
+        usage = {}
+
+        def model_call(prompt):
+            text, err, used = ask_model(prompt, deadline)
+            if used:
+                usage.update(used)
+            if text is None:
+                raise RuntimeError(err or "the model call failed")
+            return text
+
+        move, trace = agent_core.pick_legal(position, model_call, retries=1)
+        return move, usage or None, trace, trace
 
     def log_message(self, fmt, *args):
         return

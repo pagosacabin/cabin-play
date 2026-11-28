@@ -13,6 +13,15 @@ POST /pocket-conquest-move
   -> 429 {"error": "..."}      rate limit
   -> 500 {"error": "..."}      the model produced no legal move (page falls back)
 
+POST /games                 {"game": "pocket-conquest", "mode": "juno", "state": {...}}
+  -> 200 {"id": "<16 hex>", "game": "pocket-conquest", "state": {...}}
+POST /games/{id}/move       {"game": "pocket-conquest", "state": {...}}   # ember's turn
+  -> 200 {"id": ..., "move": "M E1 D1 3", "state": {...}}                 # state.turn = "nord"
+  -> 400 {"error": "..."}      malformed state, or a state older than the stored game
+  -> 500 {"error": "..."}      the model produced no legal move (page falls back)
+GET /games/{id}             -> 200 {"id": ..., "state": {...}}            # the page's poll
+  -> 404 {"error": "no such game"}
+
 GET /health -> 200 {"ok": true}
 ```
 
@@ -26,8 +35,10 @@ never written to a file, logged, or echoed.
 |---|---|
 | `pocket_conquest.py` | Rules engine: legal-move generation, move validation, combat, income, turn handoff, `--selftest` |
 | `agent_core.py` | Prompt builder (rules + board + gold + armies + legal list + tactics hints), reply parser, retrying `pick_legal` |
-| `server.py` | The HTTP service: validation, one deadline for the whole request, rate limit, worker pool, journal |
-| `proof.py` | End-to-end check against a running instance; every returned move is re-validated by the engine |
+| `game_state.py` | Adapter between the page's state shape (`board`/`nord`/`ember`/`ready`) and the engine's (`grid`/`S`/`R`/`moved`) + the bounded in-memory game table |
+| `server.py` | The HTTP service: validation, one deadline for the whole request, rate limits, worker pool, journal, the `/games` routes |
+| `proof.py` | End-to-end check of the single-move endpoint; every returned move is re-validated by the engine |
+| `proof_games.py` | End-to-end check of the `/games` flow, the CORS preflight, the legacy endpoints and the input caps |
 | `run.sh` | Foreground start |
 | `pocket-conquest-bridge.service` | systemd user unit for the deployed copy |
 
@@ -136,12 +147,50 @@ on the chess bridge, where the upstream sees `/chese-move/chess-move`), so the
 service accepts the POST at the mount root (`/pocket-conquest`), with a trailing
 slash, at `/pocket-conquest/pocket-conquest-move`, and at the bare
 `/pocket-conquest-move` for a direct localhost call. `GET` health answers at
-`/health` and `/pocket-conquest/health`.
+`/health` and `/pocket-conquest/health`. The `/games` routes take the same prefix,
+so the page's `POST /pocket-conquest/games` and
+`GET /pocket-conquest/games/{id}` reach the service; the prefix is stripped before
+routing.
+
+## The `/games` game-state API (Juno mode)
+
+The page's Juno mode is asynchronous: it creates a game, plays its own turn
+locally, POSTs the finished turn, then polls `GET /games/{id}` every 4 s until
+`state.turn` reads `"nord"`, at which point `adoptState()` copies each tile's
+`owner`, `armies`, `immobile` and `acquiredPly` plus `gold`, `ply` and `winner`.
+
+* `POST /games` seeds a game from the page's state and returns its id. The board
+  is the page's; the service never invents one.
+* `POST /games/{id}/move` converts the posted board to an engine position with
+  Ember to move, asks DeepSeek for one legal move (`agent_core.pick_legal`),
+  applies it, applies `END` (income + handover), and returns the whole new state
+  in the page's shape.
+* `GET /games/{id}` returns the stored state for the poll.
+
+Details that matter:
+
+- **State conversion is one-way per request, page-authoritative.** `game_state.py`
+  rebuilds the engine position from the posted board every time (the page holds
+  the truth), so a service restart cannot corrupt a game; a move for an unknown
+  id re-adopts the caller's id instead of 404ing the game, and a state whose
+  `ply` is older than the stored game is refused with 400 (no rewinding a known
+  id).
+- **`ready` is a count, not a flag.** The page sends movable armies per tile, so a
+  partially spent stack (5 armies, 3 of them just built) stays partly movable.
+- **Terrain and owner vocabulary differ**: page `plains`/`hills`/`neutral` ↔
+  engine `plain`/`hill`/owner `None` + town militia; the engine's `capital` field
+  is the tile's original side, which is how a captured capital is detected.
+- **The table is bounded** (500 games, 6 h idle TTL) and creation draws from its
+  own bucket (20/min, burst 5) so a burst cannot evict live games.
+- **The prompt is bounded.** A maximal board offers thousands of legal moves; at
+  most `MAX_LEGAL_FOR_PROMPT` (240) reach the model, `END` always among them.
 
 ## Self-test
 
 ```bash
 python3 pocket_conquest.py --selftest   # rules engine (runs agent_core's too)
 python3 agent_core.py --selftest        # prompt builder and reply parser
+python3 game_state.py                   # page<->engine adapter and game table
 python3 proof.py http://127.0.0.1:8767  # end-to-end against a running instance
+python3 proof_games.py https://home.tail2bff3f.ts.net/pocket-conquest  # /games flow
 ```

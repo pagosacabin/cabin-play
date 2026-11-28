@@ -41,8 +41,13 @@ static const uint8_t CHANNEL = 6;
 #define HDR 4
 #define WARMUP_FRAMES 3
 
+/* 0280: Stephen picked no grey-world correction by eye (2026-11-27), so the
+ * scene keeps the sensor's own warm cast.  At 0.5 the blue channel was being
+ * multiplied by ~1.84 on the bench scene, which corrected the warmth away
+ * (R/B 2.16 vs 5.54 with the correction off).  Saturation stays at the
+ * driver's -1: a -1/0/+1 sweep at WB 0.5 moved nothing measurable. */
 #ifndef WB_STRENGTH
-#define WB_STRENGTH 0.5f
+#define WB_STRENGTH 0.0f
 #endif
 
 typedef struct { uint8_t lo, hi, thr; } qstep_t;

@@ -152,7 +152,7 @@ async def run_session(api_base: str, api_port: int, store_dir: str) -> None:
             check(
                 "END collects income and passes the turn to R",
                 ended.get("side_to_move") == "R" and ended.get("winner") is None,
-                f"side_to_move={ended.get('side_to_move')} gold={ended.get('gold')}",
+                f"side_to_move={ended.get('side_to_move')} turn={ended.get('turn')}",
             )
             before_moves = list(get_json(f"{api_base}/pocket-conquest/games/{game_id}.json")["moves"])
             # --- 7b. wrong-side move refused -----------------------------

@@ -364,8 +364,8 @@ def make_move(game_id: str, move: str) -> dict:  # type: ignore[return]
     if not pc.is_legal(pos, move):
         return {
             "error": (
-                f"Move {move!r} is not legal in this position. "
-                "Call list_legal_moves to see valid options."
+                f"Move {move!r} is not legal for {pos['side']} (the side to move) in this "
+                "position. Call list_legal_moves to see valid options."
             )
         }
 

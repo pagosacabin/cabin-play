@@ -18,7 +18,7 @@ holds no keys.
 
 ```bash
 # terminal API stand-in (test harness; the live VPS API is Juno's to stand up)
-python3 local_api.py --port 8791 --store /tmp/pc-games
+python3 local_api.py --port 8791   # store: ~/.cache/pocket-conquest-standin/games (mode 0700)
 
 # the MCP server, spoken to over stdio by any MCP client
 POCKET_CONQUEST_API_BASE=http://127.0.0.1:8791 python3 server.py
@@ -81,14 +81,14 @@ The server speaks three endpoints (the stand-in in `local_api.py` implements exa
 | Endpoint | Request | Response |
 |---|---|---|
 | `POST /pocket-conquest/api/new` | `{}` | `201 {game_id, status, side_to_move, winner, position}` |
-| `POST /pocket-conquest/api/move` | `{game_id, move, position, from_digest}` | `200 {…, accepted: true}`, or `409 {error}` |
+| `POST /pocket-conquest/api/move` | `{game_id, move, from_digest}` | `200 {…, accepted: true}`, or `409 {error}` |
 | `GET /pocket-conquest/games/<id>.json` | — | `{game_id, status, side_to_move, winner, position, moves}` |
 
 `from_digest` is the digest of the state the move was computed from — the API rejects a move built
 on an older state (`409`) instead of overwriting it. The API re-validates the move itself with the
-rules engine and derives the new position from its own copy, so a client bug cannot move the game
-into an illegal state. A move is only reported as played after a re-fetch shows it in the stored
-game.
+rules engine and derives the new position from its own copy; **no client-supplied position is
+accepted**, so a client bug cannot move the game into an illegal state and a compromised client
+cannot inject one. A move is only reported as played after a re-fetch shows it in the stored game.
 
 ## Proof
 

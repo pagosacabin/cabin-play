@@ -60,8 +60,19 @@ _LOOPBACK_RE = re.compile(
     r")(?::\d{1,5})?(?:/|$)"
 )
 
+_API_BASE_RESOLVED = False
+_API_BASE: str | None = None
+
+
 def _get_api_base() -> str | None:
-    """Return the validated API base URL, or None with an error already logged."""
+    """Return the validated API base URL, or None when it is refused.
+
+    Resolved once per process: the environment of a stdio server does not change,
+    and re-warning on every tool call would spam the client's stderr.
+    """
+    global _API_BASE_RESOLVED, _API_BASE
+    if _API_BASE_RESOLVED:
+        return _API_BASE
     raw = os.environ.get("POCKET_CONQUEST_API_BASE", "").rstrip("/")
     if not raw:
         log.warning(
@@ -69,11 +80,13 @@ def _get_api_base() -> str | None:
             "http://127.0.0.1:8791. Set it to the real https:// API for a real game."
         )
         raw = "http://127.0.0.1:8791"
-    if raw.startswith("https://"):
-        return raw
-    if _LOOPBACK_RE.match(raw):
-        return raw
-    return None
+    if raw.startswith("https://") or _LOOPBACK_RE.match(raw):
+        _API_BASE = raw
+    else:
+        log.error("refusing POCKET_CONQUEST_API_BASE=%r: https, or plain http on loopback only", raw)
+        _API_BASE = None
+    _API_BASE_RESOLVED = True
+    return _API_BASE
 
 
 _GAME_ID_RE = re.compile(r"\A[A-Za-z0-9_\-]{1,64}\Z")

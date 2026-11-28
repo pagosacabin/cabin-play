@@ -23,7 +23,7 @@ Unlike the MCP server, this stand-in is authoritative on purpose: it re-validate
 every submitted move through the rules engine, so a bug in the client cannot make
 the proof pass. It is bound to loopback only and stores games as JSON files.
 
-Run:  python3 local_api.py --port 8791 --store /tmp/pc-games
+Run:  python3 local_api.py --port 8791 [--store ~/.cache/pocket-conquest-standin/games]
 """
 
 from __future__ import annotations
@@ -213,7 +213,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
 
-def serve(host: str = "127.0.0.1", port: int = 8791, store: str = "/tmp/pc-games") -> ThreadingHTTPServer:
+def default_store() -> str:
+    """A private per-user path: game state must not land in a world-readable /tmp."""
+    return os.path.join(os.path.expanduser("~"), ".cache", "pocket-conquest-standin", "games")
+
+
+def serve(host: str = "127.0.0.1", port: int = 8791, store: str | None = None) -> ThreadingHTTPServer:
+    store = store or default_store()
     handler = type("BoundHandler", (Handler,), {"store": Store(store)})
     httpd = ThreadingHTTPServer((host, port), handler)
     return httpd
@@ -223,7 +229,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Pocket Conquest game API stand-in")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8791)
-    ap.add_argument("--store", default="/tmp/pc-games")
+    ap.add_argument("--store", default=default_store())
     args = ap.parse_args()
     if args.host not in ("127.0.0.1", "localhost", "::1"):
         print("refusing to bind a non-loopback address: this is a test harness", file=sys.stderr)

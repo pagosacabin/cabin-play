@@ -81,12 +81,14 @@ The server speaks three endpoints (the stand-in in `local_api.py` implements exa
 | Endpoint | Request | Response |
 |---|---|---|
 | `POST /pocket-conquest/api/new` | `{}` | `201 {game_id, status, side_to_move, winner, position}` |
-| `POST /pocket-conquest/api/move` | `{game_id, move, position}` | `200 {…, accepted: true}`, or `409 {error}` |
+| `POST /pocket-conquest/api/move` | `{game_id, move, position, from_digest}` | `200 {…, accepted: true}`, or `409 {error}` |
 | `GET /pocket-conquest/games/<id>.json` | — | `{game_id, status, side_to_move, winner, position, moves}` |
 
-The posted `position` is the client's computed result; the API re-validates the move against the
-rules engine and rejects a stale copy (`409`). A move is only reported as played after a re-fetch
-shows it in the stored game.
+`from_digest` is the digest of the state the move was computed from — the API rejects a move built
+on an older state (`409`) instead of overwriting it. The API re-validates the move itself with the
+rules engine and derives the new position from its own copy, so a client bug cannot move the game
+into an illegal state. A move is only reported as played after a re-fetch shows it in the stored
+game.
 
 ## Proof
 
